@@ -491,7 +491,50 @@ class Profile {
       }
    }
 
-   getBadgepageStockAll(list) {
-      
+   verifyDescripts(descript1, descript2) {
+      for(let prop in descript2) {
+         if(!Object.hasOwn(descript1, prop)) {
+            console.warn(`verifyDescripts(): Property ${prop} does not exist in both descriptions!`);
+            console.log(descript1);
+            console.log(descript2);
+         }
+      }
+      for(let prop in descript1) {
+         if(!Object.hasOwn(descript2, prop)) {
+            console.warn(`verifyDescripts(): Property ${prop} does not exist in both descriptions!`);
+            console.log(descript1);
+            console.log(descript2);
+            continue;
+         }
+         if(prop === "descriptions" || prop === "owner_actions") {
+            if(JSON.stringify(descript1[prop]) !== JSON.stringify(descript2[prop])) {
+               console.warn(`verifyDescripts(): Property ${prop} does not have same values!`);
+               console.log(descript1);
+               console.log(descript2);
+            }
+         } else if(prop === "tags") {
+            for(let tag of descript1[prop]) {
+               let found = descript2[prop].find(x => x.category === tag.category);
+               if(!found || found.internal_name !== tag.internal_name) {
+                  console.warn(`verifyDescripts(): Property ${prop} does not have same values!`);
+                  console.log(descript1);
+                  console.log(descript2);
+               }
+            }
+         } else {
+            if((typeof descript1[prop] === "object" && descript1[prop] !== null)
+               || (typeof descript2[prop] === "object" && descript2[prop] !== null)) {
+               console.warn(`verifyDescripts(): Property ${prop} is an unchecked object!`);
+               console.log(descript1);
+               console.log(descript2);
+            } else {
+               if(descript1[prop] !== descript1[prop]) {
+                  console.warn(`verifyDescripts(): Property ${prop} does not have same values!`);
+                  console.log(descript1);
+                  console.log(descript2);
+               }
+            }
+         }
+      }
    }
 }
