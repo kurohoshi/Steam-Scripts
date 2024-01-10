@@ -1,8 +1,32 @@
 class Profile {
    static MasterProfileList = [];
+   static BadgepageData = {}; // Could be put into its own class
+   static appMetaData = {}; // Can be put into its own class
+   static itemDescriptions = {}; // Can be put into its own class
    static utils = steamToolsUtils;
 
-   MAX_ITEM_COUNT = 4000;
+   static MAX_ITEM_COUNT = 4000;
+   static ITEM_TYPE_MAP = {
+      item_class_2: "card",
+      item_class_3: "background",
+      item_class_4: "emoticon",
+      item_class_5: "booster",
+      item_class_7: "gem",
+      item_class_8: "profile_mod",
+      item_class_10: "sale_item",
+      item_class_11: "sticker",
+      item_class_12: "chat_effect",
+      item_class_13: "mini_profile",
+      item_class_14: "profile_frame",
+      item_class_15: "animated_avatar"
+   }
+   static ITEM_RARITY_MAP = {
+      droprate_0: 0,
+      droprate_1: 1,
+      droprate_2: 2,
+      cardborder_0: 0,
+      cardboard_1: 1
+   }
 
    id;
    url;
@@ -13,15 +37,15 @@ class Profile {
 
    friends = [];
 
-   INV_SIZE;
    inventory;
-   hasAssetList = false;
-   inv_last_updated;
+   badgepages = {};
 
    constructor(props) {
-      if( !(Object.hasOwn(props, "id") || Object.hasOwn(props, "url")) ) {
+      if( !props.id && !props.url ) {
          throw "new Profile(): id and url are both not provided! Profile not created.";
       }
+
+      // Check if id is proper
 
       this.id         = props.id;
       this.url        = props.url;
@@ -31,7 +55,7 @@ class Profile {
       this.tradeToken = props.tradeToken;
    }
 
-   getTradeFriends() {
+   async getTradeFriends() {
       function addToList(props, prop) {
          let foundMaster = Profile.MasterProfileList.find(x => x[prop] === props[prop]);
          if(!foundMaster) {
@@ -78,7 +102,11 @@ class Profile {
       console.log("Friends list updated!");
    }
 
-   isMe() {
+   async isMe() {
+      if(!this.id) {
+         await Profile.findMoreDataForProfile(this);
+      }
+
       return this.id === Profile.utils.getMySteamId();
    }
 
@@ -174,16 +202,34 @@ class Profile {
       console.log(`addTradeURL(): Trade token added to ${id}.`);
    }
 
+   /***********************************************************************/
+   /************************** Inventory Methods **************************/
+   /***********************************************************************/
+   resetInventory() {
+      // subset of inventory item type is rarity
+      this.inventory = {
+         data: {
+            gem:        [{}],
+            card:       [{}, {}],
+            background: [{}, {}, {}],
+            emoticon:   [{}, {}, {}]
+         },
+         size: undefined,
+         last_updated: undefined,
+         tradable_only: undefined
+      };
+   }
+
    async getInventorySize() {
       if(!this.id) {
          await Profile.findMoreDataForProfile(this);
       }
       console.log(`getinventorysize(): Fetching inventory of ${this.id}`);
-      let response = await fetch(`https://steamcommunity.com/inventory/${this.id}/753/6?l=english&count=1`);
-      await Profile.utils.sleep(this.isMe() ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2);
+      let response = await fetch(`https://steamcommunity.com/inventory/${this.id}/753/6?l=${Profile.utils.getSteamLanguage()}&count=1`);
+      await Profile.utils.sleep((await this.isMe()) ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2);
       let resdata = await response.json();
    
-      this.INV_SIZE = resdata.total_inventory_count;
+      this.inventory.size = resdata.total_inventory_count;
    }
 
    // should be reserved for own inv or low count inv
