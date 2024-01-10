@@ -6,19 +6,18 @@ var steamToolsUtils = {
       return new Promise(resolve => setTimeout(resolve, ms));
    },
    getSessionId: function() {
-      // return window.g_sessionID;
-      return 'session'
+      return window.g_sessionID;
    },
    getMySteamId: function() {
-      // return window.g_steamID;
-      return 'id'
+      return window.g_steamID;
    },
    getSteamProfileId64: function(steamid3) {
-      // return '76561'+(parseInt(steamid3)+197960265728);
-      return '123';
+      return '76561'+(parseInt(steamid3)+197960265728);
    },
    getSteamProfileId3: function(steamid64) {
-      // return String(parseInt(steamid64.substring(5))-197960265728);
-      return '321';
+      return String(parseInt(steamid64.substring(5))-197960265728);
+   },
+   getSteamLanguage: function() {
+      return g_strLanguage;
    }
 };
