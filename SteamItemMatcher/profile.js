@@ -349,15 +349,112 @@ class Profile {
       this.inventory.tradable_only = false;
    }
 
-   async getTradeInventory(count = Number.MAX_SAFE_INTEGER) {
+   async getTradeInventory(myProf, count = Number.MAX_SAFE_INTEGER) {
+      if(!this.id) {
+         await Profile.findMoreDataForProfile(this);
+      }
+
+      if(await this.isMe()) {
+         console.warn("getTradeInventory(): Inventory fetch is user, getInventory() is recommended instead");
+      } else if(!(myProf instanceof Profile)) {
+         console.error("getTradeInventory(): Inventory fetch is not user, but own profile was not provided! Aborting...");
+         return;
+      }
+
+      this.resetInventory();
+
       let data = [];
       let counter = 0;
-      let resdata = {};
+      let resdata = { more_start: 0 };
+
+      let currentPathSearch = window.location.pathname + window.location.search;
+      let partnerString = `?partner=${Profile.utils.getSteamProfileId3(this.id)}`;
+      let tokenString = (await this.isMe()) ? undefined : myProf.tradeURLs.find(x => x.id === this.id);
+      tokenString = !tokenString || (await myProf.isFriend(this.id)) ? '' : `&token=${tokenString.token}`;
 
       // NOTE: Only shows tradable items, make sure user knows
       do {
+         console.log(`getTradeInventory(): Fetching inventory of ${this.id}, starting at ${resdata.more_start}`);
+         let response;
+         if(await this.isMe()) {
+            response = await fetch(`https://steamcommunity.com/profiles/${this.id}/inventory/json/753/6/?l=${this.getLanguage()}&trading=1${resdata.more ? `&start=${resdata.more_start}` : ""}`);
+         } else {
+            window.history.replaceState(null, '', '/tradeoffer/new/' + partnerString + tokenString);
+            response = await fetch(`https://steamcommunity.com/tradeoffer/new/partnerinventory/?l=${this.getLanguage()}&sessionid=${this.getSessionId()}&partner=${this.id}&appid=753&contextid=6${resdata.more ? `&start=${resdata.more_start}` : ""}`);
+            window.history.replaceState(null, '', currentPathSearch);
+         }
+         if(response.status == 429) {
+            throw "Steam Inventory Fetch: Too Many Requests!";
+         } else if(response.status == 401) {
+            throw "Steam Inventory Fetch: Missing Parameters, or Steam is complaining about nothing.";
+         }
 
+         await Profile.utils.sleep((await this.isMe()) ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2);
+         resdata = await response.json();
+
+         for(let asset of Object.values(resdata.rgInventory)) {
+            let desc = resdata.rgDescriptions[`${asset.classid}_${asset.instanceid}`];
+
+            let itemType = desc.tags.find(x => x.category === "item_class");
+            if(!itemType) {
+               console.warn(`getInventory(): No item_type tag found for description:`);
+               console.log(desc);
+               continue;
+            }
+
+            let rarity = itemType.internal_name === "item_class_2"
+               ? desc.tags.find(x => x.category === "cardborder")
+               : desc.tags.find(x => x.category === "droprate");
+            if(!rarity) {
+               console.warn(`getInventory(): No rarity-related tag found for description:`);
+               console.log(desc);
+               continue;
+            }
+
+            let itemList = this.inventory.data[this.ITEM_TYPE_MAP[itemType.internal_name]][this.ITEM_RARITY_MAP[rarity.internal_name]];
+            if(typeof itemList !== 'object' || Array.isArray(itemList) || itemList === null) {
+               console.error(`getInventory(): No object found for item subgroup: ${itemType.internal_name} ${rarity.internal_name}`);
+               continue;
+            }
+
+            let appname = desc.tags.find(x => x.category === "Game");
+            if(!appname) {
+               console.warn(`getInventory(): No game name tag found for description:`);
+               console.log(desc);
+               appname = {internal_name: ""};
+            }
+            this.updateAppMetaData(desc.market_fee_app, "name", appname.internal_name);
+
+            asset.amount = parseInt(asset.amount);
+            if(itemList[desc.market_fee_app]) { // app subgroup exists
+               let classItemGroup = itemList[desc.market_fee_app].find(x => x.classid === asset.classid);
+               if(classItemGroup) { // class item subgroup exists
+                  if(desc.tradable) {
+                     classItemGroup.tradables.push({ assetid: asset.id, count: asset.amount });
+                  }
+                  classItemGroup.count += asset.amount;
+               } else { // class item subgroup does not exist
+                  itemList[desc.market_fee_app].push({
+                     classid: asset.classid,
+                     tradables: desc.tradable ? [{ assetid: asset.id, count: asset.amount }]: [],
+                     count: asset.amount
+                  });
+               }
+            } else { // app subgroup does not exist
+               itemList[desc.market_fee_app] = [{
+                  classid: asset.classid,
+                  tradables: desc.tradable ? [{ assetid: asset.id, count: asset.amount }]: [],
+                  count: asset.amount
+               }]
+            }
+
+            this.updateItemDescription(desc.classid, desc);
+         }
       } while(counter < count && resdata.more);
+
+      this.inventory.size = null;
+      this.inventory.last_updated = Date.now();
+      this.inventory.tradable_only = true;
    }
 
    async getBadgepageStock(appid, foil=false) {
