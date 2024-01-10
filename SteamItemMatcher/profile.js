@@ -254,8 +254,38 @@ class Profile {
       } while(counter < count && resdata.more);
    }
 
-   getBadgepageStock(appid) {
+   async getBadgepageStock(appid, foil=false) {
+      if(!this.id) {
+         await Profile.findMoreDataForProfile(this);
+      }
 
+      console.log(`getBadgepageStock(): getting badgepage of app ${appid} from profile ${this.id}`);
+      let response = await fetch(`https://steamcommunity.com/profiles/${this.id}/gamecards/${appid}/${foil ? "?border=1" : ""}`);
+      await Profile.utils.sleep(Profile.utils.FETCH_DELAY);
+   
+      let parser = new DOMParser();
+      let doc = parser.parseFromString(await response.text(), "text/html");
+   
+      this.badgepages[appid] = {};
+      this.badgepages[appid].data = [...doc.querySelectorAll(".badge_card_set_card")].map(x => {
+         let count = x.children[1].childNodes.length === 5 ? parseInt(x.children[1].childNodes[1].textContent.replace(/[()]/g, '')) : 0;
+         let seriesNum = parseInt( x.children[2].textContent.trim().replace(/ of \d+, Series 1$/g, '') );
+         if( !Profile.BadgepageData[appid] ) {
+            Profile.BadgepageData[appid] = {
+               img: x.children[0].querySelector(".gamecard").src.replace(/https\:\/\/community\.akamai\.steamstatic\.com\/economy\/image\//g, ''),
+               name: x.children[1].childNodes[x.children[1].childNodes.length-3].textContent.trim(),
+               seriesNum: seriesNum
+            };
+         }
+         return { seriesNum: seriesNum, count: count};
+      });
+      this.badgepages[appid].last_updated = Date.now();
+   }
+
+   async getBadgepageStockAll(list) {
+      for(let appid of list) {
+         await this.getBadgepageStock(appid);
+      }
    }
 
    getBadgepageStockAll(list) {
