@@ -229,7 +229,7 @@ class Profile {
     *    getBadgepageStock |     no       |           yes            | cards
     */
    resetInventory() {
-      // subset of inventory item type is rarity
+      // itemType(obj) -> rarity(arr) -> app(obj) -> classitem(arr) -> assets(arr)
       this.inventory = {
          data: {
             gem:        [{}],
@@ -451,7 +451,7 @@ class Profile {
                   classid: asset.classid,
                   tradables: desc.tradable ? [{ assetid: asset.id, count: asset.amount }]: [],
                   count: asset.amount
-               }]
+               }];
             }
 
             this.updateItemDescription(desc.classid, desc);
