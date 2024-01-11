@@ -623,9 +623,9 @@ class SteamVarMatcher {
    // Partner1 cards should be ordered lowest to highest.
    //    - (matchPriority 0) Having lowest matching first prioritizes set completion.
    //    - (matchPriority 1) Having highest matching first prioritizes getting rid of most dupes.
-   //    - (goodSamaritan false) Benefit both parties.
-   //    - (goodSamaritan true) Benefit the opposite party.
-   varbalance(partner1, partner2, matchPriority = 0, goodSamaritan = false) {
+   //    - (helper false) Benefit both parties.
+   //    - (helper true) Benefit the opposite party.
+   varbalance(partner1, partner2, matchPriority = 0, helper = false) {
       if(partner1.length != partner2.length) {
          console.error("varbalance(): Mismatch numcards!");
          return;
@@ -658,7 +658,7 @@ class SteamVarMatcher {
             let bin2vardiff = Math.sign(-bin2[bin2_i][1] +bin2[bin2_j][1]+1);
 
             // accept the swap if variances for either parties is lowered, but not if both variances doesn't change, otherwise continue to next card to be compared
-            if( ((goodSamaritan || bin1vardiff<=0) && bin2vardiff<=0) && !(bin1vardiff==0 && bin2vardiff==0) ) {
+            if( ((helper || bin1vardiff<=0) && bin2vardiff<=0) && !(bin1vardiff==0 && bin2vardiff==0) ) {
                bin1[i][1]++;
                bin1[j][1]--;
                bin2[bin2_i][1]--;
