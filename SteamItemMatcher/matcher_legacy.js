@@ -95,6 +95,10 @@ class SteamVarMatcher {
       return true;
    }
 
+   getLanguage() {
+      return window.g_strLanguage || 'english';
+   }
+
    getSessionId() {
       this.isSteamCommunitySite();
       return window.g_sessionID;
@@ -160,7 +164,7 @@ class SteamVarMatcher {
 
    addTradeURL(url) {
       url = url.trim();
-      if(!/(?<=^https:\/\/steamcommunity\.com\/tradeoffer\/new\/\?)partner=\d+&token=.+$/.test(url)) {
+      if(!/(?<=^https:\/\/steamcommunity\.com\/tradeoffer\/new\/\?)partner=\d+&token=.{8}$/.test(url)) {
          console.error("addTradeURL(): invalid trade URL, trade token not added");
          return;
       }
@@ -217,7 +221,7 @@ class SteamVarMatcher {
          this.profileidCache.push({ id: profiledata.steamid, url: profiledata.url.replace(/(^id\/)|(\/$)/g, '') });
          return { id: profiledata.steamid, url: profiledata.url.replace(/(^id\/)|(\/$)/g, '') };
       } else {
-         console.warn(`getTradeFriends(): ${profileString} is neither id or custom URL, investigate!`);
+         console.warn(`findDataFromProfileURL(): ${JSON.stringify(profiledata)} is neither id or custom URL, investigate!`);
       }
    }
 
@@ -416,7 +420,7 @@ class SteamVarMatcher {
          let currentPathSearch = window.location.pathname + window.location.search;
          window.history.replaceState(null, '', '/tradeoffer/new/' + partnerString + tokenString);
 
-         let url = `https://steamcommunity.com/tradeoffer/new/partnerinventory/?sessionid=${this.getSessionId()}&partner=${id}&appid=753&contextid=6${resdata.more ? `&start=${resdata.more_start}` : ""}`;
+         let url = `https://steamcommunity.com/tradeoffer/new/partnerinventory/?l=${this.getLanguage()}&sessionid=${this.getSessionId()}&partner=${id}&appid=753&contextid=6${resdata.more ? `&start=${resdata.more_start}` : ""}`;
          console.log(`getTradeInventory(): Fetching inventory of ${id}, starting at ${resdata.more ? `${resdata.more_start}` : "0"}`);
          let response = await fetch(url);
          if(response.status == 429) {
@@ -1236,6 +1240,7 @@ class SteamVarMatcher {
       let newTradeParams = JSON.parse(JSON.stringify(this.tradeOfferParams));
       newTradeParams.json_tradeoffer.me.assets = newTradeParams.json_tradeoffer.me.assets.filter(asset => selectedAppidContentsMe.some(card => card.assets.includes(asset.assetid)));
       newTradeParams.json_tradeoffer.them.assets = newTradeParams.json_tradeoffer.them.assets.filter(asset => selectedAppidContentsThem.some(card => card.assets.includes(asset.assetid)));
+      newTradeParams.json_tradeoffer.version = newTradeParams.json_tradeoffer.me.assets.length + newTradeParams.json_tradeoffer.them.assets.length + 1;
 
       await this.sendTradeOffer(newTradeParams);
    }
