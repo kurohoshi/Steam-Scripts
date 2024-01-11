@@ -222,6 +222,12 @@ class Profile {
    /***********************************************************************/
    /************************** Inventory Methods **************************/
    /***********************************************************************/
+   /*               method | hasAssetList | includesNontradableItems | items
+    *     -----------------|--------------|--------------------------|------
+    *         getInventory |     yes      |           yes            | all
+    *    getTradeInventory |     yes      |           no             | all
+    *    getBadgepageStock |     no       |           yes            | cards
+    */
    resetInventory() {
       // subset of inventory item type is rarity
       this.inventory = {
