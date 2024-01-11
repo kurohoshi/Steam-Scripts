@@ -5,6 +5,9 @@ var steamToolsUtils = {
    sleep: function(ms) {
       return new Promise(resolve => setTimeout(resolve, ms));
    },
+   deepClone(obj) {
+      return JSON.parse(JSON.stringify(obj));
+   },
    getSessionId: function() {
       return window.g_sessionID;
    },
