@@ -632,7 +632,7 @@ class SteamVarMatcher {
       }
 
       let bin1 = partner1.map((x, i) => [i, matchPriority ? -x : x]).sort((a, b) => a[1]-b[1]);
-      let bin2 = partner2.map((x, i) => [i, matchPriomatchPriority ? -x : x]).sort((a, b) => b[1]-a[1]);
+      let bin2 = partner2.map((x, i) => [i, matchPriority ? -x : x]).sort((a, b) => b[1]-a[1]);
       let numcards = partner1.length;
       // console.log(bin1);
       // console.log(bin2);
@@ -658,7 +658,7 @@ class SteamVarMatcher {
             let bin2vardiff = Math.sign(-bin2[bin2_i][1] +bin2[bin2_j][1]+1);
 
             // accept the swap if variances for either parties is lowered, but not if both variances doesn't change, otherwise continue to next card to be compared
-            if( ((helper || bin1vardiff<=0) && bin2vardiff<=0) && !(bin1vardiff==0 && bin2vardiff==0) ) {
+            if( ((helper || bin1vardiff<=0) && bin2vardiff<=0) && !(bin1vardiff===0 && bin2vardiff===0) ) {
                bin1[i][1]++;
                bin1[j][1]--;
                bin2[bin2_i][1]--;
@@ -666,17 +666,15 @@ class SteamVarMatcher {
                // console.log(`${i} ${j} ${bin1[i]}   ${bin1[j]}   ${bin2[i][1]}   ${bin2[j][1]}`); // debug output
 
                // reorder if current card's quantity is lower/higher than next card's quantity
-               if(i<numcards-1) {
-                  if(bin1[i][1]>bin1[i+1][1]) {
-                     let tmp = bin1[i];
-                     bin1[i] = bin1[i+1];
-                     bin1[i+1] = tmp;
-                  }
-                  if(bin2[i][1]<bin2[i+1][1]) {
-                     let tmp = bin2[i];
-                     bin2[i] = bin2[i+1];
-                     bin2[i+1] = tmp;
-                  }
+               if (i<numcards-1 && bin1[i][1]>bin1[i+1][1]) {
+                  let tmp = bin1[i];
+                  bin1[i] = bin1[i+1];
+                  bin1[i+1] = tmp;
+               }
+               if(j>0 && bin1[j][1]<bin1[j-1][1]) {
+                  let tmp = bin1[j];
+                  bin1[j] = bin1[j-1];
+                  bin1[j-1] = tmp;
                }
             } else {
                j++;
