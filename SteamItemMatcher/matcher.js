@@ -3,6 +3,7 @@ class ItemMatcher {
    static datasetcache = {};
    static utils = steamToolsUtils;
    
+   MAX_MATCH_ITER = 5;
    profileData1;
    profileData2;
 
@@ -96,11 +97,59 @@ class ItemMatcher {
       }
    }
 
+   // Using Var(x) = E[x^2] + avg(x)^2 or Var(x) = E[(x-avg(x))^2] yields the same comparison formula for swapping, as expected
+   // NOTE: this method shouldn't modify the original arrays, otherwise we're in big trouble!
+   static balanceVariance(set1, set2, matchPriority=0, helper=false) {
+      if(!Array.isArray(set1) || !Array.isArray(set2) || set1.some(x => typeof x !== "number") || set2.some(x => typeof x !== "number") || set1.length !== set2.length) {
+         console.error("balanceVariance(): Invalid sets! Sets must be an array of numbers with the same length!");
+         return;
+      }
 
+      let bin1 = set1.map((x, i) => [i, matchPriority ? -x : x]).sort((a, b) => a[1]-b[1]);
+      let bin2 = set2.map(x => matchPriority ? -x : x);
+      let setlen = set1.length;
+      let history = [];
 
+      for(let i=0; i<setlen; i++) {
+         for(let j=0; j<setlen; ) {
+            if(i===j) { // don't match same item
+               j++;
+               continue;
+            }
 
+            // compare variance change before and after swap for both parties
+            // [<0] good swap (variance will decrease)
+            // [=0] neutral swap (variance stays the same)
+            // [>0] bad swap (variance will increase)
 
+            // simplified from (x1+1)**2+(x2-1)**2 ?? x1**2 + x2**2  -->  x1-x2+1 ?? 0
+            let bin1vardiff =        bin1[i][1]       -bin1[j][1] +1;
+            // simplified from (x1-1)**2+(x2+1)**2 ?? x1**2 + x2**2  --> -x1+x2+1 ?? 0
+            let bin2vardiff = -bin2[bin1[i][0]] +bin2[bin1[j][0]] +1;
+
+            // console.log(`${bin1vardiff} ${bin2vardiff}`);
+            // accept the swap if variances for either parties is lowered, but not if both variances doesn't change, otherwise continue to next card to be compared
+            if (((helper || bin1vardiff <= 0) && bin2vardiff <= 0) && !(bin1vardiff === 0 && bin2vardiff === 0)) {
+               bin1[i][1]++;
+               bin1[j][1]--;
+               bin2[bin1[i][0]]--;
+               bin2[bin1[j][0]]++;
+               history.push([bin1[j][0], bin1[i][0]]);
+               // console.log(`${i} ${j}  ${bin1vardiff} ${bin2vardiff}   ${bin1[bin2[i][0]]}   ${bin1[bin2[j][0]]}   ${bin2[i][1]}   ${bin2[j][1]}`); // debug output
+
+               // swap if current card's quantity is lower/higher than next/prev card's quantity
+               if(i<setlen-1 && bin1[i][1]>bin1[i+1][1]) {
+                  let tmp   = bin1[i];
+                  bin1[i]   = bin1[i+1];
+                  bin1[i+1] = tmp;
                }
+               if(j>0 && bin1[j][1]<bin1[j-1][1]) {
+                  let tmp   = bin1[j];
+                  bin1[j]   = bin1[j-1];
+                  bin1[j-1] = tmp;
+               }
+            } else {
+               j++;
             }
          }
       }
