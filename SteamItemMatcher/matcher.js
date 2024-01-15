@@ -16,7 +16,22 @@ class ItemMatcher {
       this.profileData1.meta = { profileid: profile1.id }
    }
 
-   calcStats() {
+   private createInventoryIterators() {
+      function* iterateItemSets() {
+         for(let type in this.data) {
+            for (let rarity=0; rarity<this.data[type].length; rarity++) {
+               for(let appid in this.data[type][rarity]) {
+                  yield [this.data[type][rarity][appid], appid, rarity, type];
+               }
+            }
+         }
+      }
+
+      this.profileData1.itemsets = iterateItemSets;
+      this.profileData2.itemsets = iterateItemSets;
+   }
+
+   match() {
       function fillMissingItems(target, source) {
          for(let i=0; i<source.length; i++) {
             if(!target.some(x => x.classid === source[i].classid)) {
@@ -25,68 +40,74 @@ class ItemMatcher {
          }
       }
 
-      let dataset1 = this.profileData1.data;
-      let dataset2 = this.profileData2.data;
-      for(let itemType in dataset1) {
-         for(let rarity=0; rarity<dataset1[itemType].length; rarity++) {
-            for(let appid in dataset2[itemType][rarity]) {
-               if(!dataset1[itemType][rarity][appid]) {
-                  delete dataset2[itemType][rarity][appid];
-               }
+      ItemMatcher.matchResultsList[profile1.id][profile2.id] = {};
+
+      for (let [set1, appid, rarity, itemType] of this.profileData1.itemsets()) {
+         let set2 = this.profileData2.data[itemType][rarity][appid];               
+
+         if(!set2) {
+            continue;
+         }
+
+         fillMissingItems(set1, set2);
+         fillMissingItems(set2, set1);
+
+         if(set1.length !== set2.length) {
+            console.error(`calcStats(): Item type ${itemType} from app ${appid} does not have equal length of items, cannot be compared!`);
+            console.log(set1);
+            console.log(set2);
+            delete set1;
+            delete set2;
+            continue;
+         } else if(set1.length === 1) {
+            console.log(`calcStats(): Item type ${itemType} from app ${appid} only has 1 item, nothing to compare. skipping...`);
+            delete set1;
+            delete set2;
+            continue;
+         }
+         
+         let swap = Array(set1.length).fill(0);
+         let history = [];
+
+         set1.sort((a, b) => a.classid.localeCompare(b.classid));
+         set2.sort((a, b) => a.classid.localeCompare(b.classid));
+
+         // Alternate balancing priority
+         for (let i = 0; i<this.MAX_MATCH_ITER; i++) {
+            let flip = i%2;
+            let swapset1 = set1.map((x, i) => x.count + swap[i]);
+            let swapset2 = set2.map((x, i) => x.count - swap[i]);
+            let balanceResult = ItemMatcher.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2));
+            if(!balanceResult.some((x, i) => x)) {
+               break;
             }
-            for(let appid in dataset1[itemType][rarity]) {
-               let set1 = dataset1[itemType][rarity][appid];
-               let set2 = dataset2[itemType][rarity][appid];
 
-               if(!set2) {
-                  delete set1;
-                  continue;
-               }
+            for(let x=0; x<swap.length; x++) {
+               swap[x] += (flip ? -balanceResult[x] : balanceResult[x]);
+            }
+            for(let y=0; y<balanceResult.history.length; y++) {
+               history.push([balanceResult.history[y][flip], balanceResult.history[y][1-flip]]);
+            }
+         }
 
-               fillMissingItems(set1, set2);
-               fillMissingItems(set2, set1);
+         // validate results here
 
-               if(set1.length !== set2.length) {
-                  console.error(`calcStats(): Item type ${itemType} from app ${appid} does not have equal length of items, cannot be compared!`);
-                  console.log(set1);
-                  console.log(set2);
-                  delete set1;
-                  delete set2;
-                  continue;
-               } else if(set1.length === 1) {
-                  console.log("calcStats(): Set only has 1 item, nothing to compare. skipping...");
-                  delete set1;
-                  delete set2;
-                  continue;
-               }
+         ItemMatcher.matchResultsList[profile1.id][profile2.id][`${itemType}_${rarity}_${appid}`] = { swap, history };
+      }
+   }
 
-               set1.sort((a, b) => a.classid.localeCompare(b.classid));
-               set2.sort((a, b) => a.classid.localeCompare(b.classid));
 
-               // restructure data a little bit to accomodate app-level data
-               set1 = dataset1[itemType][rarity][appid] = { stock: set1 };
-               set2 = dataset2[itemType][rarity][appid] = { stock: set2 };
 
-               set1.avg = set1.stock.reduce((a, b) => a+b.count, 0.0) / set1.stock.length;
-               set2.avg = set2.stock.reduce((a, b) => a+b.count, 0.0) / set2.stock.length;
 
-               set1.avgdiff = set1.stock.map(x => x.count-set1.avg);
-               set2.avgdiff = set2.stock.map(x => x.count-set2.avg);
 
-               set1.matchbin = [...set1.avgdiff];
-               set2.matchbin = [...set2.avgdiff];
-               
-               this.balanceVariance(set1.matchbin , set2.matchbin);
-
-               set1.swap = set1.matchbin.map((x, i) => Math.round(x-set1.avgdiff[i]));
-               set2.swap = set2.matchbin.map((x, i) => Math.round(x-set2.avgdiff[i]));
-               if(set1.swap.some((x, i) => x+set2.swap[i])) {
-                  console.log(set1);
-                  console.log(set2);
-                  throw "calcStats(): One of the sets somehow became inconsistent!";
                }
             }
          }
       }
+
+      return {
+         swap: bin1.map((x, i) => (matchPriority ? -x : x) - set1[i]),
+         history
+      };
    }
 }
