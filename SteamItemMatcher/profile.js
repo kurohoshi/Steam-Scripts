@@ -136,7 +136,13 @@ class Profile {
 
    static addNewProfile(props) {
       try {
+         let data = await Profile.findMoreDataForProfile(props);
+         if(!data) {
+            throw "addNewProfile(): invalid profile";
+         }
+         Object.assign(props, data);
          Profile.MasterProfileList.push(new Profile(props));
+         
          return Profile.MasterProfileList[Profile.MasterProfileList.length-1];
       } catch(e) {
          console.error(e);
@@ -168,10 +174,10 @@ class Profile {
 
       profiledata = JSON.parse( profiledata[0].replace(/,"summary":.+(?=}$)/g, '') );
 
+      profile.id = profiledata.steamid;
       profiledata.url = profiledata.url.replace(/https:\/\/steamcommunity\.com\//g, '');
       switch(true) {
          case profiledata.url.startsWith('id'):
-            profile.id = profiledata.steamid;
             profile.url = profiledata.url.replace(/(^id\/)|(\/$)/g, '');
          case profiledata.url.startsWith('profiles'): // assuming no customURL if url uses profileid
             profile.name = profiledata.personaname;
