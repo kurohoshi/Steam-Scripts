@@ -4,6 +4,7 @@ let Matcher = {
    MAX_MATCH_ITER: 4,
    matchResultsList: {},
    utils: steamToolsUtils,
+   setInventories: async function(profile1, profile2) {
       function* iterateItemSets() {
          for(let type in this.data) {
             for (let rarity=0; rarity<this.data[type].length; rarity++) {
@@ -14,10 +15,60 @@ let Matcher = {
          }
       }
 
-      this.profileData1.itemsets = iterateItemSets;
-      this.profileData2.itemsets = iterateItemSets;
-   }
+      async function fetchInventory(profile) {
+         if(typeof profile === 'string') {
+            let found;
+            if(/76561\d{12}/.test(profile)) {
+               if(!(found = Profile.MasterProfileList.find(x => x.id === profile))) {
+                  console.log(`matcher.fetchInventory(): No profile found for ${profile}. Creating new profile...`);
+                  found = Profile.addNewProfile({id: profile});
+               }
+            }
+            if(!found) {
+               if(!(found = Profile.MasterProfileList.find(x => x.url === profile))) {
+                  console.log(`matcher.fetchInventory(): No profile found for ${profile}. Creating new profile...`);
+                  found = Profile.addNewProfile({url: profile});
+               }
+            }
+            if(!found) {
+               throw "matcher.fetchInventory(): Unable to create a new Profile instance!";
+            }
+            profile = found;
+         }
+         
+         if(!(profile instanceof Profile)) {
+            throw "matcher.fetchInventory(): Incorrect profile datatype!";
+         }
 
+         if(!profile.inventory || profile.inventory.last_updated<(Date.now()-this.UPDATE_PERIOD)) {
+            await profile.getProfileInventory();
+         }
+
+         let inventory = this.utils.deepClone(profile.inventory);
+         inventory.itemsets = iterateItemSets;
+         inventory.meta = {profileid: profile.id};
+         return inventory;
+      }
+
+      if(profile1 === undefined) {
+         throw "matcher.setInventories(): No profiles provided. inventories not set!";
+      } else if(profile2 === undefined) {
+         profile2 = profile1;
+         profile1 = this.utils.getMySteamId();
+      }
+
+      this.inventory1 = await fetchInventory(profile1);
+      this.inventory2 = await fetchInventory(profile2);
+
+      if(this.matchResultsList[this.inventory1.meta.id]) {
+         if(this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id]) {
+            console.warn(`matcher.setInventories(): Item Matcher for ${this.inventory1.meta.id}-${this.inventory2.meta.id} already exists!`);
+         }
+         this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id] = {};
+      } else {
+         this.matchResultsList[this.inventory1.meta.id] = { [this.inventory2.meta.id]: {} };
+      }
+   },
    match: function() {
       function fillMissingItems(target, source) {
          for(let i=0; i<source.length; i++) {
@@ -85,8 +136,7 @@ let Matcher = {
 
          this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id].results[`${itemType}_${rarity}_${appid}`] = { swap, history };
       }
-   }
-
+   },
    // Using Var(x) = E[x^2] + avg(x)^2 or Var(x) = E[(x-avg(x))^2] yields the same comparison formula for swapping, as expected
    // NOTE: this method shouldn't modify the original arrays, otherwise we're in big trouble!
    balanceVariance: function(set1, set2, matchPriority=0, helper=false) {
