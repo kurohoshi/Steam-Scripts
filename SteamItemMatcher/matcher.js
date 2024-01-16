@@ -198,5 +198,52 @@ let Matcher = {
          swap: bin1.map((x, i) => (matchPriority ? -x : x) - set1[i]),
          history
       };
+   },
+   validate: function() {
+      function roundZero(num) {
+         return num<1e-10 && num>-1e-10 ? 0.0 : num;
+      }
+
+      if(!this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id].results) {
+         console.warn(`calcStats(): No match results for ${this.inventory1.meta.id}-${this.inventory2.meta.id} to be calculated`);
+      }
+      let group1 = this.inventory1.data;
+      let group2 = this.inventory2.data;
+
+      for(let [category, set] of Object.entries(this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id].results)) {
+         let [itemType, rarity, appid] = category.split('_');
+         let set1 = group1[itemType][rarity][appid];
+         let set2 = group2[itemType][rarity][appid];
+         
+         set.avg = [
+            set1.reduce((a, b) => a + b.count, 0.0) / set1.length,
+            set2.reduce((a, b) => a + b.count, 0.0) / set2.length,
+         ];
+         set.variance = [
+            [
+               roundZero((set1.reduce((a, b) => a + (b.count ** 2), 0.0) / set1.length) - (set.avg[0] ** 2)),
+               roundZero((set1.reduce((a, b, i) => a + ((b.count+set.swap[i]) ** 2), 0.0) / set1.length) - (set.avg[0] ** 2))
+            ],
+            [
+               roundZero((set2.reduce((a, b) => a + (b.count ** 2), 0.0) / set2.length) - (set.avg[1] ** 2)),
+               roundZero((set2.reduce((a, b, i) => a + ((b.count-set.swap[i]) ** 2), 0.0) / set2.length) - (set.avg[1] ** 2))
+            ]
+         ];
+         set.stddev = [
+            [
+               Math.sqrt(set.variance[0][0]),
+               Math.sqrt(set.variance[0][1])
+            ],
+            [
+               Math.sqrt(set.variance[1][0]),
+               Math.sqrt(set.variance[1][1])
+            ]
+         ];
+
+         set.isValid = !set.reduce((a, b) => a+b, 0) && set.variance[0][0]>=set.variance[0][1] && set.variance[1][0]>=set.variance[1][1];
+         if(!set.isValid) {
+            console.warn(`validate(): Swap may not be valid! swap sum: ${set.reduce((a, b) => a+b, 0)}   var1diff: ${set.variance[0][1]-set.variance[0][0]}   var2diff: ${set.variance[1][1]-set.variance[1][0]}`);
+         }
+      }
    }
 }
