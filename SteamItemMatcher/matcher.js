@@ -1,23 +1,9 @@
-class ItemMatcher {
-   static matchResultsList = {};
-   static datasetcache = {};
-   static utils = steamToolsUtils;
-   
-   MAX_MATCH_ITER = 5;
-   profileData1;
-   profileData2;
-
-   constructor(profile1, profile2) {
-      if(!(profile1 instanceof Profile) || !(profile2 instanceof Profile)) {
-         throw "new ItemMatcher(): One or both profiles are not of class Profile. ItemMatcher instance not created";
-      }
-      this.profileData1 = Profile.utils.deepClone(profile1.inventory);
-      this.profileData2 = Profile.utils.deepClone(profile2.inventory);
-      this.profileData1.meta = { profileid: profile1.id } 
-      this.profileData1.meta = { profileid: profile1.id }
-   }
-
-   private createInventoryIterators() {
+// Multiple instances of matcher doesn't make sense, so making it a class isn't needed
+let Matcher = {
+   UPDATE_PERIOD: 24*60*60, // in seconds
+   MAX_MATCH_ITER: 4,
+   matchResultsList: {},
+   utils: steamToolsUtils,
       function* iterateItemSets() {
          for(let type in this.data) {
             for (let rarity=0; rarity<this.data[type].length; rarity++) {
@@ -32,7 +18,7 @@ class ItemMatcher {
       this.profileData2.itemsets = iterateItemSets;
    }
 
-   match() {
+   match: function() {
       function fillMissingItems(target, source) {
          for(let i=0; i<source.length; i++) {
             if(!target.some(x => x.classid === source[i].classid)) {
@@ -41,9 +27,13 @@ class ItemMatcher {
          }
       }
 
-      ItemMatcher.matchResultsList[profile1.id][profile2.id] = {};
+      this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id] = {
+         inventory1: this.inventory1,
+         inventory2: this.inventory2,
+         results: {}
+      };
 
-      for (let [set1, appid, rarity, itemType] of this.profileData1.itemsets()) {
+      for (let [set1, appid, rarity, itemType] of this.inventory1.itemsets()) {
          let set2 = this.profileData2.data[itemType][rarity][appid];               
 
          if(!set2) {
@@ -54,14 +44,14 @@ class ItemMatcher {
          fillMissingItems(set2, set1);
 
          if(set1.length !== set2.length) {
-            console.error(`calcStats(): Item type ${itemType} from app ${appid} does not have equal length of items, cannot be compared!`);
+            console.error(`match(): Item type ${itemType} from app ${appid} does not have equal length of items, cannot be compared!`);
             console.log(set1);
             console.log(set2);
             delete set1;
             delete set2;
             continue;
          } else if(set1.length === 1) {
-            console.log(`calcStats(): Item type ${itemType} from app ${appid} only has 1 item, nothing to compare. skipping...`);
+            console.log(`match(): Item type ${itemType} from app ${appid} only has 1 item, nothing to compare. skipping...`);
             delete set1;
             delete set2;
             continue;
@@ -78,7 +68,7 @@ class ItemMatcher {
             let flip = i%2;
             let swapset1 = set1.map((x, i) => x.count + swap[i]);
             let swapset2 = set2.map((x, i) => x.count - swap[i]);
-            let balanceResult = ItemMatcher.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2));
+            let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2));
             if(!balanceResult.some((x, i) => x)) {
                break;
             }
@@ -93,13 +83,13 @@ class ItemMatcher {
 
          // validate results here
 
-         ItemMatcher.matchResultsList[profile1.id][profile2.id][`${itemType}_${rarity}_${appid}`] = { swap, history };
+         this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id].results[`${itemType}_${rarity}_${appid}`] = { swap, history };
       }
    }
 
    // Using Var(x) = E[x^2] + avg(x)^2 or Var(x) = E[(x-avg(x))^2] yields the same comparison formula for swapping, as expected
    // NOTE: this method shouldn't modify the original arrays, otherwise we're in big trouble!
-   static balanceVariance(set1, set2, matchPriority=0, helper=false) {
+   balanceVariance: function(set1, set2, matchPriority=0, helper=false) {
       if(!Array.isArray(set1) || !Array.isArray(set2) || set1.some(x => typeof x !== "number") || set2.some(x => typeof x !== "number") || set1.length !== set2.length) {
          console.error("balanceVariance(): Invalid sets! Sets must be an array of numbers with the same length!");
          return;
@@ -137,13 +127,13 @@ class ItemMatcher {
                history.push([bin1[j][0], bin1[i][0]]);
                // console.log(`${i} ${j}  ${bin1vardiff} ${bin2vardiff}   ${bin1[bin2[i][0]]}   ${bin1[bin2[j][0]]}   ${bin2[i][1]}   ${bin2[j][1]}`); // debug output
 
-               // swap if current card's quantity is lower/higher than next/prev card's quantity
-               if(i<setlen-1 && bin1[i][1]>bin1[i+1][1]) {
+               // swap if current card's quantity is lower/higher or equal than next/prev card's quantity
+               if(i<setlen-1 && bin1[i][1]>=bin1[i+1][1]) {
                   let tmp   = bin1[i];
                   bin1[i]   = bin1[i+1];
                   bin1[i+1] = tmp;
                }
-               if(j>0 && bin1[j][1]<bin1[j-1][1]) {
+               if(j>0 && bin1[j][1]<=bin1[j-1][1]) {
                   let tmp   = bin1[j];
                   bin1[j]   = bin1[j-1];
                   bin1[j-1] = tmp;
