@@ -7,18 +7,30 @@ class Profile {
 
    static MAX_ITEM_COUNT = 4000;
    static ITEM_TYPE_MAP = {
-      item_class_2: "card",
-      item_class_3: "background",
-      item_class_4: "emoticon",
-      item_class_5: "booster",
-      item_class_7: "gem",
-      item_class_8: "profile_mod",
+      item_class_2:  "card",
+      item_class_3:  "background",
+      item_class_4:  "emoticon",
+      item_class_5:  "booster",
+      item_class_7:  "gem",
+      item_class_8:  "profile_mod",
       item_class_10: "sale_item",
       item_class_11: "sticker",
       item_class_12: "chat_effect",
       item_class_13: "mini_profile",
       item_class_14: "profile_frame",
-      item_class_15: "animated_avatar"
+      item_class_15: "animated_avatar",
+      card:            "item_class_2",
+      background:      "item_class_3",
+      emoticon:        "item_class_4",
+      booster:         "item_class_5",
+      gem:             "item_class_7",
+      profile_mod:     "item_class_8",
+      sale_item:       "item_class_10",
+      sticker:         "item_class_11",
+      chat_effect:     "item_class_12",
+      mini_profile:    "item_class_13",
+      profile_frame:   "item_class_14",
+      animated_avatar: "item_class_15"
    }
    static ITEM_RARITY_MAP = {
       droprate_0: 0,
