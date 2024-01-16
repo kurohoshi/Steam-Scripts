@@ -243,6 +243,24 @@ class Profile {
       };
    }
 
+   async getProfileInventory(method="trade") {
+      if(!this.id) {
+         await Profile.findMoreDataForProfile(this);
+      }
+
+      if(this.isMe() || method === "inventory") {
+         if(!this.isMe()) {
+            console.warn(`getProfileStock(): profile is not me, rate limit might be hit!`);
+         }
+
+         await this.getInventory();
+      } else if(method === "trade") {
+         await this.getTradeInventory();
+      } else {
+         console.error("getProfileStock(): invalid method of obtaining inventory!");
+      }
+   }
+
    async getInventorySize() {
       if(!this.id) {
          await Profile.findMoreDataForProfile(this);
