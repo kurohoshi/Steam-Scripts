@@ -44,7 +44,12 @@ class Profile {
       droprate_1: 1,
       droprate_2: 2,
       cardborder_0: 0,
-      cardboard_1: 1
+      cardboard_1: 1,
+      common:   0,
+      uncommon: 1,
+      rare:     2,
+      normal:   0,
+      foil:     1
    }
 
    id;
