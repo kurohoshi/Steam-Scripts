@@ -245,5 +245,20 @@ let Matcher = {
             console.warn(`validate(): Swap may not be valid! swap sum: ${set.reduce((a, b) => a+b, 0)}   var1diff: ${set.variance[0][1]-set.variance[0][0]}   var2diff: ${set.variance[1][1]-set.variance[1][0]}`);
          }
       }
+   },
+   filter: function(profileid1, profileid2, itemTypeRarity = [], appids = []) {
+      if(!this.matchResultsList[profileid1][profileid2]) {
+         console.warn(`filter(): match result for ${profileid1}-${profileid2} not found.`);
+         return undefined;
+      }
+
+      let filtered = {};
+      for(let [category, set] of Object.entries(this.matchResultsList[profileid1][profileid2].results)) {
+         if(itemTypeRarity.some(x => category.startsWith(x)) || appids.some(x => category.endsWith(x))) {
+            filtered[category] = this.utils.deepClone(set);
+         }
+      }
+
+      return filtered;
    }
 }
