@@ -132,10 +132,10 @@ let Matcher = {
             }
          }
 
-         // validate results here
-
          this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id].results[`${itemType}_${rarity}_${appid}`] = { swap, history };
       }
+
+      this.validate();
    },
    // Using Var(x) = E[x^2] + avg(x)^2 or Var(x) = E[(x-avg(x))^2] yields the same comparison formula for swapping, as expected
    // NOTE: this method shouldn't modify the original arrays, otherwise we're in big trouble!
@@ -205,10 +205,10 @@ let Matcher = {
       }
 
       if(!this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id].results) {
-         console.warn(`calcStats(): No match results for ${this.inventory1.meta.id}-${this.inventory2.meta.id} to be calculated`);
+         console.warn(`validate(): No match results for ${this.inventory1.meta.id}-${this.inventory2.meta.id} to be calculated`);
       }
-      let group1 = this.inventory1.data;
-      let group2 = this.inventory2.data;
+      let group1 = this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id].inventory1.data;
+      let group2 = this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id].inventory2.data;
 
       for(let [category, set] of Object.entries(this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id].results)) {
          let [itemType, rarity, appid] = category.split('_');
