@@ -31,7 +31,14 @@ class Profile {
       mini_profile:    "item_class_13",
       profile_frame:   "item_class_14",
       animated_avatar: "item_class_15"
-   }
+   };
+   static ITEM_TYPE_ORDER: {
+      gem: 1,
+      card: 3,
+      background: 4,
+      emoticon: 5,
+      sticker: 6
+   };
    static ITEM_RARITY_MAP = {
       droprate_0: 0,
       droprate_1: 1,
@@ -292,7 +299,7 @@ class Profile {
    }
 
    // should be reserved for own inv or low count inv
-   async getInventory(count = Number.MAX_SAFE_INTEGER) {
+   async getInventory(last_itemType = undefined, count = Number.MAX_SAFE_INTEGER) {
       if(!this.id) {
          await Profile.findMoreDataForProfile(this);
       }
@@ -306,6 +313,7 @@ class Profile {
       let data = [];
       let counter = 0;
       let resdata = {};
+      let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] || Number.MAX_SAFE_INTEGER;
 
       do {
          console.log(`getinventory(): Fetching inventory of ${this.id}, starting at ${counter}`);
@@ -384,6 +392,13 @@ class Profile {
             
             this.updateItemDescription(desc.classid, desc);
          }
+
+         // Assume inventory is always received in the same order every single time
+         let last_descript_tags = resdata.descriptions[resdata.descriptions.length-1].tags;
+         let last_type = last_descript_tags.find(x => x.category === "item_class");
+         if((Profile.ITEM_TYPE_ORDER[Profile.ITEM_TYPE_MAP[last_type.internal_name]] || -1) > last_itemType_index) {
+            break;
+         }
       } while(counter < count && resdata.more_items);
 
       this.inventory.size = resdata.total_inventory_count;
@@ -391,7 +406,7 @@ class Profile {
       this.inventory.tradable_only = false;
    }
 
-   async getTradeInventory(myProf, count = Number.MAX_SAFE_INTEGER) {
+   async getTradeInventory(myProf, last_itemType = undefined, count = Number.MAX_SAFE_INTEGER) {
       if(!this.id) {
          await Profile.findMoreDataForProfile(this);
       }
@@ -408,6 +423,8 @@ class Profile {
       let data = [];
       let counter = 0;
       let resdata = { more_start: 0 };
+      let last_descript;
+      let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] || Number.MAX_SAFE_INTEGER;
 
       let currentPathSearch = window.location.pathname + window.location.search;
       let partnerString = `?partner=${Profile.utils.getSteamProfileId3(this.id)}`;
@@ -435,7 +452,7 @@ class Profile {
          resdata = await response.json();
 
          for(let asset of Object.values(resdata.rgInventory)) {
-            let desc = resdata.rgDescriptions[`${asset.classid}_${asset.instanceid}`];
+            let desc = resdata.rgDescriptions[last_descript = `${asset.classid}_${asset.instanceid}`];
 
             let itemType = desc.tags.find(x => x.category === "item_class");
             if(!itemType) {
@@ -491,6 +508,13 @@ class Profile {
             }
 
             this.updateItemDescription(desc.classid, desc);
+         }
+
+         // Assume inventory is always received in the same order every single time
+         let last_descript_tags = resdata.rgDescriptions[last_descript].tags;
+         let last_type = last_descript_tags.find(x => x.category === "item_class");
+         if((Profile.ITEM_TYPE_ORDER[Profile.ITEM_TYPE_MAP[last_type.internal_name]] || -1) > last_itemType_index) {
+            break;
          }
       } while(counter < count && resdata.more);
 
