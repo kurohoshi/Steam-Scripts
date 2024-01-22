@@ -358,7 +358,15 @@ class Profile {
                continue;
             }
 
-            let itemList = this.inventory.data[this.ITEM_TYPE_MAP[itemType.internal_name]][this.ITEM_RARITY_MAP[rarity.internal_name]];
+            itemType = Profile.ITEM_TYPE_MAP[itemType.internal_name];
+            rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] || parseInt(rarity.internal_name.replace(/\D+/g, ''));
+            if(!this.inventory.data[itemType]) {
+               this.inventory.data[itemType] = [{}];
+            } else if(this.inventory.data[itemType].length <= rarity) {
+               this.inventory.data[itemType].push( ...Array(rarity-this.inventory.data[itemType].length+1).fill({}) );
+            }
+
+            let itemList = this.inventory.data[itemType][rarity];
             if(typeof itemList !== 'object' || Array.isArray(itemList) || itemList === null) {
                console.error(`getInventory(): No object found for item subgroup: ${itemType.internal_name} ${rarity.internal_name}`);
                continue;
@@ -475,7 +483,15 @@ class Profile {
                continue;
             }
 
-            let itemList = this.inventory.data[this.ITEM_TYPE_MAP[itemType.internal_name]][this.ITEM_RARITY_MAP[rarity.internal_name]];
+            itemType = Profile.ITEM_TYPE_MAP[itemType.internal_name];
+            rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] || parseInt(rarity.internal_name.replace(/\D+/g, ''));
+            if(!this.inventory.data[itemType]) {
+               this.inventory.data[itemType] = [{}];
+            } else if(this.inventory.data[itemType].length <= rarity) {
+               this.inventory.data[itemType].push( ...Array(rarity-this.inventory.data[itemType].length+1).fill({}) );
+            }
+
+            let itemList = this.inventory.data[itemType][rarity];
             if(typeof itemList !== 'object' || Array.isArray(itemList) || itemList === null) {
                console.error(`getInventory(): No object found for item subgroup: ${itemType.internal_name} ${rarity.internal_name}`);
                continue;
