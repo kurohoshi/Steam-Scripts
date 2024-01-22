@@ -6,6 +6,23 @@ let Matcher = {
    utils: steamToolsUtils,
    setInventories: async function(profile1, profile2) {
       function* iterateItemSets() {
+   exists: function(profile1, profile2, existanceLevel) {
+      let currentLevel;
+      if(!this.matchResultsList[profile1] || !this.matchResultsList[profile1][profile2]) {
+         console.warn(`exists(): No entry for ${profile1}-${profile2} pair!`);
+         currentLevel = 0; // no pair exists, return falsy
+      } else if(!this.matchResultsList[profile1][profile2].results) {
+         console.warn(`exists(): No match results for ${profile1}-${profile2} pair!`);
+         currentLevel = 1; // level 1 existance, match results doesn't exist for some reason
+      } else if(!this.matchResultsList[profile1][profile2].validated) {
+         console.warn(`exists(): No match validation results for ${profile1}-${profile2} pair!`);
+         currentLevel = 2; // level 2 existance, match results doesn't exist for some reason
+      } else {
+         currentLevel = 3;
+      }
+      
+      return existanceLevel < currentLevel;
+   },
          for(let type in this.data) {
             for (let rarity=0; rarity<this.data[type].length; rarity++) {
                for(let appid in this.data[type][rarity]) {
