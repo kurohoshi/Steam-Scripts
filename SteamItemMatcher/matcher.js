@@ -198,18 +198,19 @@ let Matcher = {
          history
       };
    },
-   validate: function() {
-      function roundZero(num) {
+   validate: function(profile1, profile2) {
+      let roundZero = (num) => {
          return num<1e-10 && num>-1e-10 ? 0.0 : num;
       }
 
-      if(!this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id].results) {
-         console.warn(`validate(): No match results for ${this.inventory1.meta.id}-${this.inventory2.meta.id} to be calculated`);
+      if(!this.exists(profile1, profile2, 1)) {
+         return;
       }
-      let group1 = this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id].inventory1.data;
-      let group2 = this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id].inventory2.data;
 
-      for(let [category, set] of Object.entries(this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id].results)) {
+      let group1 = this.matchResultsList[profile1][profile2].inventory1.data;
+      let group2 = this.matchResultsList[profile1][profile2].inventory2.data;
+
+      for(let [category, set] of Object.entries(this.matchResultsList[profile1][profile2].results)) {
          let [itemType, rarity, appid] = category.split('_');
          let set1 = group1[itemType][rarity][appid];
          let set2 = group2[itemType][rarity][appid];
@@ -244,11 +245,12 @@ let Matcher = {
             console.warn(`validate(): Swap may not be valid! swap sum: ${set.reduce((a, b) => a+b, 0)}   var1diff: ${set.variance[0][1]-set.variance[0][0]}   var2diff: ${set.variance[1][1]-set.variance[1][0]}`);
          }
       }
+
+      this.matchResultsList[profile1][profile2].validated = true;
    },
    filter: function(profileid1, profileid2, itemTypeRarity = [], appids = []) {
-      if(!this.matchResultsList[profileid1][profileid2]) {
-         console.warn(`filter(): match result for ${profileid1}-${profileid2} not found.`);
-         return undefined;
+      if(!this.exists(profile1, profile2, 1)) {
+         return;
       }
 
       let filtered = {};
@@ -378,11 +380,7 @@ let Matcher = {
             : { trade_offer_access_token: profile2.tradeToken };
       }
 
-      if(!this.matchResultsList[profile1][profile2]) {
-         console.error(`generateRequestPayload(): No entry for ${profile1}-${profile2} pair!`);
-         return;
-      } else if(!this.matchResultsList[profile1][profile2].results) {
-         console.warn(`generateRequestPayload(): No match results for ${profile1}-${profile2} to be used`);
+      if(!this.exists(profile1, profile2, 1)) {
          return;
       }
       if(!(await profile1.canTrade(profile2))) {
