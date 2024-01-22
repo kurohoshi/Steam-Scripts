@@ -155,6 +155,31 @@ class Profile {
       return false;
    }
 
+   static async findProfile(str) {
+      if(typeof str !== 'string') {
+         throw "findProfile(): Parameter is not a string!";
+      }
+
+      let profile;
+      if(/76561\d{12}/.test(str)) {
+         if(!(profile = Profile.MasterProfileList.find(x => x.id === str))) {
+            console.log(`findProfile(): No profile found for id ${str}. Creating new profile...`);
+            profile = await Profile.addNewProfile({id: str});
+         }
+      }
+      if(!profile) {
+         if(!(profile = Profile.MasterProfileList.find(x => x.url === str))) {
+            console.log(`findProfile(): No profile found for url ${str}. Creating new profile...`);
+            profile = await Profile.addNewProfile({url: str});
+         }
+      }
+
+      if(!profile) {
+         console.warn("findProfile(): Unable to find or create a Profile instance!");
+      }
+      return profile;
+   }
+
    static async addNewProfile(props) {
       try {
          if( !(await Profile.findMoreDataForProfile(props)) ) {
