@@ -459,10 +459,20 @@ class Profile {
          console.log(`getTradeInventory(): Fetching inventory of ${this.id}, starting at ${resdata.more_start}`);
          let response;
          if(await this.isMe()) {
-            response = await fetch(`https://steamcommunity.com/profiles/${this.id}/inventory/json/753/6/?l=${this.getLanguage()}&trading=1${resdata.more ? `&start=${resdata.more_start}` : ""}`);
+            response = await fetch("https://steamcommunity.com/profiles/" + this.id + "/inventory/json/753/6/?"
+               + "l=" + Profile.utils.getSteamLanguage()
+               + "&trading=1"
+               + (resdata.more ? `&start=${resdata.more_start}` : "")
+            );
          } else {
             window.history.replaceState(null, '', '/tradeoffer/new/' + partnerString + tokenString);
-            response = await fetch(`https://steamcommunity.com/tradeoffer/new/partnerinventory/?l=${this.getLanguage()}&sessionid=${this.getSessionId()}&partner=${this.id}&appid=753&contextid=6${resdata.more ? `&start=${resdata.more_start}` : ""}`);
+            response = await fetch("https://steamcommunity.com/tradeoffer/new/partnerinventory/?"
+               + "l=" + Profile.utils.getSteamLanguage()
+               + "&sessionid=" + this.getSessionId()
+               + "&partner=" + this.id
+               + "&appid=753&contextid=6"
+               + (resdata.more ? `&start=${resdata.more_start}` : "")
+            );
             window.history.replaceState(null, '', currentPathSearch);
          }
          if(response.status == 429) {
