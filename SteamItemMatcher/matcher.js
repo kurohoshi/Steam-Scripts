@@ -4,8 +4,6 @@ let Matcher = {
    MAX_MATCH_ITER: 4,
    matchResultsList: {},
    utils: steamToolsUtils,
-   setInventories: async function(profile1, profile2) {
-      function* iterateItemSets() {
    exists: function(profile1, profile2, existanceLevel) {
       let currentLevel;
       if(!this.matchResultsList[profile1] || !this.matchResultsList[profile1][profile2]) {
@@ -23,6 +21,8 @@ let Matcher = {
       
       return existanceLevel < currentLevel;
    },
+   getInventory: async function(profile) {
+      function* itemSetsIter() {
          for(let type in this.data) {
             for (let rarity=0; rarity<this.data[type].length; rarity++) {
                for(let appid in this.data[type][rarity]) {
@@ -32,39 +32,28 @@ let Matcher = {
          }
       }
 
-      async function fetchInventory(profile) {
-         if(typeof profile === 'string') {
-            let found;
-            if(/76561\d{12}/.test(profile)) {
-               if(!(found = Profile.MasterProfileList.find(x => x.id === profile))) {
-                  console.log(`matcher.fetchInventory(): No profile found for ${profile}. Creating new profile...`);
-                  found = Profile.addNewProfile({id: profile});
-               }
-            }
-            if(!found) {
-               if(!(found = Profile.MasterProfileList.find(x => x.url === profile))) {
-                  console.log(`matcher.fetchInventory(): No profile found for ${profile}. Creating new profile...`);
-                  found = Profile.addNewProfile({url: profile});
-               }
-            }
-            if(!found) {
-               throw "matcher.fetchInventory(): Unable to create a new Profile instance!";
-            }
-            profile = found;
-         }
-         
-         if(!(profile instanceof Profile)) {
-            throw "matcher.fetchInventory(): Incorrect profile datatype!";
-         }
+      let found = await Profile.findProfile(profile);
+      
+      if(!found) {
+         throw `matcher.getInventory(): Profile ${profile} is invalid!`;
+      }
 
-         if(!profile.inventory || profile.inventory.last_updated<(Date.now()-this.UPDATE_PERIOD)) {
-            await profile.getProfileInventory();
-         }
+      if(!found.inventory || found.inventory.last_updated<(Date.now()-this.UPDATE_PERIOD)) {
+         await found.getProfileInventory();
+      }
 
-         let inventory = this.utils.deepClone(profile.inventory);
-         inventory.itemsets = iterateItemSets;
-         inventory.meta = {profileid: profile.id};
-         return inventory;
+      let inventory = this.utils.deepClone(found.inventory);
+      inventory.itemsets = itemSetsIter;
+      inventory.meta = {profileid: found.id};
+      return inventory;
+   },
+   match: async function(profile1, profile2) {
+      let fillMissingItems = (target, source) => {
+         for(let i=0; i<source.length; i++) {
+            if(!target.some(x => x.classid === source[i].classid)) {
+               target.push({ classid: source[i].classid, tradables: [], count: 0 });
+            }
+         }
       }
 
       if(profile1 === undefined) {
@@ -74,35 +63,27 @@ let Matcher = {
          profile1 = this.utils.getMySteamId();
       }
 
-      this.inventory1 = await fetchInventory(profile1);
-      this.inventory2 = await fetchInventory(profile2);
+      // throw a fit if these fail
+      let inventory1 = await this.getInventory(profile1);
+      let inventory2 = await this.getInventory(profile2);
 
-      if(this.matchResultsList[this.inventory1.meta.id]) {
-         if(this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id]) {
-            console.warn(`matcher.setInventories(): Item Matcher for ${this.inventory1.meta.id}-${this.inventory2.meta.id} already exists!`);
+      if(this.matchResultsList[inventory1.meta.profileid]) {
+         if(this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid]) {
+            console.warn(`matcher.setInventories(): Item Matcher for ${inventory1.meta.profileid}-${inventory2.meta.profileid} already exists!`);
          }
-         this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id] = {};
+         this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid] = {};
       } else {
-         this.matchResultsList[this.inventory1.meta.id] = { [this.inventory2.meta.id]: {} };
-      }
-   },
-   match: function() {
-      function fillMissingItems(target, source) {
-         for(let i=0; i<source.length; i++) {
-            if(!target.some(x => x.classid === source[i].classid)) {
-               target.push({ classid: source[i].classid, tradables: [], count: 0 });
-            }
-         }
+         this.matchResultsList[inventory1.meta.profileid] = { [inventory2.meta.profileid]: {} };
       }
 
-      this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id] = {
-         inventory1: this.inventory1,
-         inventory2: this.inventory2,
+      this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid] = {
+         inventory1: inventory1,
+         inventory2: inventory2,
          results: {}
       };
 
-      for (let [set1, appid, rarity, itemType] of this.inventory1.itemsets()) {
-         let set2 = this.profileData2.data[itemType][rarity][appid];               
+      for (let [set1, appid, rarity, itemType] of inventory1.itemsets()) {
+         let set2 = inventory2.data[itemType][rarity][appid];               
 
          if(!set2) {
             continue;
@@ -112,6 +93,7 @@ let Matcher = {
          fillMissingItems(set2, set1);
 
          if(set1.length !== set2.length) {
+            // This shouldn't happen. If it does then it needs to be fixed
             console.error(`match(): Item type ${itemType} from app ${appid} does not have equal length of items, cannot be compared!`);
             console.log(set1);
             console.log(set2);
@@ -149,7 +131,7 @@ let Matcher = {
             }
          }
 
-         this.matchResultsList[this.inventory1.meta.id][this.inventory2.meta.id].results[`${itemType}_${rarity}_${appid}`] = { swap, history };
+         this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid].results[`${itemType}_${rarity}_${appid}`] = { swap, history };
       }
 
       this.validate();
