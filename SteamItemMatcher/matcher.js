@@ -260,5 +260,151 @@ let Matcher = {
       }
 
       return filtered;
-   }
+   },
+   generateRequestPayload: async function(profile1, profile2, message="", reverse=true) {
+      // https://steamcommunity.com/tradeoffer/new/?partner=[STEAM3_ID]&forum_owner=[forum_owner]&forum_topic=[gidtopic]
+      // steamid_owner = "10358279"+(forum_owner+1429521408)
+      
+      // POST https://steamcommunity.com/tradeoffer/new/send
+      // Request payload
+      // let reqPayload = {
+      //    sessionid: "[SESSION_ID]",
+      //    serverid: "1",
+      //    partner: "[PROFILE_ID]",
+      //    tradeoffermessage: "[MESSAGE_STRING]"
+      //    json_tradeoffer: {
+      //       newversion: true,
+      //       version: [ARBITRARY_NUMBER],
+      //       me: {
+      //          assets: [{ appid: [INV_APPID], contextid: "[INV_CONTEXTID]"", amount: [AMOUNT], assetid: "[ASSET_ID]" }],
+      //          currency: [],
+      //          ready: false
+      //       },
+      //       them: {
+      //          assets: [{ appid: [INV_APPID], contextid: "[INV_CONTEXTID]"", amount: [AMOUNT], assetid: "[ASSET_ID]" }],
+      //          currency: [],
+      //          ready: false
+      //       }
+      //    },
+      //    captcha: "",
+      //    trade_offer_create_params: {"trade_offer_access_token":"[TRADE_TOKEN]"} // using trade link url
+      //    trade_offer_create_params: {} // empty when trading as friends
+      //    trade_offer_create_params: {
+      //       trading_topic: { // using game's trade forum trade link
+      //          steamid_owner:"[steamid_owner]",
+      //          forumtype:"Trading",
+      //          gidfeature:-1,  
+      //          gidtopic:"[gidtopic]"
+      //       }
+      //    }
+      // }
+      let generateTradeOfferContents = (profile1, profile2, reverse=true) => {
+         let getAssets = (appid, contextid, item, amount, reverse=true) => {
+            let itemList = [];
+            let amt = 0;
+            let assetIndex= reverse ? item.tradables.length-1 : 0;
+            while(amt<amount) {
+               if(assetIndex<0 || assetIndex>=item.tradables.length) {
+                  console.warn(`generateTradeOfferContents(): Not enough tradable assets for class ${item.classid} of app ${appid}!`);
+                  return undefined;
+               }
+
+               let amountToAdd = item.tradables[assetIndex].count<(amount-amt) ? item.tradables[assetIndex].count : amount-amt;
+               // might need to stringify a couple of values for consistency
+               itemList.push({ appid: appid, contextid: contextid, amount: amountToAdd, assetid: item.tradables[assetIndex].assetid });
+
+               amt += amountToAdd;
+               assetIndex += reverse ? -1 : 1;
+            }
+
+            return itemList;
+         }
+
+         let itemContents = { me: [], them: [] };
+         let inv1 = this.matchResultsList[profile1][profile2].inventory1;
+         let inv2 = this.matchResultsList[profile1][profile2].inventory2;
+
+         for(let [category, set] in Object.entries(this.matchResultsList[profile1][profile2].results)) {
+            let [itemType, rarity, appid] = category.split('_');
+            let swapAssets = { me: [], them: [] };
+            let invalid = false;
+
+            for(let swapIndex=0; swapIndex<set.swap.length; swapIndex++) {
+               let swapTotal = set.swap[swapIndex];
+               let assets, side;
+               if(swapTotal < 0) {
+                  if( !(assets = getAssets(753, 6, inv1[itemType][rarity][appid][swapIndex], -swapTotal)) ) { // hardcoded for now, should be changed to make more flexible
+                     invalid = true;
+                     break;
+                  }
+                  side = "me";
+               } else if(swapTotal > 0) {
+                  if( !(assets = getAssets(753, 6, inv2[itemType][rarity][appid][swapIndex], swapTotal)) ) { // hardcoded for now, should be changed to make more flexible
+                     invalid = true;
+                     break;
+                  }
+                  side = "them";
+               }
+
+               swapAssets[side].push(...assets);
+            }
+
+            if(!invalid) {
+               itemContents.me.push(...swapAssets.me);
+               itemContents.them.push(...swapAssets.them);
+            }
+         }
+
+         return {
+            newversion: true,
+            version: itemContents.me.length + itemContents.them.length + 1,
+            me: {
+               assets: itemContents.me,
+               currecy: [],
+               ready: false
+            },
+            them: {
+               assets: itemContents.them,
+               currecy: [],
+               ready: false
+            }
+         }
+      }
+
+      // figure out a good way to include game trade post params as a way to send trade offers
+      let generateTradeOfferCreateParams = async (profile1, profile2) => {
+         // preliminary checks means profile2 is either friend or has trade token
+         return (await profile1.isFriend(profileid2))
+            ? {}
+            : { trade_offer_access_token: profile2.tradeToken };
+      }
+
+      if(!this.matchResultsList[profile1][profile2]) {
+         console.error(`generateRequestPayload(): No entry for ${profile1}-${profile2} pair!`);
+         return;
+      } else if(!this.matchResultsList[profile1][profile2].results) {
+         console.warn(`generateRequestPayload(): No match results for ${profile1}-${profile2} to be used`);
+         return;
+      }
+      if(!(await profile1.canTrade(profile2))) {
+         console.error("generateRequestPayload(): profile2 is not a friend of profile1, or profile2 does not have a trade token. Aborting!");
+         return;
+      }
+
+      let tradeOfferContents = generateTradeOfferContents(profile1, profile2, reverse);
+      if(tradeOfferContents.version === 1) {
+         console.warn("generateRequestPayload(): contents are empty; no items will be traded; payload will not be generated!");
+      }
+
+      this.matchResultsList[profile1][profile2].payload = {
+         sessionid: this.utils.getSessionId(),
+         serverid: 1,
+         partner: profile2,
+         tradeoffermessage: String(message),
+         json_tradeoffer: tradeOfferContents,
+         captcha: "",
+         trade_offer_create_params: (await generateTradeOfferCreateParams())
+      }
+   },
+}
 }
