@@ -31,14 +31,14 @@ class Profile {
       mini_profile:    "item_class_13",
       profile_frame:   "item_class_14",
       animated_avatar: "item_class_15"
-   };
-   static ITEM_TYPE_ORDER: {
+   }
+   static ITEM_TYPE_ORDER = {
       gem: 1,
       card: 3,
       background: 4,
       emoticon: 5,
       sticker: 6
-   };
+   }
    static ITEM_RARITY_MAP = {
       droprate_0: 0,
       droprate_1: 1,
@@ -59,7 +59,7 @@ class Profile {
    state;
    tradeToken;
 
-   friends = [];
+   friends;
 
    inventory;
    badgepages = {};
@@ -80,10 +80,10 @@ class Profile {
    }
 
    async getTradeFriends() {
-      function addToList(props, prop) {
+      let addToList = async (props, prop) => {
          let foundMaster = Profile.MasterProfileList.find(x => x[prop] === props[prop]);
          if(!foundMaster) {
-            let newProf = Profile.addNewProfile(props);
+            let newProf = await Profile.addNewProfile(props);
             if(newProf !== undefined) {
                this.friends.push(newProf);
             }
@@ -114,10 +114,10 @@ class Profile {
          let profileString = profile.querySelector('a').href.replace(/https:\/\/steamcommunity\.com\//g, '');
          if(profileString.startsWith('profiles')) {
             newProps.id = profileString.replace(/^profiles\//g, '');
-            addToList(newProps, "id");
+            await addToList(newProps, "id");
          } else if(profileString.startsWith('id')) {
             newProps.url = profileString.replace(/^id\//g, '');
-            addToList(newProps, "url");
+            await addToList(newProps, "url");
          } else {
             console.warn(`getTradeFriends(): ${profileString} is neither id or custom URL, investigate!`);
          }
@@ -138,7 +138,11 @@ class Profile {
       if(this.friends.some(x => x.id === profile.id || x.url === profile.url)) {
          return true;
       }
-      await Profile.findMoreDataForProfile(profile);
+      if( !(profile.id || profile.url) ) {
+         await Profile.findMoreDataForProfile(profile);
+      } else {
+         return false;
+      }
       if(this.friends.some(x => x.id === profile.id || x.url === profile.url)) {
          return true;
       }
@@ -146,13 +150,11 @@ class Profile {
       return false;
    }
 
-   static addNewProfile(props) {
+   static async addNewProfile(props) {
       try {
-         let data = await Profile.findMoreDataForProfile(props);
-         if(!data) {
+         if( !(await Profile.findMoreDataForProfile(props)) ) {
             throw "addNewProfile(): invalid profile";
          }
-         Object.assign(props, data);
          Profile.MasterProfileList.push(new Profile(props));
          
          return Profile.MasterProfileList[Profile.MasterProfileList.length-1];
@@ -175,13 +177,13 @@ class Profile {
       let profilePage = doc.querySelector('#responsive_page_template_content > script:nth-child(1)');
       if(!profilePage) {
          console.error("findMoreDataForProfile(): invalid URL");
-         return undefined;
+         return false;
       }
       
       let profiledata = profilePage.textContent.match(/(?<=g_rgProfileData = ){.+}(?=;\n)/g);
       if(!profiledata) {
          console.error("findMoreDataForProfile(): profile data object not found!");
-         return undefined;
+         return false;
       }
 
       profiledata = JSON.parse( profiledata[0].replace(/,"summary":.+(?=}$)/g, '') );
@@ -205,13 +207,15 @@ class Profile {
          ? 2 : profiledata.classList.contains("online")
          ? 1 : profiledata.classList.contains("offline")
          ? 0 : null;
+
+      return true;
    }
 
    async canTrade(partner) {
       return (await this.isFriend(partner) || partner.tradeToken !== undefined);
    }
 
-   static addTradeURL(url) {
+   static async addTradeURL(url) {
       url = url.trim();
       if(!/(?<=^https:\/\/steamcommunity\.com\/tradeoffer\/new\/\?)partner=\d+&token=.{8}$/.test(url)) {
          console.error("addTradeURL(): invalid trade URL, trade token not added");
@@ -219,12 +223,12 @@ class Profile {
       }
 
       let parsedData = url.match(/partner=\d+|token=.+$/g);
-      let id = Profile.utils.getSteamProfileId64(parseddata[0].replace(/partner=/g, ''));
+      let id = Profile.utils.getSteamProfileId64(parsedData[0].replace(/partner=/g, ''));
       let token = parsedData[1].replace(/token=/g, '');
 
       let profile = Profile.MasterProfileList.find(x => x.id === id);
       if(!profile) {
-         Profile.addNewProfile({id: id, tradeToken: token});
+         await Profile.addNewProfile({id: id, tradeToken: token});
       } else {
          profile.tradeToken = token;
       }
@@ -260,6 +264,7 @@ class Profile {
     */
    resetInventory() {
       // itemType(obj) -> rarity(arr) -> app(obj) -> classitem(arr) -> assets(arr)
+      // The bare minimum structure for inventory
       this.inventory = {
          data: {
             gem:        [{}],
@@ -324,7 +329,7 @@ class Profile {
          console.log(`getinventory(): Fetching inventory of ${this.id}, starting at ${counter}`);
          let response = await fetch("https://steamcommunity.com/inventory/" + this.id + "/753/6?"
             + "l=" + Profile.utils.getSteamLanguage()
-            + "&count=" + ( (count-counter < this.MAX_ITEM_COUNT) ? count-counter : this.MAX_ITEM_COUNT )
+            + "&count=" + ( (count-counter < Profile.MAX_ITEM_COUNT) ? count-counter : Profile.MAX_ITEM_COUNT )
             + (resdata.last_assetid ? `&start_assetid=${resdata.last_assetid}` : "")
          );
          if(response.status == 429) {
