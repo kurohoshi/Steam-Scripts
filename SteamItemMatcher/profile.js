@@ -92,6 +92,11 @@ class Profile {
          }
       }
 
+      if(!(await this.isMe())) {
+         console.warn("getTradeFriends(): This is not user's profile! Try using getFriends() instead");
+         return;
+      }
+
       console.log("Updating friends list...");
 
       console.log("getTradeFriends(): Fetching friends list");
