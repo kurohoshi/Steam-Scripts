@@ -138,55 +138,73 @@ let Matcher = {
    },
    // Using Var(x) = E[x^2] + avg(x)^2 or Var(x) = E[(x-avg(x))^2] yields the same comparison formula for swapping, as expected
    // NOTE: this method shouldn't modify the original arrays, otherwise we're in big trouble!
-   balanceVariance: function(set1, set2, matchPriority=0, helper=false) {
+   balanceVariance: function(set1, set2, helper=false) {
+      function binSwap(bin, index, higher=true) {
+         let neighbor = index + (higher ? 1 : -1);
+         let needsSwap = higher
+            ? index<bin.length-1 && bin[index][1]>=bin[neighbor][1]
+            : index>0 && bin[index][1]<bin[neighbor][1];
+         
+         if(needsSwap) {
+            let tmp       = bin[index];
+            bin[index]    = bin[neighbor];
+            bin[neighbor] = tmp;
+         }
+      }
+
       if(!Array.isArray(set1) || !Array.isArray(set2) || set1.some(x => typeof x !== "number") || set2.some(x => typeof x !== "number") || set1.length !== set2.length) {
          console.error("balanceVariance(): Invalid sets! Sets must be an array of numbers with the same length!");
          return;
       }
 
-      let bin1 = set1.map((x, i) => [i, matchPriority ? -x : x]).sort((a, b) => a[1]-b[1]);
-      let bin2 = set2.map(x => matchPriority ? -x : x);
+      let bin1 = set1.map((x, i) => [i, x]).sort((a, b) => a[1]-b[1]);
+      let bin2 = set2.map((x, i) => [i, x]).sort((a, b) => a[1]-b[1]);
       let setlen = set1.length;
+      let binIndices = Array(setlen).fill(Array(2)); // LUT for bin indices
       let history = [];
 
+      for(let i=0; i<binIndices.length; i++) {
+         binIndices[bin1[i][0]][0] = i;
+         binIndices[bin2[i][0]][1] = i;
+      }
+
+      // find lowest dupe gains first for both sides
       for(let i=0; i<setlen; i++) {
+         let bin2_i = binIndices[bin1[i][0]][1];
+
          for(let j=0; j<setlen; ) {
-            if(i===j) { // don't match same item
+            if(bin1[i][0]===bin2[j][0]) { // don't match same item
                j++;
                continue;
             }
 
+            let bin1_j = binIndices[bin2[j][0]][0];
+            
             // compare variance change before and after swap for both parties
             // [<0] good swap (variance will decrease)
             // [=0] neutral swap (variance stays the same)
             // [>0] bad swap (variance will increase)
 
             // simplified from (x1+1)**2+(x2-1)**2 ?? x1**2 + x2**2  -->  x1-x2+1 ?? 0
-            let bin1vardiff =        bin1[i][1]       -bin1[j][1] +1;
+            let bin1vardiff =       bin1[i][1] -bin1[bin1_j][1] +1;
             // simplified from (x1-1)**2+(x2+1)**2 ?? x1**2 + x2**2  --> -x1+x2+1 ?? 0
-            let bin2vardiff = -bin2[bin1[i][0]] +bin2[bin1[j][0]] +1;
+            let bin2vardiff = -bin2[bin2_i][1]      +bin2[j][1] +1;
 
             // console.log(`${bin1vardiff} ${bin2vardiff}`);
             // accept the swap if variances for either parties is lowered, but not if both variances doesn't change, otherwise continue to next card to be compared
             if (((helper || bin1vardiff <= 0) && bin2vardiff <= 0) && !(bin1vardiff === 0 && bin2vardiff === 0)) {
                bin1[i][1]++;
-               bin1[j][1]--;
-               bin2[bin1[i][0]]--;
-               bin2[bin1[j][0]]++;
-               history.push([bin1[j][0], bin1[i][0]]);
+               bin1[bin1_j][1]--;
+               bin2[bin2_i][1]--;
+               bin2[j][1]++;
+               history.push([bin2[j][0], bin1[i][0]]);
                // console.log(`${i} ${j}  ${bin1vardiff} ${bin2vardiff}   ${bin1[bin2[i][0]]}   ${bin1[bin2[j][0]]}   ${bin2[i][1]}   ${bin2[j][1]}`); // debug output
 
                // swap if current card's quantity is lower/higher or equal than next/prev card's quantity
-               if(i<setlen-1 && bin1[i][1]>=bin1[i+1][1]) {
-                  let tmp   = bin1[i];
-                  bin1[i]   = bin1[i+1];
-                  bin1[i+1] = tmp;
-               }
-               if(j>0 && bin1[j][1]<=bin1[j-1][1]) {
-                  let tmp   = bin1[j];
-                  bin1[j]   = bin1[j-1];
-                  bin1[j-1] = tmp;
-               }
+               binSwap(bin1, i, true);
+               binSwap(bin1, bin1_j, false);
+               binSwap(bin2, j, true);
+               binSwap(bin2, bin2_i, false);
             } else {
                j++;
             }
@@ -194,7 +212,7 @@ let Matcher = {
       }
 
       return {
-         swap: bin1.map((x, i) => (matchPriority ? -x : x) - set1[i]),
+         swap: bin1.sort((a, b) => a[0]-b[0]).map((x, i) => x[1] - set1[i]),
          history
       };
    },
