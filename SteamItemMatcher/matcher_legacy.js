@@ -1185,6 +1185,7 @@ class SteamVarMatcher {
       let input = window.prompt(`Please review trade offer contents in console.\nSend trade offer to ${this.profileid2}? (y/n)`);
       if(input === null || input.toLowerCase() != 'y') {
          console.log("sendTradeOffer(): Trade offer will not be sent, exiting...");
+         return;
       }
 
       console.log("Sending trade offer...");
