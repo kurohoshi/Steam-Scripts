@@ -190,12 +190,15 @@ class Profile {
          return Profile.MasterProfileList[Profile.MasterProfileList.length-1];
       } catch(e) {
          console.error(e);
-      } finally {
          return undefined;
       }
    }
 
    static async findMoreDataForProfile(profile) {
+      if(!profile.id && !profile.url) {
+         console.error("findMoreDataForProfile(): Needs an id or url!");
+         return false;
+      }
       let urlID = profile.id || profile.url;
       console.log(`findMoreDataForProfile(): Fetching profile page of ${urlID}`);
       let response = await fetch(`https://steamcommunity.com/${profile.id !== undefined ? 'profiles' : 'id'}/${urlID}/`);
@@ -308,19 +311,19 @@ class Profile {
       };
    }
 
-   async getProfileInventory(method="trade") {
+   async getProfileInventory(method="trade", refProfile) {
       if(!this.id) {
          await Profile.findMoreDataForProfile(this);
       }
 
-      if(this.isMe() || method === "inventory") {
-         if(!this.isMe()) {
+      if((await this.isMe()) || method === "inventory") {
+         if(!(await this.isMe())) {
             console.warn(`getProfileStock(): profile is not me, rate limit might be hit!`);
          }
 
          await this.getInventory();
       } else if(method === "trade") {
-         await this.getTradeInventory();
+         await this.getTradeInventory(refProfile);
       } else {
          console.error("getProfileStock(): invalid method of obtaining inventory!");
       }
@@ -348,12 +351,12 @@ class Profile {
          console.warn("getInventory(): Inventory fetch is not user, careful of rate limits!");
       }
 
-      this.resetInventory();
-
       let data = [];
       let counter = 0;
       let resdata = {};
       let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] || Number.MAX_SAFE_INTEGER;
+
+      this.resetInventory();
 
       do {
          console.log(`getinventory(): Fetching inventory of ${this.id}, starting at ${counter}`);
@@ -461,12 +464,15 @@ class Profile {
 
       if(await this.isMe()) {
          console.warn("getTradeInventory(): Inventory fetch is user, getInventory() is recommended instead");
+      } else if(typeof myProf === "string") {
+         if(!(myProf = await Profile.findProfile(myProf))) {
+            console.error("getTradeInventory(): Invalid profile string! Aborting...");
+            return;
+         }
       } else if(!(myProf instanceof Profile)) {
          console.error("getTradeInventory(): Inventory fetch is not user, but own profile was not provided! Aborting...");
          return;
       }
-
-      this.resetInventory();
 
       let data = [];
       let counter = 0;
@@ -476,8 +482,10 @@ class Profile {
 
       let currentPathSearch = window.location.pathname + window.location.search;
       let partnerString = `?partner=${Profile.utils.getSteamProfileId3(this.id)}`;
-      let tokenString = (await this.isMe()) ? undefined : myProf.tradeURLs.find(x => x.id === this.id);
-      tokenString = !tokenString || (await myProf.isFriend(this.id)) ? '' : `&token=${tokenString.token}`;
+      let tokenString = (await this.isMe()) ? undefined : this.tradeToken;
+      tokenString = !tokenString || (await myProf.isFriend(this.id)) ? '' : `&token=${tokenString}`;
+
+      this.resetInventory();
 
       // NOTE: Only shows tradable items, make sure user knows
       do {
@@ -493,10 +501,10 @@ class Profile {
             window.history.replaceState(null, '', '/tradeoffer/new/' + partnerString + tokenString);
             response = await fetch("https://steamcommunity.com/tradeoffer/new/partnerinventory/?"
                + "l=" + Profile.utils.getSteamLanguage()
-               + "&sessionid=" + this.getSessionId()
+               + "&sessionid=" + Profile.utils.getSessionId()
                + "&partner=" + this.id
                + "&appid=753&contextid=6"
-               + (resdata.more ? `&start=${resdata.more_start}` : "")
+               + (resdata.more ? `&start=${resdata.more_start}` : '')
             );
             window.history.replaceState(null, '', currentPathSearch);
          }
@@ -506,7 +514,7 @@ class Profile {
             throw "Steam Inventory Fetch: Missing Parameters, or Steam is complaining about nothing.";
          }
 
-         await Profile.utils.sleep((await this.isMe()) ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2);
+         await Profile.utils.sleep(Profile.utils.INV_FETCH_DELAY1);
          resdata = await response.json();
 
          for(let asset of Object.values(resdata.rgInventory)) {
