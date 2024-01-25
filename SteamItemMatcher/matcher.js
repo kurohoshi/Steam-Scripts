@@ -21,7 +21,7 @@ let Matcher = {
       
       return existanceLevel < currentLevel;
    },
-   getInventory: async function(profile) {
+   getInventory: async function(profile, ref) {
       function* itemSetsIter() {
          for(let type in this.data) {
             for (let rarity=0; rarity<this.data[type].length; rarity++) {
@@ -39,7 +39,10 @@ let Matcher = {
       }
 
       if(!found.inventory || found.inventory.last_updated<(Date.now()-this.UPDATE_PERIOD)) {
-         await found.getProfileInventory();
+         await found.getProfileInventory("trade", ref);
+         if(!found.inventory) {
+            throw `matcher.getInventory(): Getting inventory for ${profile} failed!`;
+         }
       }
 
       let inventory = this.utils.deepClone(found.inventory);
@@ -63,9 +66,17 @@ let Matcher = {
          profile1 = this.utils.getMySteamId();
       }
 
-      // throw a fit if these fail
-      let inventory1 = await this.getInventory(profile1);
-      let inventory2 = await this.getInventory(profile2);
+      let inventory1;
+      let inventory2;
+
+      try {
+         inventory1 = await this.getInventory(profile1);
+         inventory2 = await this.getInventory(profile2, profile1);
+      } catch(e) {
+         console.error(e);
+         return;
+      }
+      
 
       if(this.matchResultsList[inventory1.meta.profileid]) {
          if(this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid]) {
@@ -409,6 +420,8 @@ let Matcher = {
       let tradeOfferContents = generateTradeOfferContents(profile1, profile2, reverse);
       if(tradeOfferContents.version === 1) {
          console.warn("generateRequestPayload(): contents are empty; no items will be traded; payload will not be generated!");
+         this.matchResultsList[profile1][profile2].payload = null;
+         return;
       }
 
       this.matchResultsList[profile1][profile2].payload = {
