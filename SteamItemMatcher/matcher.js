@@ -21,6 +21,36 @@ let Matcher = {
       
       return existanceLevel < currentLevel;
    },
+   setBadgeList: async function(list) {
+      if(!list) {
+         let myProf = await Profile.findProfile(this.getMySteamId());
+         this.badgeList = await myProf.getApplistFromBadgepage();
+      } else {
+         if(typeof list !== "object"  || Array.isArray(list) || list === null) {
+            console.warn("setBadgeList(): Invalid list provided, list not set!");
+            return;
+         } else if(!list.normal && !list.foil) {
+            console.warn("setBadgeList(): Missing list properties, list not set!");
+            return;
+         }
+
+         this.badgeList = { normal: [], foil: [] };
+         if(list.normal) {
+            if(Array.isArray(list.normal)) {
+               this.badgeList.normal = this.utils.deepClone(list.normal);
+            } else {
+               console.warn("setBadgeList(): List normal property is not an array, skipping!");
+            }
+         }
+         if(list.foil) {
+            if(Array.isArray(list.foil)) {
+               this.badgeList.foil = this.utils.deepClone(list.foil);
+            } else {
+               console.warn("setBadgeList(): List foil property is not an array, skipping!");
+            }
+         }
+      }
+   },
    getInventory: async function(profile, ref) {
       function* itemSetsIter() {
          for(let type in this.data) {
@@ -51,6 +81,24 @@ let Matcher = {
       return inventory;
    },
    match: async function(profile1, profile2) {
+   getBadgeCards(profile, list) {
+      if(!list) {
+         throw "getBadgeCards(): List not provided!"
+      }
+
+      let found = await Profile.findProfile(profile);
+      if(!found) {
+         throw `getBadgeCards(): Profile ${profile} is invalid!`;
+      } 
+
+      await found.getBadgepageStockAll(list.normal);
+      await found.getBadgepageStockAll(list.foil, true);
+
+      return{
+         data: this.utils.deepClone(found.badgepages),
+         meta: { profileid: found.id }
+      } 
+   },
       let fillMissingItems = (target, source) => {
          for(let i=0; i<source.length; i++) {
             if(!target.some(x => x.classid === source[i].classid)) {
@@ -146,6 +194,95 @@ let Matcher = {
       }
 
       this.validate();
+   },
+   matchBadge: async function(profile1, profile2, list=this.badgeList) {
+      if(profile1 === undefined) {
+         throw "matchBadge(): No profiles provided. inventories not set!";
+      } else if(profile2 === undefined) {
+         profile2 = profile1;
+         profile1 = this.utils.getMySteamId();
+      }
+
+      let list1;
+      let list2;
+      let results = [ {}, {} ];
+
+      try {
+         if(!list) {
+            await this.setBadgeList();
+            list = this.badgeList;
+         }
+
+         list1 = await this.getBadgeCards(profile1, list);
+         list2 = await this.getBadgeCards(profile2, list);
+      } catch(e) {
+         console.error(e);
+         return;
+      }
+
+      if(this.matchResultsList[list1.meta.profileid]) {
+         if(this.matchResultsList[list1.meta.profileid][list2.meta.profileid]) {
+            console.warn(`matchBadge(): Item Matcher for ${list1.meta.profileid}-${list2.meta.profileid} already existed!`);
+         }
+         this.matchResultsList[list1.meta.profileid][list2.meta.profileid] = {};
+      } else {
+         this.matchResultsList[list1.meta.profileid] = { [list2.meta.profileid]: {} };
+      }
+
+      this.matchResultsList[list1.meta.profileid][list2.meta.profileid] = {
+         inventory1: list1,
+         inventory2: list2,
+         results: {}
+      };
+
+      for(let rarity of list1.data) {
+         for(let appid in list1.data[rarity]) {
+            let set1 = list1.data[rarity][appid].data.sort((a, b) => a.index - b.index).map(x => x.count);
+            
+            if(!list2.data[rarity]) {
+               break;
+            } else if(!list2.data[rarity][appid]) {
+               continue;
+            }
+
+            let set2 = list2.data[rarity][appid].data.sort((a, b) => a.index - b.index).map(x => x.count);
+            if(set1.length !== set2.length) {
+               console.warn(`matchBadge(): Sets for appid ${appid} for profiles ${list1.meta.profileid} and ${list2.meta.profileid} are not same length, skipping...`);
+               continue;
+            } else if(!set1.some(x => x) || !set2.some(x => x)) {
+               console.log("matchBadge(): No cards to swap for at least 1 profile, skipping...");
+               continue;
+            }
+
+            let swap = Array(set1.length).fill(0);
+            let history = [];
+
+            set1.sort((a, b) => a.index - b.index);
+            set2.sort((a, b) => a.index - b.index);
+
+            for (let i = 0; i<this.MAX_MATCH_ITER; i++) {
+               let flip = i%2;
+               let swapset1 = set1.map((x, i) => x.count + swap[i]);
+               let swapset2 = set2.map((x, i) => x.count - swap[i]);
+               let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2));
+               if(!balanceResult.swap.some((x, i) => x)) {
+                  break;
+               }
+   
+               for(let x=0; x<swap.length; x++) {
+                  swap[x] += (flip ? -balanceResult.swap[x] : balanceResult.swap[x]);
+               }
+               for(let y=0; y<balanceResult.history.length; y++) {
+                  history.push([balanceResult.history[y][flip], balanceResult.history[y][1-flip]]);
+               }
+            }
+
+            this.matchResultsList[list1.meta.profileid][list2.meta.profileid].results[`card_${rarity}_${appid}`] = { swap, history };
+         }
+      }
+
+      this.matchResultsList[list1.meta.profileid][list2.meta.profileid].tradable = false;
+      this.validate(list1.meta.profileid, list2.meta.profileid);
    },
    // Using Var(x) = E[x^2] + avg(x)^2 or Var(x) = E[(x-avg(x))^2] yields the same comparison formula for swapping, as expected
    // NOTE: this method shouldn't modify the original arrays, otherwise we're in big trouble!
