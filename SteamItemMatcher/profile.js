@@ -500,10 +500,10 @@ class Profile {
          } else {
             window.history.replaceState(null, '', '/tradeoffer/new/' + partnerString + tokenString);
             response = await fetch("https://steamcommunity.com/tradeoffer/new/partnerinventory/?"
-               + "l=" + Profile.utils.getSteamLanguage()
-               + "&sessionid=" + Profile.utils.getSessionId()
+               + "sessionid=" + Profile.utils.getSessionId()
                + "&partner=" + this.id
                + "&appid=753&contextid=6"
+               + "&l=" + Profile.utils.getSteamLanguage()
                + (resdata.more ? `&start=${resdata.more_start}` : '')
             );
             window.history.replaceState(null, '', currentPathSearch);
