@@ -62,7 +62,7 @@ class Profile {
    friends;
 
    inventory;
-   badgepages = {};
+   badgepages = [{}, {}];
 
    constructor(props) {
       if( !props.id && !props.url ) {
@@ -609,23 +609,28 @@ class Profile {
       let parser = new DOMParser();
       let doc = parser.parseFromString(await response.text(), "text/html");
    
-      this.badgepages[appid] = {};
-      this.badgepages[appid].data = [...doc.querySelectorAll(".badge_card_set_card")].map(x => {
+      let rarity = foil ? 1 : 0;
+      let newData = {}
+      newData.data = [...doc.querySelectorAll(".badge_card_set_card")].map(x => {
          let count = x.children[1].childNodes.length === 5 ? parseInt(x.children[1].childNodes[1].textContent.replace(/[()]/g, '')) : 0;
-         let seriesNum = parseInt( x.children[2].textContent.trim().replace(/ of \d+, Series 1$/g, '') );
+         let orderIndex = parseInt( x.children[2].textContent.trim().replace(/ of \d+, Series 1$/g, '') ) - 1;
          if( !Profile.BadgepageData[appid] ) {
-            Profile.BadgepageData[appid] = {
+            Profile.BadgepageData[appid] = [];
+         }
+         if( !Profile.BadgepageData[appid][orderIndex] ) {
+            Profile.BadgepageData[appid][orderIndex] = {
                img: x.children[0].querySelector(".gamecard").src.replace(/https\:\/\/community\.akamai\.steamstatic\.com\/economy\/image\//g, ''),
-               name: x.children[1].childNodes[x.children[1].childNodes.length-3].textContent.trim(),
-               seriesNum: seriesNum
+               name: x.children[1].childNodes[x.children[1].childNodes.length-3].textContent.trim()
             };
          }
-         return { seriesNum: seriesNum, count: count};
+         return { index: orderIndex, count: count};
       });
-      this.badgepages[appid].last_updated = Date.now();
+      newData.last_updated = Date.now();
+
+      this.badgepages[rarity][appid] = newData;
    }
 
-   async getBadgepageStockAll(list) {
+   async getBadgepageStockAll(list, foil=false) {
       for(let appid of list) {
          await this.getBadgepageStock(appid);
       }
