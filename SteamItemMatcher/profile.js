@@ -632,8 +632,67 @@ class Profile {
 
    async getBadgepageStockAll(list, foil=false) {
       for(let appid of list) {
-         await this.getBadgepageStock(appid);
+         await this.getBadgepageStock(appid, foil);
       }
+   }
+
+   // Only gets apps where user does not have max badge level
+   async getApplistFromBadgepage(stacker=true) {
+      if(!this.id) {
+         await Profile.findMoreDataForProfile(this);
+      }
+      if(!(await this.isMe())) {
+         console.error("getApplistFromBadgepage(): Profile is not user's! This method is reserved for the user only.");
+         return;
+      }
+      
+      let list = { normal: [], foil: [] };
+      let page = 1;
+      let more = true;
+
+      // TODO: include a hard limit to stop unwanted requests
+      while(more) {
+         console.log(`getApplistFromBadgepage(): getting badgepage ${page} from profile ${this.id}`);
+         let response = await fetch(`https://steamcommunity.com/profiles/${this.id}/badges/?p=${page++}`);
+         await Profile.utils.sleep(Profile.utils.FETCH_DELAY);
+      
+         let parser = new DOMParser();
+         let doc = parser.parseFromString(await response.text(), "text/html");
+
+         let badges = doc.querySelectorAll(".badge_row");
+         for(let i=0; i<badges.length; i++) {
+            if(!badges[i].querySelector(".owned")) {
+               // end of craftable badges, assuming its always ordered this way
+               return list;
+            }
+
+            let badgeProgress = badges[i].querySelector(".badge_progress_info");
+            if(!badgeProgress) {
+               continue;
+            }
+
+            badgeProgress = badgeProgress.textContent.trim();
+            if( !((stacker && badgeProgress === "Ready") || (/^[^0]/.test(badgeProgress))) ) {
+               continue;
+            }
+
+            let badgeLink = badges[i].querySelector(".badge_row_overlay").href.replace(/https?:\/\/steamcommunity\.com\/((id)|(profiles))\/[^\/]+\/gamecards\//g, '');
+            let badgeAppid = badgeLink.match(/^\d+/g)[0];
+            if(badgeLink.endsWith("border=1")) {
+               list.foil.push(badgeAppid);
+            } else {
+               list.normal.push(badgeAppid);
+            }
+         }
+
+         // alternatively, we can check the "Showing n1-n2 of n badges" to see if n2 === n
+         let pageNav = doc.querySelectorAll(".pagebtn");
+         if(pageNav[pageNav.length-1].classList.contains("disabled")) {
+            more = false;
+         }
+      }
+
+      return list;
    }
 
    verifyDescripts(descript1, descript2) {
