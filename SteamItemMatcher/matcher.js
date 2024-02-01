@@ -320,16 +320,16 @@ let Matcher = {
          binIndices[bin2[i][0]][1] = i;
       }
 
-      // find lowest dupe gains first for both sides
-      for(let i=0; i<setlen; i++) {
-         let bin2_i = binIndices[bin1[i][0]][1];
-
-         for(let j=0; j<setlen; ) {
-            if(bin1[i][0] === bin2[j][0]) { // don't match same item
-               j++;
+      // prioritize lowest dupe gains for both sides as much as possible
+      for(let max=0; max<setlen; max++) {
+         for(let i=0; i<=max; ) {
+            let j = max-i;
+            if(bin1[i][0] === bin2[j][0]) { // don't swap same item
+               i++;
                continue;
             }
 
+            let bin2_i = binIndices[bin1[i][0]][1];
             let bin1_j = binIndices[bin2[j][0]][0];
             
             // compare variance change before and after swap for both parties
@@ -343,7 +343,7 @@ let Matcher = {
             let bin2vardiff = -bin2[bin2_i][1]      +bin2[j][1] +1;
 
             // console.log(`${bin1vardiff} ${bin2vardiff}`);
-            // accept the swap if variances for either parties is lowered, but not if both variances doesn't change, otherwise continue to next card to be compared
+            // accept the swap if variances for either parties is lowered, but not if both variances doesn't change, otherwise continue to next item pair to be compared
             if (((helper || bin1vardiff <= 0) && bin2vardiff <= 0) && !(bin1vardiff === 0 && bin2vardiff === 0)) {
                bin1[i][1]++;
                bin1[bin1_j][1]--;
@@ -358,7 +358,7 @@ let Matcher = {
                binSwap(bin2, j, true);
                binSwap(bin2, bin2_i, false);
             } else {
-               j++;
+               i++;
             }
          }
       }
