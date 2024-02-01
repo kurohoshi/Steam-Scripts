@@ -12,11 +12,14 @@ let Matcher = {
       } else if(!this.matchResultsList[profile1][profile2].results) {
          console.warn(`exists(): No match results for ${profile1}-${profile2} pair!`);
          currentLevel = 1; // level 1 existance, match results doesn't exist for some reason
+      } else if(!this.matchResultsList[profile1][profile2].tradable) {
+         console.warn(`exists(): ${profile1}-${profile2} pair do not have assetids for trade!`);
+         currentLevel = 2; // level 2 existance, trade offer will not be able to be generated
       } else if(!this.matchResultsList[profile1][profile2].validated) {
          console.warn(`exists(): No match validation results for ${profile1}-${profile2} pair!`);
-         currentLevel = 2; // level 2 existance, match results doesn't exist for some reason
+         currentLevel = 3; // level 3 existance, match results aren't validated
       } else {
-         currentLevel = 3;
+         currentLevel = 4;
       }
       
       return existanceLevel < currentLevel;
@@ -77,10 +80,9 @@ let Matcher = {
 
       let inventory = this.utils.deepClone(found.inventory);
       inventory.itemsets = itemSetsIter;
-      inventory.meta = {profileid: found.id};
+      inventory.meta = { profileid: found.id };
       return inventory;
    },
-   match: async function(profile1, profile2) {
    getBadgeCards(profile, list) {
       if(!list) {
          throw "getBadgeCards(): List not provided!"
@@ -99,6 +101,7 @@ let Matcher = {
          meta: { profileid: found.id }
       } 
    },
+   matchInv: async function(profile1, profile2, helper=false) {
       let fillMissingItems = (target, source) => {
          for(let i=0; i<source.length; i++) {
             if(!target.some(x => x.classid === source[i].classid)) {
@@ -108,7 +111,7 @@ let Matcher = {
       }
 
       if(profile1 === undefined) {
-         throw "matcher.setInventories(): No profiles provided. inventories not set!";
+         throw "matchInv(): No profiles provided. inventories not set!";
       } else if(profile2 === undefined) {
          profile2 = profile1;
          profile1 = this.utils.getMySteamId();
@@ -128,7 +131,7 @@ let Matcher = {
 
       if(this.matchResultsList[inventory1.meta.profileid]) {
          if(this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid]) {
-            console.warn(`matcher.setInventories(): Item Matcher for ${inventory1.meta.profileid}-${inventory2.meta.profileid} already exists!`);
+            console.warn(`matchInv(): Item Matcher for ${inventory1.meta.profileid}-${inventory2.meta.profileid} already exists!`);
          }
          this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid] = {};
       } else {
@@ -141,28 +144,24 @@ let Matcher = {
          results: {}
       };
 
-      for (let [set1, appid, rarity, itemType] of inventory1.itemsets()) {
-         let set2 = inventory2.data[itemType][rarity][appid];               
 
-         if(!set2) {
+      for (let [set1, appid, rarity, itemType] of inventory1.itemsets()) {
+         if(!inventory2.data[itemType] || !inventory2.data[itemType][rarity] || !inventory2.data[itemType][rarity][appid]) {
             continue;
          }
+         let set2 = inventory2.data[itemType][rarity][appid];  
 
          fillMissingItems(set1, set2);
          fillMissingItems(set2, set1);
 
          if(set1.length !== set2.length) {
             // This shouldn't happen. If it does then it needs to be fixed
-            console.error(`match(): Item type ${itemType} from app ${appid} does not have equal length of items, cannot be compared!`);
+            console.error(`matchInv(): Item type ${itemType} from app ${appid} does not have equal length of items, cannot be compared!`);
             console.log(set1);
             console.log(set2);
-            delete set1;
-            delete set2;
             continue;
          } else if(set1.length === 1) {
-            console.log(`match(): Item type ${itemType} from app ${appid} only has 1 item, nothing to compare. skipping...`);
-            delete set1;
-            delete set2;
+            console.log(`matchInv(): Item type ${itemType} from app ${appid} only has 1 item, nothing to compare. skipping...`);
             continue;
          }
          
@@ -177,13 +176,13 @@ let Matcher = {
             let flip = i%2;
             let swapset1 = set1.map((x, i) => x.count + swap[i]);
             let swapset2 = set2.map((x, i) => x.count - swap[i]);
-            let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2));
-            if(!balanceResult.some((x, i) => x)) {
+            let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), helper!==flip);
+            if(!balanceResult.swap.some((x, i) => x)) {
                break;
             }
 
             for(let x=0; x<swap.length; x++) {
-               swap[x] += (flip ? -balanceResult[x] : balanceResult[x]);
+               swap[x] += (flip ? -balanceResult.swap[x] : balanceResult.swap[x]);
             }
             for(let y=0; y<balanceResult.history.length; y++) {
                history.push([balanceResult.history[y][flip], balanceResult.history[y][1-flip]]);
@@ -193,9 +192,10 @@ let Matcher = {
          this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid].results[`${itemType}_${rarity}_${appid}`] = { swap, history };
       }
 
-      this.validate();
+      this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid].tradable = true;
+      this.validate(inventory1.meta.profileid, inventory2.meta.profileid);
    },
-   matchBadge: async function(profile1, profile2, list=this.badgeList) {
+   matchBadge: async function(profile1, profile2, list=this.badgeList, helper=false) {
       if(profile1 === undefined) {
          throw "matchBadge(): No profiles provided. inventories not set!";
       } else if(profile2 === undefined) {
@@ -230,8 +230,8 @@ let Matcher = {
       }
 
       this.matchResultsList[list1.meta.profileid][list2.meta.profileid] = {
-         inventory1: list1,
-         inventory2: list2,
+         inventory1: { card: list1 },
+         inventory2: { card: list2 },
          results: {}
       };
 
@@ -261,10 +261,10 @@ let Matcher = {
             set2.sort((a, b) => a.index - b.index);
 
             for (let i = 0; i<this.MAX_MATCH_ITER; i++) {
-               let flip = i%2;
+               let flip = !!(i%2);
                let swapset1 = set1.map((x, i) => x.count + swap[i]);
                let swapset2 = set2.map((x, i) => x.count - swap[i]);
-               let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2));
+               let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), helper!==flip);
                if(!balanceResult.swap.some((x, i) => x)) {
                   break;
                }
@@ -305,12 +305,16 @@ let Matcher = {
          return;
       }
 
+      let setlen = set1.length;
       let bin1 = set1.map((x, i) => [i, x]).sort((a, b) => a[1]-b[1]);
       let bin2 = set2.map((x, i) => [i, x]).sort((a, b) => a[1]-b[1]);
-      let setlen = set1.length;
-      let binIndices = Array(setlen).fill(Array(2)); // LUT for bin indices
+      if( bin1[0][1] === bin1[bin1.length-1][1] ) {
+         return { swap: Array(setlen).fill(0),  history: [] };
+      }
       let history = [];
 
+      // LUT for bin indices
+      let binIndices = Array(setlen).fill(Array(2));
       for(let i=0; i<binIndices.length; i++) {
          binIndices[bin1[i][0]][0] = i;
          binIndices[bin2[i][0]][1] = i;
@@ -321,7 +325,7 @@ let Matcher = {
          let bin2_i = binIndices[bin1[i][0]][1];
 
          for(let j=0; j<setlen; ) {
-            if(bin1[i][0]===bin2[j][0]) { // don't match same item
+            if(bin1[i][0] === bin2[j][0]) { // don't match same item
                j++;
                continue;
             }
@@ -406,9 +410,9 @@ let Matcher = {
             ]
          ];
 
-         set.isValid = !set.reduce((a, b) => a+b, 0) && set.variance[0][0]>=set.variance[0][1] && set.variance[1][0]>=set.variance[1][1];
+         set.isValid = set.swap.some(x => x) && !set.swap.reduce((a, b) => a+b, 0) && set.variance[0][0]>=set.variance[0][1] && set.variance[1][0]>=set.variance[1][1];
          if(!set.isValid) {
-            console.warn(`validate(): Swap may not be valid! swap sum: ${set.reduce((a, b) => a+b, 0)}   var1diff: ${set.variance[0][1]-set.variance[0][0]}   var2diff: ${set.variance[1][1]-set.variance[1][0]}`);
+            console.warn(`validate(): Swap may not be valid! no swap: ${set.swap.some(x => x)}   swap sum: ${set.reduce((a, b) => a+b, 0)}   var1diff: ${set.variance[0][1]-set.variance[0][0]}   var2diff: ${set.variance[1][1]-set.variance[1][0]}`);
          }
       }
 
@@ -546,7 +550,7 @@ let Matcher = {
             : { trade_offer_access_token: profile2.tradeToken };
       }
 
-      if(!this.exists(profile1, profile2, 1)) {
+      if(!this.exists(profile1, profile2, 2)) {
          return;
       }
       if(!(await profile1.canTrade(profile2))) {
