@@ -321,8 +321,10 @@ let Matcher = {
       }
 
       // prioritize lowest dupe gains for both sides as much as possible
-      for(let max=0; max<setlen; max++) {
-         for(let i=0; i<=max; ) {
+      for(let max=0; max<setlen*2-1; max++) {
+         let start = max<setlen ? 0 : max-setlen+1;
+         let limit = max<setlen ? max : setlen-1;
+         for(let i=start; i<=limit; ) {
             let j = max-i;
             if(bin1[i][0] === bin2[j][0]) { // don't swap same item
                i++;
