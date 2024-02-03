@@ -314,18 +314,22 @@ let Matcher = {
       let history = [];
 
       // LUT for bin indices
-      let binIndices = Array(setlen).fill(Array(2));
+      let binIndices = new Array(setlen);
+      for(let i=0; i<binIndices.length; i++) {
+         binIndices[i] = new Array(2);
+      }
       for(let i=0; i<binIndices.length; i++) {
          binIndices[bin1[i][0]][0] = i;
          binIndices[bin2[i][0]][1] = i;
       }
 
       // prioritize lowest dupe gains for both sides as much as possible
-      for(let max=0; max<setlen*2-1; max++) {
-         let start = max<setlen ? 0 : max-setlen+1;
-         let limit = max<setlen ? max : setlen-1;
-         for(let i=start; i<=limit; ) {
-            let j = max-i;
+      for(let max=1, maxlen=setlen*2; max<maxlen; max++) {
+         let i     = max<=setlen ? 0 : max-setlen;
+         let start = i;
+         let limit = max<=setlen ? max : setlen;
+         while(i<limit) {
+            let j = limit-1-i+start;
             if(bin1[i][0] === bin2[j][0]) { // don't swap same item
                i++;
                continue;
