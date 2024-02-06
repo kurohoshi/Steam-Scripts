@@ -581,5 +581,56 @@ let Matcher = {
          trade_offer_create_params: (await generateTradeOfferCreateParams())
       }
    },
+   // -1: not nplus, 0: set1 nplus only, 1: set2 nplus only, 2: both nplus
+   isASFNeutralPlus: function(profile1, profile2) {
+      function calcNeutrality(invSet, matchSet, primary=true) {
+         let neutrality = 0;
+         let setbefore = invSet.map(x => x.count);
+         let setafter = setbefore.map((x, i) => x+(primary ? matchSet.swap[i] : -matchSet.swap[i])).sort((a, b) => a-b);
+         setbefore.sort((a, b) => a-b);
+         for(let i=0; i<setbefore.length; i++) {
+            neutrality += (setafter[i] - setbefore[i]);
+            if(neutrality < 0) {
+               break;
+            }
+         }
+         return neutrality;
+      }
+
+      if(!this.exists(profile1, profile2, 2)) {
+         return;
+      }
+
+      let {inventory1: { data: inv1 }, inventory2: { data: inv2 }, result} = this.matchResultsList[profile1][profile2];
+      for(let [category, set] of Object.entries(result)) {
+         let [itemType, rarity, appid] = category.split('_');
+         set.asfnplus = -1;
+
+         if(!set.swap.some(x => x) || !set.swap.reduce((a, b) => a+b, 0)) {
+            console.warn(`isASFNeutralPlus(): Match result for ${category} doesn't qualify!`);
+            continue:
+         }
+
+         if(!inv1[itemType] || !inv1[itemType][rarity] || !inv1[itemType][rarity][appid] ||
+            !inv2[itemType] || !inv2[itemType][rarity] || !inv2[itemType][rarity][appid]) {
+            console.warn(`isASFNeutralPlus(): Set ${category} doesn't exist in both profiles! Skipping`);
+            continue:
+         }
+
+         let neutrality = calcNeutrality(inv1[itemType][rarity][appid], set, true);
+         if(neutrality === 0) {
+            set.asfnplus = 0;
+         } else {
+            console.warn(`isASFNeutralPlus(): Neutrality calculation result for set1 of ${category} is ${neutrality}.`);
+         }
+         
+         neutrality = calcNeutrality(inv2[itemType][rarity][appid], set, false);
+         if(neutrality === 0) {
+            set.asfnplus += 2;
+         } else {
+            console.warn(`isASFNeutralPlus(): Neutrality calculation result for set2 of ${category} is ${neutrality}.`);
+         }
+      }
+   },
 }
 }
