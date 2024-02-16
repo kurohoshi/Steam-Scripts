@@ -297,16 +297,26 @@ let Matcher = {
    // Using Var(x) = E[x^2] + avg(x)^2 or Var(x) = E[(x-avg(x))^2] yields the same comparison formula for swapping, as expected
    // NOTE: this method shouldn't modify the original arrays, otherwise we're in big trouble!
    balanceVariance: function(set1, set2, helper=false) {
-      function binSwap(bin, index, higher=true) {
-         let neighbor = index + (higher ? 1 : -1);
-         let needsSwap = higher
-            ? index<bin.length-1 && bin[index][1]>=bin[neighbor][1]
-            : index>0 && bin[index][1]<bin[neighbor][1];
-         
-         if(needsSwap) {
-            let tmp       = bin[index];
-            bin[index]    = bin[neighbor];
-            bin[neighbor] = tmp;
+      function binSwap(bin, index, higher=true, lutIndex) {
+         let offset = higher ? 1 : -1
+         let tmp = bin[index];
+         let next = index + offset;
+         if(higher) {
+            while(next<bin.length && tmp[1]>=bin[next][1]) {
+               binIndices[bin[next][0]][lutIndex] -= offset;
+               bin[next-offset] = bin[next];
+               next += offset;
+            }
+         } else {
+            while(next>=0 && tmp[1]<=bin[next][1]) {
+               binIndices[bin[next][0]][lutIndex] -= offset;
+               bin[next-offset] = bin[next];
+               next += offset;
+            }
+         }
+         if(next-offset-index) {
+            binIndices[tmp[0]][lutIndex] = next-offset;
+            bin[next-offset] = tmp;
          }
       }
 
@@ -324,7 +334,7 @@ let Matcher = {
       let history = [];
 
       // LUT for bin indices
-      let binIndices = new Array(setlen);
+      var binIndices = new Array(setlen);
       for(let i=0; i<binIndices.length; i++) {
          binIndices[i] = new Array(2);
       }
@@ -333,20 +343,25 @@ let Matcher = {
          binIndices[bin2[i][0]][1] = i;
       }
 
-      // prioritize lowest dupe gains for both sides as much as possible
+      // prioritize lowest dupe gains for both sides as early as possible
       for(let max=1, maxlen=setlen*2; max<maxlen; max++) {
          let i     = max<=setlen ? 0 : max-setlen;
          let start = i;
-         let limit = max<=setlen ? max : setlen;
-         while(i<limit) {
-            let j = limit-1-i+start;
+         let end = max<=setlen ? max : setlen;
+         while(i<end) {
+            let j = end-1-i+start;
             if(bin1[i][0] === bin2[j][0]) { // don't swap same item
                i++;
                continue;
             }
 
-            let bin2_i = binIndices[bin1[i][0]][1];
-            let bin1_j = binIndices[bin2[j][0]][0];
+            let bin1_j_elem = bin1[binIndices[bin2[j][0]][0]];
+            let bin2_i_elem = bin2[binIndices[bin1[i][0]][1]];
+
+            if(!bin1_j_elem[1] || !bin2_i_elem[1]) { // someone doesn't have the item to swap, skip
+               i++;
+               continue;
+            }
             
             // compare variance change before and after swap for both parties
             // [<0] good swap (variance will decrease)
@@ -354,25 +369,24 @@ let Matcher = {
             // [>0] bad swap (variance will increase)
 
             // simplified from (x1+1)**2+(x2-1)**2 ?? x1**2 + x2**2  -->  x1-x2+1 ?? 0
-            let bin1vardiff =       bin1[i][1] -bin1[bin1_j][1] +1;
+            let bin1vardiff =      bin1[i][1] -bin1_j_elem[1] +1;
             // simplified from (x1-1)**2+(x2+1)**2 ?? x1**2 + x2**2  --> -x1+x2+1 ?? 0
-            let bin2vardiff = -bin2[bin2_i][1]      +bin2[j][1] +1;
+            let bin2vardiff = -bin2_i_elem[1]     +bin2[j][1] +1;
 
             // console.log(`${bin1vardiff} ${bin2vardiff}`);
             // accept the swap if variances for either parties is lowered, but not if both variances doesn't change, otherwise continue to next item pair to be compared
             if (((helper || bin1vardiff <= 0) && bin2vardiff <= 0) && !(bin1vardiff === 0 && bin2vardiff === 0)) {
                bin1[i][1]++;
-               bin1[bin1_j][1]--;
-               bin2[bin2_i][1]--;
+               binSwap(bin1, i, true, 0);
+               bin1_j_elem[1]--;
+               binSwap(bin1, binIndices[bin1_j_elem[0]][0], false, 0);
+               
                bin2[j][1]++;
+               binSwap(bin2, j, true, 1);
+               bin2_i_elem[1]--;
+               binSwap(bin2, binIndices[bin2_i_elem[0]][1], false, 1);
                history.push([bin2[j][0], bin1[i][0]]);
                // console.log(`${i} ${j}  ${bin1vardiff} ${bin2vardiff}   ${bin1[bin2[i][0]]}   ${bin1[bin2[j][0]]}   ${bin2[i][1]}   ${bin2[j][1]}`); // debug output
-
-               // swap if current card's quantity is lower/higher or equal than next/prev card's quantity
-               binSwap(bin1, i, true);
-               binSwap(bin1, bin1_j, false);
-               binSwap(bin2, j, true);
-               binSwap(bin2, bin2_i, false);
             } else {
                i++;
             }
