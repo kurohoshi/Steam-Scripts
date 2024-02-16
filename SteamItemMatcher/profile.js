@@ -1,6 +1,5 @@
 class Profile {
    static MasterProfileList = [];
-   static BadgepageData = {}; // Could be put into its own class
    static appMetaData = {}; // Can be put into its own class
    static itemDescriptions = {}; // Can be put into its own class
    static utils = steamToolsUtils;
@@ -274,7 +273,7 @@ class Profile {
    /***********************************************************************/
    updateAppMetaData(appid, key, val) {
       if(!Profile.appMetaData[appid]) {
-         Profile.appMetaData[appid] = {};
+         Profile.appMetaData[appid] = {appid: appid};
       }
       Profile.appMetaData[appid][key] = val;
    }
@@ -608,25 +607,33 @@ class Profile {
    
       let parser = new DOMParser();
       let doc = parser.parseFromString(await response.text(), "text/html");
+
+      // check if private profile
    
       let rarity = foil ? 1 : 0;
-      let newData = {}
-      newData.data = [...doc.querySelectorAll(".badge_card_set_card")].map(x => {
+      let newData = {};
+      let name = doc.querySelector("a.whiteLink:nth-child(5)").textContent.trim();
+      this.updateAppMetaData(appid, "name", name);
+      let cardData = Profile.appMetaData[appid].cards ? Profile.appMetaData[appid].cards : [];
+      
+      newData.data = [...doc.querySelectorAll(".badge_card_set_card")].map((x, i) => {
          let count = x.children[1].childNodes.length === 5 ? parseInt(x.children[1].childNodes[1].textContent.replace(/[()]/g, '')) : 0;
-         let orderIndex = parseInt( x.children[2].textContent.trim().replace(/ of \d+, Series 1$/g, '') ) - 1;
-         if( !Profile.BadgepageData[appid] ) {
-            Profile.BadgepageData[appid] = [];
+         if(isNaN(count)) {
+            console.warn(`getBadgepageStock(): Error getting card count for appid ${appid} at index ${i}`);
          }
-         if( !Profile.BadgepageData[appid][orderIndex] ) {
-            Profile.BadgepageData[appid][orderIndex] = {
-               img: x.children[0].querySelector(".gamecard").src.replace(/https\:\/\/community\.akamai\.steamstatic\.com\/economy\/image\//g, ''),
+         if(!cardData[i]) {
+            cardData.push({
                name: x.children[1].childNodes[x.children[1].childNodes.length-3].textContent.trim()
-            };
+            });
          }
-         return { index: orderIndex, count: count};
+         if(!cardData[i][`img${rarity}`]) {
+            cardData[i][`img${rarity}`] = x.children[0].querySelector(".gamecard").src.replace(/https\:\/\/community\.akamai\.steamstatic\.com\/economy\/image\//g, '');
+         }
+         return { count: parseInt(count) };
       });
       newData.last_updated = Date.now();
 
+      this.updateAppMetaData(appid, "cards", cardData);
       this.badgepages[rarity][appid] = newData;
    }
 
