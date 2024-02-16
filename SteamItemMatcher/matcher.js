@@ -1,7 +1,8 @@
 // Multiple instances of matcher doesn't make sense, so making it a class isn't needed
 let Matcher = {
    UPDATE_PERIOD: 24*60*60, // in seconds
-   MAX_MATCH_ITER: 4,
+   MAX_MATCH_ITER: 5,
+   MATCH_TYPE_LIST: ["card", "background", "emoticon"],
    matchResultsList: {},
    utils: steamToolsUtils,
    exists: function(profile1, profile2, existanceLevel) {
@@ -83,7 +84,7 @@ let Matcher = {
       inventory.meta = { profileid: found.id };
       return inventory;
    },
-   getBadgeCards(profile, list) {
+   getBadgeCards: async function(profile, list) {
       if(!list) {
          throw "getBadgeCards(): List not provided!"
       }
@@ -146,7 +147,12 @@ let Matcher = {
 
 
       for (let [set1, appid, rarity, itemType] of inventory1.itemsets()) {
+         if(!this.MATCH_TYPE_LIST.includes(itemType)) {
+            continue;
+         }
+
          if(!inventory2.data[itemType] || !inventory2.data[itemType][rarity] || !inventory2.data[itemType][rarity][appid]) {
+            // console.log("No Match!");
             continue;
          }
          let set2 = inventory2.data[itemType][rarity][appid];  
@@ -176,7 +182,7 @@ let Matcher = {
             let flip = i%2;
             let swapset1 = set1.map((x, i) => x.count + swap[i]);
             let swapset2 = set2.map((x, i) => x.count - swap[i]);
-            let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), helper!==flip);
+            let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), helper);
             if(!balanceResult.swap.some((x, i) => x)) {
                break;
             }
@@ -189,7 +195,9 @@ let Matcher = {
             }
          }
 
-         this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid].results[`${itemType}_${rarity}_${appid}`] = { swap, history };
+         if(swap.some(x => x)) {
+            this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid].results[`${itemType}_${rarity}_${appid}`] = { swap, history };
+         }
       }
 
       this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid].tradable = true;
@@ -264,7 +272,7 @@ let Matcher = {
                let flip = !!(i%2);
                let swapset1 = set1.map((x, i) => x.count + swap[i]);
                let swapset2 = set2.map((x, i) => x.count - swap[i]);
-               let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), helper!==flip);
+               let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), helper);
                if(!balanceResult.swap.some((x, i) => x)) {
                   break;
                }
@@ -277,7 +285,9 @@ let Matcher = {
                }
             }
 
-            this.matchResultsList[list1.meta.profileid][list2.meta.profileid].results[`card_${rarity}_${appid}`] = { swap, history };
+            if(swap.some(x => x)) {
+               this.matchResultsList[list1.meta.profileid][list2.meta.profileid].results[`card_${rarity}_${appid}`] = { swap, history };
+            }
          }
       }
 
@@ -416,9 +426,15 @@ let Matcher = {
             ]
          ];
 
-         set.isValid = set.swap.some(x => x) && !set.swap.reduce((a, b) => a+b, 0) && set.variance[0][0]>=set.variance[0][1] && set.variance[1][0]>=set.variance[1][1];
+         set.isValid = set.swap.some(x => x) && !set.swap.reduce((a, b) => a+b, 0)
+            && set.variance[0][0]>=set.variance[0][1] && set.variance[1][0]>=set.variance[1][1];
          if(!set.isValid) {
-            console.warn(`validate(): Swap may not be valid! no swap: ${set.swap.some(x => x)}   swap sum: ${set.reduce((a, b) => a+b, 0)}   var1diff: ${set.variance[0][1]-set.variance[0][0]}   var2diff: ${set.variance[1][1]-set.variance[1][0]}`);
+            console.warn(`validate(): Swap may not be valid! `
+               + ` no swap: ${set.swap.some(x => x)} `
+               + ` swap sum: ${set.swap.reduce((a, b) => a+b, 0)} `
+               + ` var1diff: ${set.variance[0][1]-set.variance[0][0]} `
+               + ` var2diff: ${set.variance[1][1]-set.variance[1][0]} `
+            );
          }
       }
 
@@ -498,10 +514,13 @@ let Matcher = {
          }
 
          let itemContents = { me: [], them: [] };
-         let inv1 = this.matchResultsList[profile1][profile2].inventory1;
-         let inv2 = this.matchResultsList[profile1][profile2].inventory2;
+         let inv1 = this.matchResultsList[profile1][profile2].inventory1.data;
+         let inv2 = this.matchResultsList[profile1][profile2].inventory2.data;
 
-         for(let [category, set] in Object.entries(this.matchResultsList[profile1][profile2].results)) {
+         for(let [category, set] of Object.entries(this.matchResultsList[profile1][profile2].results)) { // figure out a way to generate filtered item list
+            if(typeof set !== "object" || set.isValid === false || !set.swap.some(x => x)) {
+               continue;
+            }
             let [itemType, rarity, appid] = category.split('_');
             let swapAssets = { me: [], them: [] };
             let invalid = false;
@@ -509,7 +528,9 @@ let Matcher = {
             for(let swapIndex=0; swapIndex<set.swap.length; swapIndex++) {
                let swapTotal = set.swap[swapIndex];
                let assets, side;
-               if(swapTotal < 0) {
+               if(swapTotal === 0) {
+                  continue;
+               } else if(swapTotal < 0) {
                   if( !(assets = getAssets(753, 6, inv1[itemType][rarity][appid][swapIndex], -swapTotal)) ) { // hardcoded for now, should be changed to make more flexible
                      invalid = true;
                      break;
@@ -556,7 +577,14 @@ let Matcher = {
             : { trade_offer_access_token: profile2.tradeToken };
       }
 
-      if(!this.exists(profile1, profile2, 2)) {
+      if(typeof profile1 === "string") {
+         profile1 = await Profile.findProfile(profile1);
+      }
+      if(typeof profile2 === "string") {
+         profile2 = await Profile.findProfile(profile2);
+      }
+
+      if(!this.exists(profile1.id, profile2.id, 3)) {
          return;
       }
       if(!(await profile1.canTrade(profile2))) {
@@ -564,17 +592,17 @@ let Matcher = {
          return;
       }
 
-      let tradeOfferContents = generateTradeOfferContents(profile1, profile2, reverse);
+      let tradeOfferContents = generateTradeOfferContents(profile1.id, profile2.id, reverse);
       if(tradeOfferContents.version === 1) {
          console.warn("generateRequestPayload(): contents are empty; no items will be traded; payload will not be generated!");
-         this.matchResultsList[profile1][profile2].payload = null;
+         this.matchResultsList[profile1.id][profile2.id].payload = null;
          return;
       }
 
-      this.matchResultsList[profile1][profile2].payload = {
+      return this.matchResultsList[profile1.id][profile2.id].payload = {
          sessionid: this.utils.getSessionId(),
          serverid: 1,
-         partner: profile2,
+         partner: profile2.id,
          tradeoffermessage: String(message),
          json_tradeoffer: tradeOfferContents,
          captcha: "",
@@ -608,13 +636,13 @@ let Matcher = {
 
          if(!set.swap.some(x => x) || !set.swap.reduce((a, b) => a+b, 0)) {
             console.warn(`isASFNeutralPlus(): Match result for ${category} doesn't qualify!`);
-            continue:
+            continue;
          }
 
          if(!inv1[itemType] || !inv1[itemType][rarity] || !inv1[itemType][rarity][appid] ||
             !inv2[itemType] || !inv2[itemType][rarity] || !inv2[itemType][rarity][appid]) {
             console.warn(`isASFNeutralPlus(): Set ${category} doesn't exist in both profiles! Skipping`);
-            continue:
+            continue;
          }
 
          let neutrality = calcNeutrality(inv1[itemType][rarity][appid], set, true);
