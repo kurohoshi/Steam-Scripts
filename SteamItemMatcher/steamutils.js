@@ -1,5 +1,5 @@
 var steamToolsUtils = {
-   INV_FETCH_DELAY1: 5*1000, // for trade offer window or own inv
+   INV_FETCH_DELAY1: 3*1000, // for trade offer window or own inv
    INV_FETCH_DELAY2: 60*1000, // for others' regular inv
    FETCH_DELAY: 1000,
    sleep: function(ms) {
@@ -14,6 +14,9 @@ var steamToolsUtils = {
    getMySteamId: function() {
       return window.g_steamID;
    },
+   isSteamId64Format: function(str) {
+      return /76561\d{12}/.test(str);
+   },
    getSteamProfileId64: function(steamid3) {
       return '76561'+(parseInt(steamid3)+197960265728);
    },
@@ -22,5 +25,8 @@ var steamToolsUtils = {
    },
    getSteamLanguage: function() {
       return g_strLanguage;
+   },
+   isSimplyObject: function(obj) {
+      return typeof obj === 'object' && !Array.isArray(obj) && obj !== null;
    }
 };
