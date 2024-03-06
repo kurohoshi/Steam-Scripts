@@ -160,7 +160,7 @@ class Profile {
       }
 
       let profile;
-      if(/76561\d{12}/.test(str)) {
+      if(this.utils.isSteamId64Format(str)) {
          if(!(profile = Profile.MasterProfileList.find(x => x.id === str))) {
             console.log(`findProfile(): No profile found for id ${str}. Creating new profile...`);
             profile = await Profile.addNewProfile({id: str});
@@ -353,7 +353,7 @@ class Profile {
       let data = [];
       let counter = 0;
       let resdata = {};
-      let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] || Number.MAX_SAFE_INTEGER;
+      let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] ?? Number.MAX_SAFE_INTEGER;
 
       this.resetInventory();
 
@@ -396,7 +396,7 @@ class Profile {
             }
 
             itemType = Profile.ITEM_TYPE_MAP[itemType.internal_name];
-            rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] || parseInt(rarity.internal_name.replace(/\D+/g, ''));
+            rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] ?? parseInt(rarity.internal_name.replace(/\D+/g, ''));
             if(!this.inventory.data[itemType]) {
                this.inventory.data[itemType] = [{}];
             } else if(this.inventory.data[itemType].length <= rarity) {
@@ -477,7 +477,7 @@ class Profile {
       let counter = 0;
       let resdata = { more_start: 0 };
       let last_descript;
-      let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] || Number.MAX_SAFE_INTEGER;
+      let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] ?? Number.MAX_SAFE_INTEGER;
 
       let currentPathSearch = window.location.pathname + window.location.search;
       let partnerString = `?partner=${Profile.utils.getSteamProfileId3(this.id)}`;
@@ -536,7 +536,7 @@ class Profile {
             }
 
             itemType = Profile.ITEM_TYPE_MAP[itemType.internal_name];
-            rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] || parseInt(rarity.internal_name.replace(/\D+/g, ''));
+            rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] ?? parseInt(rarity.internal_name.replace(/\D+/g, ''));
             if(!this.inventory.data[itemType]) {
                this.inventory.data[itemType] = [{}];
             } else if(this.inventory.data[itemType].length <= rarity) {
@@ -608,13 +608,13 @@ class Profile {
       let parser = new DOMParser();
       let doc = parser.parseFromString(await response.text(), "text/html");
 
-      // check if private profile
+      // check if private profile here
    
       let rarity = foil ? 1 : 0;
       let newData = {};
       let name = doc.querySelector("a.whiteLink:nth-child(5)").textContent.trim();
       this.updateAppMetaData(appid, "name", name);
-      let cardData = Profile.appMetaData[appid].cards ? Profile.appMetaData[appid].cards : [];
+      let cardData = Profile.appMetaData[appid].cards ?? [];
       
       newData.data = [...doc.querySelectorAll(".badge_card_set_card")].map((x, i) => {
          let count = x.children[1].childNodes.length === 5 ? parseInt(x.children[1].childNodes[1].textContent.replace(/[()]/g, '')) : 0;
