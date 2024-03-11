@@ -9,6 +9,7 @@
 // @exclude      https://steamcommunity.com/tradeoffer/
 // @icon         https://avatars.akamai.steamstatic.com/5d8f69062e0e8f51e500cecc6009547675ebc93c_full.jpg
 // @grant        GM.xmlHttpRequest
+// @grant        GM_addStyle
 // @grant        GM_log
 // ==/UserScript==
 
@@ -1452,7 +1453,30 @@ async function gotoMatcherConfigPage() {
       globalSettings.matcher = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcher);
    }
 
-   let matcherConfigHTMLString = '<div class="matcher-config">'
+   let matcherConfigHTMLString = '<svg class="solid-clr-filters">'
+   +    '<filter id="filter-red" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+   +       '<feColorMatrix type="matrix" values="0 0 0 0   0.8   0 0 0 0   0   0 0 0 0   0   0 0 0 1   0" />'
+   +    '</filter>'
+   +    '<filter id="filter-red-bright" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+   +       '<feColorMatrix type="matrix" values="0 0 0 0   1   0 0 0 0   0   0 0 0 0   0   0 0 0 1   0" />'
+   +    '</filter>'
+   +    '<filter id="filter-green" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+   +       '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   0.8   0 0 0 0   0   0 0 0 1   0" />'
+   +    '</filter>'
+   +    '<filter id="filter-green-bright" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+   +       '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   1   0 0 0 0   0   0 0 0 1   0" />'
+   +    '</filter>'
+   +    '<filter id="filter-blue" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+   +       '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   0   0 0 0 0   0.8   0 0 0 1   0" />'
+   +    '</filter>'
+   +    '<filter id="filter-blue-bright" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+   +       '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   0   0 0 0 0   1   0 0 0 1   0" />'
+   +    '</filter>'
+   +    '<filter id="filter-steam-gray" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+   +       '<feColorMatrix type="matrix" values="0 0 0 0   0.77   0 0 0 0   0.76   0 0 0 0   0.75   0 0 0 1   0" />'
+   +    '</filter>'
+   + '</svg>'
+   + '<div class="matcher-config">'
    +    '<div class="matcher-config-title"><span>Matcher Configuration</span></div>'
    +    '<div class="matcher-options">'
    +       generateConfigButtonGroupString()
@@ -2054,3 +2078,718 @@ function main() {
 }
 
 main();
+
+/**************************************************/
+/**************************************************/
+/******************* CSS Styles *******************/
+/**************************************************/
+/**************************************************/
+var cssMatcher = `/* body {
+   margin: 20px;
+   background: #1b2838;
+   color: #ebebeb;
+} */
+
+.match-container-outer {
+   padding: 1px;
+   /* min-width: 650px;
+   max-width: 1035px; */
+   background: linear-gradient( to bottom, #383939 5%, #000000 95%);
+   border-radius: 5px;
+   display: inline-block;
+}
+
+.match-container {
+   padding: 10px;
+   background: linear-gradient( to bottom, #232424 5%, #141414 95%);
+   border-radius: 5px;
+   display: inline-grid;
+   /* grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); */
+   grid-template-columns: repeat(3, auto);
+   gap: 5px;
+
+   img {
+      display: block;
+   }
+}
+
+
+
+.match-header {
+   /* background-color: lightgreen; */
+   display: grid;
+   grid-column: 1 / -1;
+   grid-template-columns: subgrid;
+   grid-template-rows: max-content;
+   justify-items: center;
+   align-items: center;
+}
+.avatar {
+   margin: 0 0.375rem;
+   display: inline-block;
+   padding: 1px;
+
+   img {
+      display: block;
+      height: 2rem;
+      width: 2rem;
+      padding: 0.0625rem;
+   }
+}
+.avatar.offline {
+   background: linear-gradient( to bottom, rgba(106,106,106,1) 5%, rgba(85,85,85,1) 95%);
+}
+.avatar.online {
+   background: linear-gradient( to bottom, rgba(83,164,196,1) 5%, rgba(69,128,151,1) 95%);
+}
+.avatar.ingame {
+   background: linear-gradient( to bottom, rgba(143,185,59,1) 5%, rgba(110,140,49,1) 95%);
+}
+.match-name {
+   display: flex;
+   color: #ddd;
+   place-items: center;
+   /* background: linear-gradient( to bottom, rgba(33,101,138,1) 5%, rgba(23,67,92,1) 95%); */
+
+}
+
+.match-item-type {
+   display: grid;
+   grid-column: 1 / -1;
+   grid-template-columns: subgrid;
+   /* subgrid gaps overrides main grid gap values */
+   row-gap: 5px;
+}
+
+.match-item-type::before {
+   content: "";
+   margin: 2px;
+   /* height: 2px; */
+   height: 1px;
+   /* background: linear-gradient(to right, rgba(255, 255, 255, 0) 0%, rgb(125, 125, 125) 25%, rgb(125, 125, 125) 75%, rgba(255, 255, 255, 0) 100%); */
+   background-color: #333;
+   border-top: 1px solid #000;
+   display: grid;
+   grid-template-columns: subgrid;
+   grid-column: 1 / -1;
+}
+
+.match-item-app {
+   display: grid;
+   grid-column: 1 / -1;
+   grid-template-columns: subgrid;
+}
+
+/*Maybe use media queries to help with sizing and alignment*/
+.match-item-list {
+   --img-item-width: 96px;
+   max-width: calc(var(--img-item-width)*5);
+   padding: 6px 2px 6px 4px;
+   background-color: black;
+   border-radius: 5px;
+   display: flex;
+   flex-wrap: wrap;
+   /* display: inline-grid;
+   grid-template-columns: repeat(auto-fill, var(--img-item-width)); */
+   row-gap: 15px;
+
+   @media (max-width: 2100px ) {
+      max-width: calc(var(--img-item-width)*4);
+   }
+   @media (max-width: 1700px ) {
+      width: calc(var(--img-item-width)*3);
+   }
+}
+.match-item-list.left {
+   /* ideally we want to calculate the correct right and left margins to have equal free space on the edge of the lists */
+   justify-self: flex-end;
+   justify-content: flex-end;
+   align-items: flex-start;
+   /* background: linear-gradient( to left, transparent 0, rgba(33,101,138,0.75) 60px); */
+   background: linear-gradient( to left, transparent 0, rgba(41,41,41,1) 60px);
+}
+.match-item-list.right {
+   justify-self: flex-start;
+   justify-content: flex-start;
+   align-items: flex-start;
+   /* background: linear-gradient( to right, transparent 0, rgba(33,101,138,0.75) 60px); */
+   background: linear-gradient( to right, transparent 0, rgba(41,41,41,1) 60px);
+}
+
+.match-item {
+   --left-offset: 6px;
+   --right-offset: 8px;
+   min-width: 6rem;
+   min-height: 6rem;
+   display: inline-block;
+   position: relative;
+
+   .match-item-qty {
+      height: 22px;
+      width: 22px;
+      font-size: small;
+      text-align: center;
+      display: block;
+      position: absolute;
+      right: var(--right-offset);
+      top: 0;
+      border-radius: 0 0 0 22px;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 1;
+   }
+
+   img:before {
+      content: "";
+      display: block;
+      position: absolute;
+      right: var(--right-offset);
+      left: var(--left-offset);
+      top: 0;
+      bottom: 0;
+      /* Change to something similar to steam trading card bg */
+      background-color: grey;
+      text-align: center;
+   }
+
+   .match-item-name {
+      height: 20px;
+      text-align: center;
+      display: none;
+      position: absolute;
+      right: var(--right-offset);
+      left: var(--left-offset);
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 1;
+   }
+}
+
+
+
+
+.match-item:hover > .match-item-name {
+   display: block;
+}
+
+
+
+.match-item-action {
+   display: flex;
+   flex-direction: column;
+   justify-content: center;
+}
+
+.match-icon {
+   padding: 8px 4px;
+   background: rgba(0, 0, 0, 0.4);
+   border-radius: 3px;
+   rotate: 90deg;
+   transform: scaleX(-1);
+}
+
+.match-icon:hover {
+   background: #54a5d4;
+}
+
+.solid-clr-filters {
+   width: 0;
+   height: 0;
+   position: absolute;
+}
+.matcher-config {
+   --config-col: 2;
+   --config-col-height: 28rem;
+   --btn-bg-clr-purple: linear-gradient( to bottom, #6C2DC7 5%, #2E1A47 95%);
+   --btn-bg-clr-hvr-purple: linear-gradient( to bottom, #D891EF 5%, #8467D7 95%);
+   --btn-clr-purple: lavender;
+   --btn-bg-clr-blue: linear-gradient( to bottom, rgba(47,137,188,1) 5%, rgba(23,67,92,1) 95%);
+   --btn-bg-clr-hvr-blue: linear-gradient( to bottom, rgba(102,192,244,1) 5%, rgba(47,137,188,1) 95%);
+   --btn-clr-blue: #A4D7F5;
+   --btn-clr-hvr-blue: white;
+   --btn-bg-clr-green: linear-gradient( to bottom, #a4d007 5%, #536904 95%);
+   --btn-bg-clr-hvr-green: linear-gradient( to bottom, #b6d908 5%, #80a006 95%);
+   --btn-clr-green: #D2E885;
+   --btn-clr-hvr-green: white;
+   --btn-bg-clr-red: linear-gradient( to bottom, #c03535 5%, #480505 95%);
+   --btn-bg-clr-hvr-red: linear-gradient( to bottom, #ff5e5e 5%, #c20000 95%);
+   --btn-clr-red: rgb(255, 181, 181);
+
+   margin: auto;
+   padding: 15px;
+   /* min-width: 680px; */
+   min-width: 775px; /* cap to prevent layout overflow on left side matcher config*/
+   max-width: 946px;
+   background-color: #262627;
+   border-left: 1px solid #101010;
+   border-right: 1px solid #545454;
+   box-shadow: inset 0 -1px 3px #101010;
+   display: grid;
+   grid-template-columns: repeat(var(--config-col), minmax(0, 1fr));
+   grid-template-rows: min-content var(--config-col-height);
+   gap: 0.625rem;
+   color: white;
+}
+.matcher-config-title {
+   grid-column: 1/-1;
+   font-size: xx-large;
+   text-align: center;
+}
+.matcher-options {
+   height: max-content;
+   display: inline-flex;
+   flex-direction: column;
+   gap: 0.5rem;
+}
+.matcher-config-group {
+   padding: 0.375rem;
+   display: flex;
+   flex-wrap: wrap;
+   gap: 0.25rem;
+   border: solid 1px #808080;
+}
+.matcher-config-header {
+   width: 100%;
+}
+.matcher-config .matcher-setting {
+   position: relative;
+   display: flex;
+   gap: 0 3rem;
+}
+.matcher-setting.right {
+   justify-content: flex-end;
+}
+.matcher-setting.center {
+   justify-content: center;
+}
+
+.matcher-config-option {
+   display: inline-block;
+}
+
+/****** Button Style Toggle Button START ******/
+.matcher-config input[type="checkbox"].button {
+   opacity: 0;
+   position: absolute;
+   z-index: -1;
+}
+.matcher-config input[type="checkbox"].button + label {
+   margin: 0.25rem 0.25rem 0.25rem 0;
+   padding: .375rem;
+   display: inline-block;
+   user-select: none;
+   background-color: #111;
+   border-radius: 3px;
+   color: #969696;
+}
+.matcher-config input[type="checkbox"].button:active + label:active {
+   box-shadow: inset 0 0 0.1875rem 0.125rem rgba(0, 0, 0, 0.2);
+   color: #808080;
+}
+.matcher-config input[type="checkbox"].button:checked:active + label:active {
+   /* background: var(--btn-bg-clr-green); */
+   box-shadow: inset 0 0 0.1875rem 0.125rem rgba(0, 0, 0, 0.2);
+   color: var(--btn-clr-green);
+}
+.matcher-config input[type="checkbox"].button:checked + label {
+   background: var(--btn-bg-clr-purple);
+   color: var(--btn-clr-purple);
+}
+/****** Button Style Toggle Button END ******/
+
+/****** Text Input START ******/
+.matcher-config input[type="text"] {
+   width: 75%;
+   min-width: 15rem;
+   max-width: 20rem;
+   color: white;
+   background-color: rgba(0, 0, 0, 1);
+   border: 1px solid #000;
+   border-radius: 0 0 3px 3px;
+   box-shadow: 1px 1px 0px #1b1b1b;
+}
+
+.matcher-config textarea {
+   /* width: 85%; */
+   padding: 3px;
+   color: white;
+   background-color: rgba(0, 0, 0, 1);
+   border: 1px solid #000;
+   border-radius: 0 0 3px 3px;
+   box-shadow: 1px 1px 0px #1b1b1b;
+   resize: none;
+}
+/* .matcher-config textarea:focus {
+   outline: auto rgba(47,137,188,1);
+} */
+/****** Text Input END ******/
+
+/****** Custom Scrollbar END ******/
+.matcher-config .custom-scroll {
+   scrollbar-width: thin;
+   scrollbar-color: black transparent;
+}
+/****** Custom Scrollbar END ******/
+
+/****** Radio Style Toggle Button START ******/
+.matcher-config input[type="checkbox"].radio {
+   opacity: 0;
+   position: absolute;
+   z-index: -1;
+}
+.matcher-config input[type="checkbox"].radio + label {
+   display: inline-block;
+   user-select: none;
+}
+.matcher-config input[type="checkbox"].radio + label:before {
+   display: inline-block;
+   content: "";
+   width: 10px;
+   height: 10px;
+   margin: 3px 3px 3px 4px;
+   vertical-align: text-top;
+   background: #111;
+   border: 0.125rem solid #3a3a3a;
+   border-radius: 50%;
+}
+.matcher-config input[type="checkbox"].radio + label:hover:before,
+.matcher-config input[type="checkbox"].radio:checked + label:hover:before {
+   background: var(--btn-bg-clr-hvr-purple);
+}
+.matcher-config input[type="checkbox"].radio + label:active:before,
+.matcher-config input[type="checkbox"].radio:active + label:active:before,
+.matcher-config input[type="checkbox"].radio:checked + label:before {
+   background: var(--btn-bg-clr-purple);
+}
+/****** Radio Style Toggle Button END ******/
+
+.matcher-config button {
+   margin-right: 0.25rem;
+   padding: 0.25rem;
+   border: 1px solid #3a3a3a;
+   border-radius: 3px;
+}
+.matcher-config button.green {
+   background: var(--btn-bg-clr-green);
+   color: var(--btn-clr-green);
+}
+.matcher-config button.green:hover {
+   background: var(--btn-bg-clr-hvr-green);
+   color: var(--btn-clr-hvr-green);
+}
+.matcher-config button.green:active {
+   background: var(--btn-bg-clr-green);
+   color: var(--btn-clr-green);
+}
+.matcher-config button.blue {
+   background: var(--btn-bg-clr-blue);
+   color: var(--btn-clr-blue);
+}
+.matcher-config button.blue:hover {
+   background: var(--btn-bg-clr-hvr-blue);
+   color: var(--btn-clr-hvr-blue);
+}
+.matcher-config button.blue:active {
+   background: var(--btn-bg-clr-blue);
+   color: var(--btn-clr-blue);
+}
+.matcher-config button.purple {
+   background: var(--btn-bg-clr-purple);
+   color: var(--btn-clr-purple);
+}
+.matcher-config button.purple:hover {
+   background: var(--btn-bg-clr-hvr-purple);
+   color: white;
+}
+.matcher-config button.purple:active {
+   background: var(--btn-bg-clr-purple);
+   color: var(--btn-clr-purple);
+}
+.matcher-config button.red {
+   background: var(--btn-bg-clr-red);
+   color: var(--btn-clr-red);
+}
+.matcher-config button.red:hover {
+   background: var(--btn-bg-clr-hvr-red);
+   color: white;
+}
+.matcher-config button.red:active {
+   background: var(--btn-bg-clr-red);
+   color: var(--btn-clr-red);
+}
+.matcher-config button.wide {
+   padding: 0.25rem 1rem;
+}
+
+.matcher-conf-list {
+   display: flex;
+   flex-direction: column;
+}
+.matcher-conf-list-header {
+   background-color: rgba(0, 0, 0, 0.4);
+   display: flex;
+   justify-content: flex-start;
+   height: 2rem;
+   line-height: 2rem;
+   color: white;
+
+   /* > *:before {
+      content: "";
+      display: block;
+      height: 0.0625rem;
+      background: linear-gradient(to right, #00ccff, #3366ff);
+   } */
+   > * {
+      padding: 0 0.5rem;
+      text-align: center;
+      user-select: none;
+   }
+   > *:hover,
+   > *.active {
+      background: rgba(0, 0, 0, 0) linear-gradient(to bottom, #2E1A47, #6C2DC7) repeat scroll 0 0;
+   }
+}
+.matcher-conf-list-list {
+   background-color: rgba(0, 0, 0, 0.4);
+   border: 1px solid #000;
+   border-radius: 0 0 3px 3px;
+   box-shadow: 1px 1px 0px #1b1b1b;
+   flex: 1;
+   min-height: 0; /* This is the most stupidest flex quirk */
+   position: relative;
+   > * {
+      box-sizing: border-box;
+   }
+}
+.conf-list-entry-action {
+   height: 2rem;
+   background-color: black;
+   box-shadow: 1px 0px 0px #1b1b1b;
+   position: relative;
+}
+.conf-list-entry-action.add > .conf-list-entry-action-add {
+   display: block;
+}
+.conf-list-entry-action.modify > .conf-list-entry-action-modify {
+   display: flex;
+}
+.conf-list-entry-action.disabled > .conf-list-entry-action-disabled {
+   display: block;
+}
+.conf-list-entry-action-add {
+   --psign-size: 1.5rem;
+   --psign-clr-purple: #4f1a98;
+   --psign-clr-hvr-purple: #9467d7;
+   display: none;
+   height: 100%;
+   width: 100%;
+   position: relative;
+
+   #entry-action-add {
+      height: inherit;
+      width: 64px;
+      margin-inline: auto;
+   }
+   #entry-action-add::before {
+      display: block;
+      content: '';
+      height: calc(var(--psign-size)/4);
+      width: var(--psign-size);
+      border-radius: calc(var(--psign-size)/8);
+      background-color: var(--psign-clr-purple);
+      position: absolute;
+      top: calc(50% - var(--psign-size)/8);
+      left: calc(50% - var(--psign-size)/2);
+      z-index: 2;
+   }
+   #entry-action-add::after {
+      display: block;
+      content: '';
+      height: var(--psign-size);
+      width: calc(var(--psign-size)/4);
+      border-radius: calc(var(--psign-size)/8);
+      background-color: var(--psign-clr-purple);
+      position: absolute;
+      top: calc(50% - var(--psign-size)/2);
+      left: calc(50% - var(--psign-size)/8);
+      z-index: 2;
+   }
+   #entry-action-add:hover::before,
+   #entry-action-add:hover::after {
+      background-color: var(--psign-clr-hvr-purple);
+   }
+}
+.conf-list-entry-action-modify {
+   display: none;
+   height: 100%;
+   width: 100%;
+   justify-content: space-evenly;
+
+   > * {
+      height: inherit;
+      width: 64px;
+   }
+   #entry-action-edit {
+      background-image: url('https://community.akamai.steamstatic.com/public/images/skin_1/notification_icon_edit_dark.png?v=1');
+      background-repeat: no-repeat;
+      background-position: center center;
+      filter: url(#filter-green);
+   }
+   #entry-action-edit:hover {
+      filter: url(#filter-green-bright);
+   }
+   #entry-action-del {
+      background-image: url('https://community.akamai.steamstatic.com/public/images/skin_1/notification_icon_trash_bright.png?v=1');
+      background-repeat: no-repeat;
+      background-position: center center;
+      filter: url(#filter-red);
+   }
+   #entry-action-del:hover {
+      filter: url(#filter-red-bright);
+   }
+}
+.conf-list-entry-action-disabled {
+   display: none;
+   height: 100%;
+   width: 100%;
+   position: absolute;
+   background-color: rgba(0, 0, 0, 0.75);
+   z-index: 3;
+   top: 0;
+}
+.conf-list-entry-form-container.active {
+   display: initial;
+}
+.conf-list-entry-form-container {
+   display: none;
+   height: 100%;
+   width: 100%;
+   background-color: rgba(0, 0, 0, 0.8);
+   border-radius: inherit;
+   position: absolute;
+   top: 0;
+   z-index: 3;
+}
+.conf-list-entry-form {
+   display: flex;
+   flex-direction: column;
+   padding: 3rem;
+   gap: 0.5rem;
+
+   > * {
+      display: block;
+   }
+   .entry-form-action {
+      display: flex;
+      justify-content: center;
+      gap: 3rem;
+   }
+}
+.conf-list-overlay {
+   display: none;
+   height: 100%;
+   width: 100%;
+   background-color: rgba(0, 0, 0, 0.8);
+   border-radius: inherit;
+   position: absolute;
+   top: 0;
+   z-index: 5;
+}
+.conf-list-overlay.active {
+   display: initial;
+}
+.content-loader {
+   height: 0.25rem;
+   background: linear-gradient(to right,#4f1a98, #4f1a98 40%, #8757ca 50%, #4f1a98 60%, #4f1a98 100%);
+   background-size: 300%;
+   animation: moveFade 2s linear infinite;
+}
+
+@keyframes moveFade {
+   0%   { background-position: right }
+   100%  { background-position: left }
+}
+.conf-list-dialog {
+   display: none;
+   margin: 2rem;
+
+   > * {
+      margin-bottom: 0.75rem;
+   }
+}
+.conf-list-dialog.active {
+   display: initial;
+}
+.conf-list-dialog-divider,
+.conf-list-dialog-action {
+   display: flex;
+   justify-content: space-evenly;
+}
+.dbl-arrows {
+   display: inline-block;
+   width: 15px;
+   height: 16px;
+   background-image: url('https://community.cloudflare.steamstatic.com/public/shared/images/buttons/icon_double_arrows.png');
+}
+.dbl-arrows.down {
+   background-position: 15px 0px;
+}
+/* .conf-list-entry-form.active {
+   display: flex;
+} */
+.matcher-conf-list-entries {
+   height: 100%;
+   border-radius: inherit;
+   overflow: auto;
+   overscroll-behavior: contain;
+}
+.matcher-conf-list-entry-group {
+   display: none;
+   padding: 0.25rem;
+   flex-direction: column;
+   gap: 0.25rem;
+}
+.matcher-conf-list-entry-group.active {
+   display: flex;
+}
+.matcher-conf-list-entry {
+   padding: 0.25rem;
+   display: flex;
+   align-items: center;
+   gap: .25rem;
+   background-color: #222;
+   border: 1px solid #000;
+   border-radius: 0.25rem;
+   position: relative;
+
+   > * {
+      flex: 0 0 auto;
+   }
+   > .conf-list-entry-name {
+      width: 4rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+   }
+   > .conf-list-entry-descript {
+      margin-left: 0.75rem;
+      word-break: break-all;
+      flex: 1;
+   }
+}
+.matcher-conf-list-entry.warn::after {
+   --label-size: 1.5rem;
+   display: inline-block;
+   width: var(--label-size);
+   height: var(--label-size);
+   color: black;
+   content: '⚠';
+   font-size: x-large;
+   background-color: yellow;
+   border-radius: 0.5rem;
+   text-align: center;
+   line-height: var(--label-size);
+   border: 0.25rem solid black;
+}
+.matcher-conf-list-entry.selected {
+   background: #43167b;
+}`;
