@@ -18,7 +18,6 @@
 
 const globalSettings = {};
 const GLOBALSETTINGSDEFAULTS = {};
-const MAIN_ELEM = document.querySelector('#responsive_page_template_content');
 const TOOLS_MENU = [
    { name: 'Main Page', href: 'https://steamcommunity.com/groups/tradingcards/discussions/2/3201493200068346848/', htmlString: undefined, entryFn: undefined},
    { name: 'Matcher', href: undefined, htmlString: undefined, entryFn: gotoMatcherConfigPage},
@@ -66,6 +65,25 @@ const steamToolsUtils = {
    },
    isSimplyObject: function(obj) {
       return typeof obj === 'object' && !Array.isArray(obj) && obj !== null;
+   },
+   generateExportDataElement: function(name, filename, data) {
+      if(!data) {
+         console.warn('exportConfig(): config not found, no configurations to be exported!');
+         return;
+      }
+
+      let tmpElem = document.createElement('a');
+      tmpElem.setAttribute('id', 'export-'+name);
+      tmpElem.setAttribute('href', 'data:application/json;charset=utf-8,'+ encodeURIComponent(JSON.stringify(data)));
+      tmpElem.setAttribute('download', filename+'.json');
+      return tmpElem;
+   },
+   generateImportDataElement: function(name) {
+      let tmpElem = document.createElement('input');
+      tmpElem.setAttribute('id', 'import-'+name);
+      tmpElem.setAttribute('type', 'file');
+      tmpElem.setAttribute('accept', 'application/json');
+      return tmpElem;
    }
 };
 
@@ -213,19 +231,80 @@ SteamToolsDbManager.setToolConfig = async function(toolname) {
    await this.set('config', globalSettings[toolname], toolname);
 }
 
-async function generateExportConfigElement(toolname, filename) {
-   let config = await SteamToolsDbManager.getToolConfig(toolname);
-   if(!config[toolname]) {
-      console.warn('exportConfig(): config not found, no configurations to be exported!');
-      return;
+// pointless promisified export to be consistent with import
+function exportConfig(toolname, filename) {
+   return new Promise((resolve, reject) => {
+      let dlElement = steamToolsUtils.generateExportDataElement(toolname+'-config', filename, globalSettings[toolname]);
+      if(!dlElement) {
+         return;
+      }
+      dlElement.click();
+   });
+}
+
+function importConfig(toolname) {
+   const isValidConfigObject = obj => {
+      if(obj.config && !steamToolsUtils.isSimplyObject(obj.config)) {
+         return false;
+      }
+      for(let optionGroup of Object.values(obj.config)) {
+         if(!steamToolsUtils.isSimplyObject(optionGroup) || !Array.isArray(optionGroup.options)) {
+            return false;
+         }
+         for(let option of optionGroup.options) {
+            if(typeof option.name !== 'string' || typeof option.id !== 'string' || typeof option.label !== 'string' || typeof option.value !== 'boolean') {
+               return false;
+            }
+         }
+      }
+
+      if(obj.lists && !steamToolsUtils.isSimplyObject(obj.lists)) {
+         return false;
+      }
+      for(let list of Object.values(obj.lists)) {
+         if(!steamToolsUtils.isSimplyObject(list) || !Array.isArray(list.data)) {
+            return false;
+         }
+      }
+
+      return true;
    }
 
-   let tmpElem = document.createElement('a');
-   tmpElem.setAttribute('id', 'export-'+toolname+'-config');
-   tmpElem.setAttribute('href', 'data:application/json;charset=utf-8,'+ encodeURIComponent(JSON.stringify(config[toolname])));
-   tmpElem.setAttribute('download', filename+'.json');
-   return tmpElem;
+   return new Promise((resolve, reject) => {
+      let ulElement = steamToolsUtils.generateImportDataElement(toolname+'-config');
+      if(!ulElement) {
+         console.warn('importConfig(): Element not created, abort!');
+         return;
+      }
+
+      ulElement.addEventListener('change', (inputEvent) => {
+         if(!inputEvent.currentTarget.files.length) {
+            console.warn('importConfig(): No file selected!');
+            return;
+         }
+
+         let file = inputEvent.currentTarget.files[0];
+         if(file.type !== 'application/json') {
+            console.warn('importConfig(): file type is not JSON, config not loaded!');
+            return;
+         }
+
+         const reader = new FileReader();
+         reader.onload = (readerEvent) => {
+            let loadedConfig = JSON.parse(readerEvent.target.result);
+            if(isValidConfigObject(loadedConfig)) {
+               globalSettings[toolname] = loadedConfig;
+               resolve(loadedConfig);
+            } else {
+               reject('importConfig(): Error loading config!');
+            }
+         }
+         reader.readAsText(file);
+      });
+      ulElement.click();
+   });
 }
+
 
 /*******************************************************/
 /**************** Booster Crafter BEGIN ****************/
@@ -264,8 +343,9 @@ if(window.location.pathname.includes('/tradingcards/boostercreator/enhanced')) {
 /**************** Item Matcher BEGIN ****************/
 /****************************************************/
 class Profile {
+   static me;
    static MasterProfileList = [];
-   static appMetaData = {}; // Can be put into its own class
+   static appMetaData = {}; // Can be put into its own class // should use map
    static itemDescriptions = {}; // Can be put into its own class
    static utils = steamToolsUtils;
 
@@ -322,6 +402,7 @@ class Profile {
    pfp;
    state;
    tradeToken;
+   pastNames = [];
 
    friends;
 
@@ -341,6 +422,10 @@ class Profile {
       this.pfp        = props.pfp;
       this.state      = props.state;
       this.tradeToken = props.tradeToken;
+
+      if(!Profile.me && this.idMe()) {
+         Profile.me = this;
+      }
    }
 
    async getTradeFriends() {
@@ -423,34 +508,25 @@ class Profile {
    }
 
    static async loadProfiles(profileids) {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
       let dataset = await SteamToolsDbManager.getProfiles(profileids);
 
-      for(let data in dataset) {
+      for(let id in dataset) {
+         let data = dataset[id];
          let profile = Profile.MasterProfileList.find(x => x.id === data.id);
          if(profile) {
-            if(profile.id === undefined) {
-               profile.id = data.id;
-            }
-            if(profile.url === undefined) {
-               profile.url = data.url;
-            }
-            if(profile.name === undefined) {
-               profile.name = data.name;
-            }
-            if(profile.pfp === undefined) {
-               profile.pfp = data.pfp;
-            }
-            if(profile.state === undefined) {
-               profile.state = data.state;
-            }
-            if(profile.tradeToken === undefined) {
-               profile.tradeToken = data.tradeToken;
-            }
-            if(profile.friends === undefined) {
-               profile.friends = data.friends;
-            }
+            profile.id         ??= data.id;
+            profile.url        ??= data.url;
+            profile.name       ??= data.name;
+            profile.pfp        ??= data.pfp;
+            profile.state      ??= data.state;
+            profile.tradeToken ??= data.tradeToken;
+            profile.friends    ??= data.friends;
          } else {
-           profile = new Profile(props);
+           profile = new Profile(data);
            Profile.MasterProfileList.push(profile);
          }
 
@@ -459,19 +535,27 @@ class Profile {
    }
 
    async saveProfile() {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
       await SteamToolsDbManager.setProfile(this);
    }
 
+   // include loading profile data from db
    static async findProfile(str) {
       if(typeof str !== 'string') {
          throw "findProfile(): Parameter is not a string!";
       }
 
       let profile;
-      if(/76561\d{12}/.test(str)) {
+      if(this.utils.isSteamId64Format(str)) {
          if(!(profile = Profile.MasterProfileList.find(x => x.id === str))) {
-            console.log(`findProfile(): No profile found for id ${str}. Creating new profile...`);
-            profile = await Profile.addNewProfile({id: str});
+            await Profile.loadProfiles(str);
+            if(!(profile = Profile.MasterProfileList.find(x => x.id === str))) {
+               console.log(`findProfile(): No profile found for id ${str}. Creating new profile...`);
+               profile = await Profile.addNewProfile({id: str});
+            }
          }
       }
       if(!profile) {
@@ -484,6 +568,11 @@ class Profile {
       if(!profile) {
          console.warn("findProfile(): Unable to find or create a Profile instance!");
       }
+
+      if(!Profile.me && this.isMe()) {
+         Profile.me = profile;
+      }
+
       return profile;
    }
 
@@ -539,6 +628,9 @@ class Profile {
             profile.url = profiledata.url.replace(/(^id\/)|(\/$)/g, '');
          case profiledata.url.startsWith('profiles'): // assuming no customURL if url uses profileid
             profile.name = profiledata.personaname;
+            if(profile.pastNames && Array.isArray(profile.pastNames) && profile.pastNames[length-1] !== profile.name) {
+               profile.pastNames.push(profile.name);
+            }
             break;
          default:
             console.warn(`findMoreDataForProfile(): ${JSON.stringify(profiledata)} is neither id or custom URL, investigate!`);
@@ -583,30 +675,68 @@ class Profile {
    /***********************************************************************/
    /***************************** App Methods *****************************/
    /***********************************************************************/
+   static async findAppMetaData(appid) {
+      if(!Profile.appMetaData[appid]) {
+         await Profile.loadAppMetaData(appid);
+      }
+
+      // attempt to use user's own badgepage to scrape basic app data
+      if(!Profile.appMetaData[appid]) {
+         let myProfile = await Profile.findProfile(Profile.utils.getMySteamId());
+         if(!myProfile) {
+            console.error('findAppMetaData(): Somehow user\'s profile cannot be found!');
+            return;
+         }
+         await myProfile.getBadgepageStock();
+      }
+
+      return Profile.appMetaData[appid];
+   };
+
    static async loadAppMetaData(appids) {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
       let dataset = await SteamToolsDbManager.getAppDatas(appids);
 
-      for(let data in dataset) {
-         if(Profile.appMetaData[data.appid]) {
-            // update existing meta data
+      for(let appid in dataset) {
+         let existingData = Profile.appMetaData[appid];
+         if(existingData) {
+            existingData.name ??= dataset[appid].name;
+            Object.assign(existingData.badges.normal, dataset[appid].badges.normal);
+            Object.assign(existingData.badges.foil, dataset[appid].badges.foil);
+            for(let [cardIndex, card] of dataset[appid].cards.entries()) {
+               Object.assign(existingData.cards[cardIndex], card);
+            }
          } else {
-            Profile.appMetaData[data.appid] = data;
+            Profile.appMetaData[appid] = dataset[appid];
          }
       }
    }
 
    static async saveAppMetaData(appid) {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
       await SteamToolsDbManager.setAppData(Profile.appMetaData[appid]);
    }
 
+   // change to find app meta data
    updateAppMetaData(appid, key, val) {
       if(!Profile.appMetaData[appid]) {
-         Profile.appMetaData[appid] = {appid: appid};
+         await Profile.loadAppMetaData(appid);
       }
+      Profile.appMetaData[appid] ??= {appid: appid};
       Profile.appMetaData[appid][key] = val;
    }
 
    static async loadItemDescription(classids) {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
       let dataset = await SteamToolsDbManager.getItemDescripts(753, 6, classids); // hardcoded for now
 
       for(let data in dataset) {
@@ -619,13 +749,15 @@ class Profile {
    }
 
    static async saveItemDescription(classid) {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
       await SteamToolsDbManager.setItemDescript(Profile.itemDescriptions[classid], 6, 753);
    }
 
    updateItemDescription(classid, dataObject) {
-      if(!Profile.itemDescriptions[classid]) {
-         Profile.itemDescriptions[classid] = {};
-      }
+      Profile.itemDescriptions[classid] ??= {};
       Object.assign(Profile.itemDescriptions[classid], dataObject);
    }
 
@@ -655,6 +787,10 @@ class Profile {
    }
 
    async loadInventory() {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
       let data = await SteamToolsDbManager.getProfileInventories(this.id, 753, 6);
 
       if(!this.inventory || this.inventory.last_updated<data.last_updated) {
@@ -663,6 +799,10 @@ class Profile {
    }
 
    async saveInventory() {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
       await SteamToolsDbManager.setProfileInventory(this.inventory, this.id, 753, 6);
    }
 
@@ -709,7 +849,7 @@ class Profile {
       let data = [];
       let counter = 0;
       let resdata = {};
-      let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] || Number.MAX_SAFE_INTEGER;
+      let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] ?? Number.MAX_SAFE_INTEGER;
 
       this.resetInventory();
 
@@ -752,7 +892,7 @@ class Profile {
             }
 
             itemType = Profile.ITEM_TYPE_MAP[itemType.internal_name];
-            rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] || parseInt(rarity.internal_name.replace(/\D+/g, ''));
+            rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] ?? parseInt(rarity.internal_name.replace(/\D+/g, ''));
             if(!this.inventory.data[itemType]) {
                this.inventory.data[itemType] = [{}];
             } else if(this.inventory.data[itemType].length <= rarity) {
@@ -833,7 +973,7 @@ class Profile {
       let counter = 0;
       let resdata = { more_start: 0 };
       let last_descript;
-      let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] || Number.MAX_SAFE_INTEGER;
+      let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] ?? Number.MAX_SAFE_INTEGER;
 
       let currentPathSearch = window.location.pathname + window.location.search;
       let partnerString = `?partner=${Profile.utils.getSteamProfileId3(this.id)}`;
@@ -892,7 +1032,7 @@ class Profile {
             }
 
             itemType = Profile.ITEM_TYPE_MAP[itemType.internal_name];
-            rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] || parseInt(rarity.internal_name.replace(/\D+/g, ''));
+            rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] ?? parseInt(rarity.internal_name.replace(/\D+/g, ''));
             if(!this.inventory.data[itemType]) {
                this.inventory.data[itemType] = [{}];
             } else if(this.inventory.data[itemType].length <= rarity) {
@@ -953,6 +1093,10 @@ class Profile {
    }
 
    async loadBadgepages() {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
       let dataset = await SteamToolsDbManager.getBadgepages(this.id);
 
       for(let [rarity, applist] in Object.entries(dataset)) {
@@ -965,6 +1109,10 @@ class Profile {
    }
 
    async saveBadgepages() {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
       await SteamToolsDbManager.setBadgepages(this.id, this.badgepages);
    }
 
@@ -980,13 +1128,13 @@ class Profile {
       let parser = new DOMParser();
       let doc = parser.parseFromString(await response.text(), "text/html");
 
-      // check if private profile
+      // check if private profile here
 
       let rarity = foil ? 1 : 0;
       let newData = {};
       let name = doc.querySelector("a.whiteLink:nth-child(5)").textContent.trim();
       this.updateAppMetaData(appid, "name", name);
-      let cardData = Profile.appMetaData[appid].cards ? Profile.appMetaData[appid].cards : [];
+      let cardData = Profile.appMetaData[appid].cards ?? [];
 
       newData.data = [...doc.querySelectorAll(".badge_card_set_card")].map((x, i) => {
          let count = x.children[1].childNodes.length === 5 ? parseInt(x.children[1].childNodes[1].textContent.replace(/[()]/g, '')) : 0;
@@ -1122,6 +1270,7 @@ class Profile {
    }
 }
 
+
 SteamToolsDbManager.getProfiles = async function(profileids) {
    return await this.get("profiles", profileids);
 }
@@ -1245,16 +1394,15 @@ GLOBALSETTINGSDEFAULTS.matcher = {
          label: 'Match Apps On',
          id: 'appgroup',
          options: [
-            { name: 'badgepage', id: 'match-badgepage', label: 'My Badge Page', value: false },
+            // { name: 'badgepage', id: 'match-badgepage', label: 'My Badge Page', value: false },
             { name: 'custom', id: 'match-user-app-list', label: 'My App List', value: false }
          ]
       }
    },
    lists: {
-      matchlist: 'Matchlist',
-      blacklist: 'Blacklist',
-      applist: 'Apps'
-      /* tabGroup: { label: string, data: [] }*/
+      matchlist: { label: 'Matchlist', data: [] },
+      blacklist: { label: 'Blacklist', data: [] },
+      applist: { label: 'Apps', data: [] }
    },
    currentTab: 'matchlist'
 };
@@ -1262,7 +1410,7 @@ const MatcherConfigShortcuts = {};
 
 async function gotoMatcherConfigPage() {
    const generateConfigHeaderString = (id, title) => `<div class="matcher-config-header" data-id="${id}"><span>${title}</span></div>`;
-   const generateConfigButtonString = (id, label) => `<div class="matcher-config-option"><input type="checkbox" class="button" data-id="${id}"><label for="${id}">${label}</label></div>`;
+   const generateConfigButtonString = (id, label) => `<div class="matcher-config-option"><input type="checkbox" class="button" id="${id}"><label for="${id}">${label}</label></div>`;
    const generateConfigButtonsString = (checkList) => checkList.map(x => generateConfigButtonString(x.id, x.label)).join('');
    const generateConfigButtonGroupString = (groups) => Object.values(globalSettings.matcher.config).map(x => {
       return `<div class="matcher-config-group">${generateConfigHeaderString(x.id, x.label)}${generateConfigButtonsString(x.options)}</div>`
@@ -1270,8 +1418,7 @@ async function gotoMatcherConfigPage() {
    const generateConfigListTabs = (list) => {
       let HTMLString = '';
       for(let listGroup in list) {
-         HTMLString += `<div class="matcher-conf-list-tab" data-list-name="${listGroup}">${list[listGroup]}</div>`;
-         list[listGroup] = { label: list[listGroup], data: [] };
+         HTMLString += `<div class="matcher-conf-list-tab" data-list-name="${listGroup}">${list[listGroup].label}</div>`;
       }
       return HTMLString;
    };
@@ -1285,12 +1432,18 @@ async function gotoMatcherConfigPage() {
 
    console.log('Setting up Matcher Configuration!');
 
-   if(!MAIN_ELEM) {
+   MatcherConfigShortcuts.MAIN_ELEM = document.querySelector('#responsive_page_template_content');
+
+   if(!MatcherConfigShortcuts.MAIN_ELEM) {
       alert('Main element no found, Matcher Configuration will not be set up');
       console.warn('gotoMatcherConfigPage(): Main element no found, Matcher Configuration will not be set up!');
       return;
    }
-   MAIN_ELEM.innerHTML = '';
+
+   // set up css styles for this feature
+   GM_addStyle(cssMatcher);
+
+   MatcherConfigShortcuts.MAIN_ELEM.innerHTML = '';
 
    let config = await SteamToolsDbManager.getToolConfig('matcher');
    if(config.matcher) {
@@ -1303,7 +1456,6 @@ async function gotoMatcherConfigPage() {
    +    '<div class="matcher-config-title"><span>Matcher Configuration</span></div>'
    +    '<div class="matcher-options">'
    +       generateConfigButtonGroupString()
-   +    '</div>'
    +       '<div class="matcher-config-group">'
    +          '<div class="matcher-config-header"><span>Import/Export Settings</span></div>'
    +          '<div class="matcher-config-option">'
@@ -1312,8 +1464,8 @@ async function gotoMatcherConfigPage() {
    +          '</div>'
    +       '</div>'
    +       '<div class="matcher-setting center">'
-   +          '<button id="matcher-reset-settings" class="blue">Reset</button>'
-   +          '<button id="matcher-save-settings" class="green">Save</button>'
+   +          '<button id="matcher-config-reset" class="blue">Reset</button>'
+   +          '<button id="matcher-config-save" class="green">Save</button>'
    +       '</div>'
    +    '</div>'
    +    '<div class="matcher-conf-list">'
@@ -1322,22 +1474,16 @@ async function gotoMatcherConfigPage() {
    +       '</div>'
    +       '<div class="conf-list-entry-action add">'
    +          '<div class="conf-list-entry-action-add">'
-   +             '<div class="entry-action-add"></div>'
+   +             '<div id="entry-action-add"></div>'
    +          '</div>'
    +          '<div class="conf-list-entry-action-modify">'
-   +             '<div class="entry-action-del"></div>'
-   +             '<div class="entry-action-edit"></div>'
+   +             '<div id="entry-action-del"></div>'
+   +             '<div id="entry-action-edit"></div>'
    +          '</div>'
    +       '</div>'
    +       '<div class="matcher-conf-list-list">'
    +          '<div class="conf-list-entry-form-container">'
    +             '<div class="conf-list-entry-form">'
-   +                '<input type="text" id="entry-form-id" placeholder="temp">'
-   +                '<textarea name="" id="entry-form-descript" placeholder="Note (Optional)"></textarea>'
-   +                '<div class="entry-form-action">'
-   +                   '<button id="conf-list-entry-form-cancel" class="red">Cancel</button>'
-   +                   '<button id="conf-list-entry-form-add" class="green">Add</button>'
-   +                '</div>'
    +             '</div>'
    +          '</div>'
    +          '<div class="conf-list-overlay">'
@@ -1350,8 +1496,8 @@ async function gotoMatcherConfigPage() {
    +                '</div>'
    +                '<div id="conf-list-entry-new" class="matcher-conf-list-entry"></div>'
    +                '<div class="conf-list-dialog-action">'
-   +                   '<button class="red wide">No</button>'
-   +                   '<button class="green wide">Yes</button>'
+   +                   '<button id="conf-list-dialog-cancel" class="red wide">No</button>'
+   +                   '<button id="conf-list-dialog-confirm" class="green wide">Yes</button>'
    +                '</div>'
    +             '</div>'
    +          '</div>'
@@ -1362,39 +1508,40 @@ async function gotoMatcherConfigPage() {
    +    '</div>'
    + '</div>';
 
-   MAIN_ELEM.insertAdjacentHTML("afterbegin", matcherConfigHTMLString);
+   MatcherConfigShortcuts.MAIN_ELEM.insertAdjacentHTML("afterbegin", matcherConfigHTMLString);
 
-   for(let buttonGroup of MAIN_ELEM.querySelectorAll('.matcher-config-group')) {
+   for(let buttonGroup of MatcherConfigShortcuts.MAIN_ELEM.querySelectorAll('.matcher-config-group')) {
       buttonGroup.addEventListener('change', matcherConfigUpdateChecklistListener);
    }
-   MAIN_ELEM.querySelector('#matcher-config-import').addEventListener('click', matcherConfigImportListener);
-   MAIN_ELEM.querySelector('#matcher-config-export').addEventListener('click', matcherConfigExportListener);
-   MAIN_ELEM.querySelector('.matcher-reset-settings').addEventListener('click', matcherConfigLoadListener);
-   MAIN_ELEM.querySelector('.matcher-save-settings').addEventListener('click', matcherConfigSaveListener);
-   MAIN_ELEM.querySelector('.matcher-conf-list-header').addEventListener('click', matcherConfigSelectListTabListener);
-   MAIN_ELEM.querySelector('.entry-action-add').addEventListener('click', matcherConfigAddListEntryListener);
-   MAIN_ELEM.querySelector('.entry-action-edit').addEventListener('click', matcherConfigEditListEntryListener);
-   MAIN_ELEM.querySelector('.entry-action-del').addEventListener('click', matcherConfigDeleteListEntryListener);
-   MAIN_ELEM.querySelector('.matcher-conf-list-entries').addEventListener('click', matcherConfigSelectListEntryListener);
-   MAIN_ELEM.querySelector('#conf-list-entry-form-cancel').addEventListener('click', matcherConfigEntryFormCancelListener);
-   MAIN_ELEM.querySelector('#conf-list-entry-form-add').addEventListener('click', matcherConfigEntryFormAddListener);
+   document.getElementById('matcher-config-import').addEventListener('click', matcherConfigImportListener);
+   document.getElementById('matcher-config-export').addEventListener('click', matcherConfigExportListener);
+   document.getElementById('matcher-config-reset').addEventListener('click', matcherConfigLoadListener);
+   document.getElementById('matcher-config-save').addEventListener('click', matcherConfigSaveListener);
+   MatcherConfigShortcuts.MAIN_ELEM.querySelector('.matcher-conf-list-header').addEventListener('click', matcherConfigSelectListTabListener);
+   document.getElementById('entry-action-add').addEventListener('click', matcherConfigAddListEntryListener);
+   document.getElementById('entry-action-edit').addEventListener('click', matcherConfigEditListEntryListener);
+   document.getElementById('entry-action-del').addEventListener('click', matcherConfigDeleteListEntryListener);
+   MatcherConfigShortcuts.MAIN_ELEM.querySelector('.matcher-conf-list-entries').addEventListener('click', matcherConfigSelectListEntryListener);
+   document.getElementById('conf-list-dialog-cancel').addEventListener('click', matcherConfigListDialogCancelListener);
+   document.getElementById('conf-list-dialog-confirm').addEventListener('click', matcherConfigListDialogConfirmListener);
+   // apply event listeners to go onto other actions like default matching, single account matching, input trade url links to add trade tokens, etc
 
-   // apply event listeners to go onto other actions like default matching, single account matching, resetting configs to default settings, etc
-
-   MatcherConfigShortcuts.listActionBarElem = MAIN_ELEM.querySelector('.conf-list-entry-action');
-   MatcherConfigShortcuts.listFormContainerElem = MAIN_ELEM.querySelector('.conf-list-entry-form-container');
-   MatcherConfigShortcuts.listOverlayElem = MAIN_ELEM.querySelector('.conf-list-overlay');
-   MatcherConfigShortcuts.listDialogElem = MAIN_ELEM.querySelector('.conf-list-dialog');
+   MatcherConfigShortcuts.listActionBarElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-action');
+   MatcherConfigShortcuts.listFormContainerElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-form-container');
+   MatcherConfigShortcuts.listOverlayElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-overlay');
+   MatcherConfigShortcuts.listDialogElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-dialog');
    MatcherConfigShortcuts.listElems = {};
    for(let entryGroup in globalSettings.matcher.lists) {
-      MatcherConfigShortcuts.listElems[entryGroup] = MAIN_ELEM.querySelector(`.matcher-conf-list-entry-group[data-list-name=${entryGroup}]`);
+      MatcherConfigShortcuts.listElems[entryGroup] = MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.matcher-conf-list-entry-group[data-list-name=${entryGroup}]`);
    }
 
    matcherConfigLoadUI();
 }
 
-function matcherConfigLoadUI() {
-   const configMenuElem = MAIN_ELEM.querySelector('.matcher-config');
+async function matcherConfigLoadUI() {
+   MatcherConfigShortcuts.listOverlayElem.classList.add('active');
+
+   const configMenuElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.matcher-config');
    if(!configMenuElem) {
       console.warn('updateMatcherConfigUI(): Config menu not found, UI will not be updated');
       return;
@@ -1402,17 +1549,78 @@ function matcherConfigLoadUI() {
 
    for(let optionGroup of Object.values(globalSettings.matcher.config)) {
       for(let option of optionGroup.options) {
-         configMenuElem.querySelector('#'+option.id).checked = option.value;
+         document.getElementById(option.id).checked = option.value;
       }
    }
 
    // generate lists
+   for(let [listName, listGroup] of Object.entries(globalSettings.matcher.lists)) {
+      let entryGroupElem = MatcherConfigShortcuts.listElems[listName];
+      let entriesHTMLString = [];
+      for(let data of listGroup.data) {
+         if(listName === 'matchlist' || listName === 'blacklist') {
+            let profile = await Profile.findProfile(data.profileid);
+            if(!profile) {
+               console.warn('matcherConfigLoadUI(): No profile found, skipping this entry...');
+            }
 
-   matcherConfigShowActiveList();
+            let tradeTokenWarning = listName === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
+            let entryHTMLString = `<div class="matcher-conf-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
+            +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar offline">`
+            +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
+            +    '</a>'
+            +    `<div class="conf-list-entry-name" title="${profile.name}" >${profile.name}</div>`
+            +    `<div class="conf-list-entry-descript">${data.descript}</div>`
+            + '</div>';
+
+            entriesHTMLString.push({key1: profile.id, key2: null, string: entryHTMLString});
+         } else if(listName === 'applist') {
+            let entryHTMLString;
+            let appdata = await Profile.findAppMetaData(data.appid);
+            if(!appdata) {
+               entryHTMLString = `<div class="matcher-conf-list-entry" data-appid="${data.appid}" data-name="">`
+               +    '<a class="app-header"></a>'
+               +    `<div class="conf-list-entry-profile">${data.appid}</div>`
+               +    `<div class="conf-list-entry-descript">${data.descript}</div>`
+               + '</div>';
+            } else {
+               entryHTMLString = `<div class="matcher-conf-list-entry" data-appid="${appdata.appid}" data-name="${appdata.name}">`
+               +    `<a href="https://steamcommunity.com/my/gamecards/${appdata.appid}}/" target="_blank" rel="noopener noreferrer" class="app-header">`
+               +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
+               +    '</a>'
+               +    `<div class="conf-list-entry-name">${appdata.name}</div>`
+               +    `<div class="conf-list-entry-descript">${data.descript}</div>`
+               + '</div>';
+            }
+
+
+            entriesHTMLString.push({key1: appdata?.name ?? '', key2: data.appid, string: entryHTMLString});
+         } else {
+            console.warn('matcherConfigLoadUI(): HTML generation for a list not implemented, that list will be empty!');
+            break;
+         }
+      }
+
+      if(listName === 'applist') {
+         entriesHTMLString.sort((a, b) => a.key1==='' ? a.key2-b.key2 : a.key1-b.key1);
+      }
+
+      entryGroupElem.insertAdjacentHTML('afterbegin', entriesHTMLString.reduce((str, entry) => str+entry.string, ''));
+   }
+
+   // set active tab
+   if(globalSettings.matcher.currentTab) {
+      MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.matcher-conf-list-tab[data-list-name=${globalSettings.matcher.currentTab}]`).classList.add('active');
+      matcherConfigShowActiveList();
+   }
+
+   matcherConfigResetEntryForm();
+
+   MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
 }
 
 function matcherConfigSetEntryActionBar(actionBarName) {
-   let listActionElem = MAIN_ELEM.querySelector('.conf-list-entry-action');
+   let listActionElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-action');
    if(actionBarName === 'add') {
       listActionElem.classList.remove('modify');
       listActionElem.classList.add('add');
@@ -1431,7 +1639,7 @@ function matcherConfigSelectListTabListener(event) {
       return;
    }
 
-   event.currentTarget.querySelector(`.matcher-conf-list-tab.active`).classList.remove('active');
+   event.currentTarget.querySelector(`.matcher-conf-list-tab.active`)?.classList.remove('active');
    event.target.classList.add('active');
    globalSettings.matcher.currentTab = event.target.dataset.listName;
 
@@ -1439,7 +1647,7 @@ function matcherConfigSelectListTabListener(event) {
       MatcherConfigShortcuts.selectedListEntryElem.classList.remove('selected');
       MatcherConfigShortcuts.selectedListEntryElem = undefined;
 
-      MatcherConfigShortcuts.listFormContainerElem.classList.add('hidden');
+      MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
       matcherConfigResetEntryForm();
       matcherConfigSetEntryActionBar('add');
    }
@@ -1450,7 +1658,7 @@ function matcherConfigSelectListTabListener(event) {
 function matcherConfigResetEntryForm() {
    let currentTab = globalSettings.matcher.currentTab;
 
-   let entryFormElem = MAIN_ELEM.querySelector('.conf-list-entry-form');
+   let entryFormElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-form');
    let currentFormType = entryFormElem.dataset.type;
 
    if(currentFormType !== currentTab) {
@@ -1471,7 +1679,9 @@ function matcherConfigResetEntryForm() {
       +    '<button id="conf-list-entry-form-cancel" class="red">Cancel</button>'
       +    '<button id="conf-list-entry-form-add" class="green">Add</button>'
       + '</div>';
-      entryFormElem.insertAdjacentHTML(entryFormActionHTMLString);
+      entryFormElem.insertAdjacentHTML('beforeend', entryFormActionHTMLString);
+      document.getElementById('conf-list-entry-form-cancel').addEventListener('click', matcherConfigEntryFormCancelListener);
+      document.getElementById('conf-list-entry-form-add').addEventListener('click', matcherConfigEntryFormAddListener);
 
       entryFormElem.dataset.type = currentTab;
    } else {
@@ -1491,8 +1701,8 @@ function matcherConfigResetEntryForm() {
 
 function matcherConfigShowActiveList() {
    let currentTab = globalSettings.matcher.currentTab;
-   for(let listGroup of MAIN_ELEM.querySelectorAll(`.matcher-conf-list-entry-group`)) {
-      if(!currentTab || currentTab.dataset.listName !== listGroup.dataset.listName) {
+   for(let listGroup of MatcherConfigShortcuts.MAIN_ELEM.querySelectorAll(`.matcher-conf-list-entry-group`)) {
+      if(currentTab !== listGroup.dataset.listName) {
          listGroup.classList.remove('active');
       } else {
          listGroup.classList.add('active');
@@ -1510,10 +1720,14 @@ function matcherConfigSelectListEntryListener(event) {
          entryElem = entryElem.parentElement;
       }
    }
-   if(!event.target.matches('.matcher-conf-list-entry')) {
+   if(!entryElem.matches('.matcher-conf-list-entry')) {
       return;
    }
 
+   matcherConfigSelectListEntry(entryElem);
+}
+
+function matcherConfigSelectListEntry(entryElem) {
    if(entryElem.classList.contains('selected')) {
       entryElem.classList.remove('selected');
       MatcherConfigShortcuts.selectedListEntryElem = undefined;
@@ -1549,15 +1763,15 @@ function matcherConfigUpdateChecklistListener(event) {
 
 // add new config list entry, populated input values persist when form is minimized
 function matcherConfigAddListEntryListener(event) {
-   MatcherConfigShortcuts.listFormContainerElem.classList.toggle('hidden');
+   MatcherConfigShortcuts.listFormContainerElem.classList.toggle('active');
 }
 
 // modify selected HTML that is selected
 function matcherConfigEditListEntryListener(event) {
    /* edit selected entry, prefilled with selected entry info */
    let currentTab = globalSettings.matcher.currentTab;
-   if(!MatcherConfigShortcuts.listFormContainerElem.matches('.hidden')) {
-      MatcherConfigShortcuts.listFormContainerElem.classList.add('hidden');
+   if(MatcherConfigShortcuts.listFormContainerElem.matches('.active')) {
+      MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
       return;
    }
 
@@ -1567,17 +1781,17 @@ function matcherConfigEditListEntryListener(event) {
    }
 
    if(currentTab === 'matchlist' || currentTab === 'blacklist') {
-      MAIN_ELEM.querySelector('#entry-form-id').value = MatcherConfigShortcuts.selectedListEntryElem.dataset.profileid;
-      MAIN_ELEM.querySelector('#entry-form-descript').value = MatcherConfigShortcuts.selectedListEntryElem.querySelector('.conf-list-entry-descript').textContent;
+      MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = MatcherConfigShortcuts.selectedListEntryElem.dataset.profileid;
+      MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = MatcherConfigShortcuts.selectedListEntryElem.querySelector('.conf-list-entry-descript').textContent;
    } else if(currentTab === 'applist') {
-      MAIN_ELEM.querySelector('#entry-form-id').value = MatcherConfigShortcuts.selectedListEntryElem.dataset.appid;
-      MAIN_ELEM.querySelector('#entry-form-descript').value = MatcherConfigShortcuts.selectedListEntryElem.querySelector('.conf-list-entry-descript').textContent;
+      MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = MatcherConfigShortcuts.selectedListEntryElem.dataset.appid;
+      MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = MatcherConfigShortcuts.selectedListEntryElem.querySelector('.conf-list-entry-descript').textContent;
    } else {
       console.warn('matcherConfigEditListEntryListener(): Entry edit prefill not implemented, form will not be prefilled!');
       return;
    }
 
-   MatcherConfigShortcuts.listFormContainerElem.classList.remove('hidden');
+   MatcherConfigShortcuts.listFormContainerElem.classList.add('active');
 }
 
 // delete selected HTML elements
@@ -1616,10 +1830,6 @@ function matcherConfigDeleteListEntryListener(event) {
 }
 
 async function matcherConfigEntryFormAddListener(event) {
-   // NOTE: Ideally have a new absolute positioned layer to lock out editing/selection in form of loading until a conclusion is reached
-   /* validate data, then add to current list */
-   // disable action bar when this is still processing
-
    let currentTab = globalSettings.matcher.currentTab;
 
    if(currentTab === 'matchlist' || currentTab === 'blacklist') {
@@ -1637,13 +1847,14 @@ async function matcherConfigEntryFormAddListener(event) {
 
       if(profileEntry) {
          // app found: prompt user if they want to overwrite existing data
-         // fill dialog with necessary info
-         // unhide dialog
-
-         const profileEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-profileid=${profileEntry.profileid}]`);
-         profileEntryElem.textContent = description;
-         profileEntry.descript = description;
-
+         console.log(profileEntry)
+         console.log(MatcherConfigShortcuts.listElems[currentTab])
+         let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-profileid="${profileEntry.profileid}"]`);
+         matcherConfigSelectListEntry(selectedEntryElem);
+         document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
+         document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
+         document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
+         MatcherConfigShortcuts.listDialogElem.classList.add('active');
          return;
       } else {
          let profile = await Profile.findProfile(profileValue);
@@ -1651,25 +1862,26 @@ async function matcherConfigEntryFormAddListener(event) {
             profileEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.profileid === profile.id);
             if(profileEntry) {
                // app found: prompt user if they want to overwrite existing data
-               // fill dialog with necessary info
-               // unhide dialog
-
-               const profileEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-profileid=${profileEntry.profileid}]`);
-               profileEntryElem.textContent = description;
-               profileEntry.descript = description;
-
+               let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-profileid="${profileEntry.profileid}"]`);
+               matcherConfigSelectListEntry(selectedEntryElem);
+               document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
+               document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
+               document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
+               MatcherConfigShortcuts.listDialogElem.classList.add('active');
                return;
             } else {
                let entryGroupElem = MatcherConfigShortcuts.listElems[currentTab];
-               let entryHTMLString = `<div class="matcher-conf-list-entry" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
-               +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" class="avatar offline">`
+               let tradeTokenWarning = currentTab === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
+               let entryHTMLString = `<div class="matcher-conf-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
+               +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar offline">`
                +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
                +    '</a>'
-               +    `<div class="conf-list-entry-name">${profile.name}</div>`
+               +    `<div class="conf-list-entry-name" title="${profile.name}" >${profile.name}</div>`
                +    `<div class="conf-list-entry-descript">${description}</div>`
                + '</div>';
 
                entryGroupElem.insertAdjacentHTML('afterbegin', entryHTMLString);
+               globalSettings.matcher.lists[currentTab].data.push({ profileid: profile.id, descript: description });
             }
          } else {
             alert('No valid profile found. Data will not be added!');
@@ -1690,13 +1902,12 @@ async function matcherConfigEntryFormAddListener(event) {
 
       if(appidEntry) {
          // app found: prompt user if they want to overwrite existing data
-         // fill dialog with necessary info
-         // unhide dialog
-
-         const appidEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-appid=${appidEntry.appid}]`);
-         appidEntryElem.textContent = description;
-         appidEntry.descript = description;
-
+         let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-appid="${appidEntry.appid}"]`);
+         matcherConfigSelectListEntry(selectedEntryElem);
+         document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
+         document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
+         document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
+         MatcherConfigShortcuts.listDialogElem.classList.add('active');
          return;
       } else {
          let appdata = await Profile.findAppMetaData(appid);
@@ -1720,7 +1931,7 @@ async function matcherConfigEntryFormAddListener(event) {
                }
             }
             let entryHTMLString = `<div class="matcher-conf-list-entry" data-appid="${appdata.appid}" data-name="${appdata.name}">`
-            +    `<a href="https://steamcommunity.com/my/gamecards/${appdata.appid}}/" class="app-header">`
+            +    `<a href="https://steamcommunity.com/my/gamecards/${appdata.appid}}/" target="_blank" rel="noopener noreferrer" class="app-header">`
             +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
             +    '</a>'
             +    `<div class="conf-list-entry-name">${appdata.name}</div>`
@@ -1744,85 +1955,44 @@ async function matcherConfigEntryFormAddListener(event) {
 function matcherConfigEntryFormCancelListener(event) {
    let currentTab = globalSettings.matcher.currentTab;
    if(currentTab === 'matchlist' || currentTab === 'blacklist') {
-      MAIN_ELEM.querySelector('#entry-form-id').value = '';
-      MAIN_ELEM.querySelector('#entry-form-descript').value = '';
+      MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = '';
+      MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = '';
    } else if(currentTab === 'applist') {
-      MAIN_ELEM.querySelector('#entry-form-id').value = '';
-      MAIN_ELEM.querySelector('#entry-form-descript').value = '';
+      MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = '';
+      MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = '';
    } else {
       console.warn('matcherConfigEntryFormCancelListener(): Entry form cancel not implemented, form will not be cleared!');
    }
 
-   MatcherConfigShortcuts.listFormContainerElem.classList.add('hidden');
+   MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
 }
 
 function matcherConfigListDialogCancelListener(event) {
-   MAIN_ELEM.getElementById('conf-list-entry-new').innerHTML = '';
    MatcherConfigShortcuts.listDialogElem.classList.remove('active');
+   document.getElementById('conf-list-entry-old').innerHTML = '';
+   document.getElementById('conf-list-entry-new').innerHTML = '';
    MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
    MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
    MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
 }
 
 function matcherConfigListDialogConfirmListener(event) {
-   MatcherConfigShortcuts.selectedListEntryElem.innerHTML = MAIN_ELEM.getElementById('conf-list-entry-new').innerHTML;
-   MAIN_ELEM.getElementById('conf-list-entry-new').innerHTML = '';
+   MatcherConfigShortcuts.selectedListEntryElem.innerHTML = document.getElementById('conf-list-entry-new').innerHTML;
    MatcherConfigShortcuts.listDialogElem.classList.remove('active');
+   document.getElementById('conf-list-entry-old').innerHTML = '';
+   document.getElementById('conf-list-entry-new').innerHTML = '';
    MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
    MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
    MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
 }
 
-function matcherConfigImportListener() {
-   const isValidConfigObject = obj => {
-      if(!obj.config || !steamToolsUtils.isSimplyObject(obj.config)) {
-         return false;
-      }
-      for(let options in obj.config) {
-         if(!Array.isArray(options)) {
-            return false;
-         }
-         for(let option of options) {
-            if(typeof option.name !== 'string' || typeof option.id !== 'string' || typeof option.label !== 'string' || typeof option.value !== 'boolean') {
-               return false;
-            }
-         }
-      }
-
-      if(obj.lists && steamToolsUtils.isSimplyObject(obj.lists)) {
-         return false;
-      }
-      for(let list in obj.lists) {
-         if(!Array.isArray(obj.lists[list])) {
-            return false;
-         }
-      }
-
-      return true;
-   }
-
-   let file = this.files[0];
-   if(file.type !== 'application/json') {
-      console.warn('importMatcherConfigListener(): file type is not JSON, config not loaded!');
-   }
-
-   const reader = new FileReader();
-   reader.onload = (event) => {
-      let loadedConfig = JSON.parse(event.target.result);
-      if(isValidConfigObject(loadedConfig)) {
-         globalSettings.matcher = loadedConfig;
-         matcherConfigLoadUI();
-      }
-   }
-   reader.readAsText(file);
+async function matcherConfigImportListener() {
+   await importConfig('matcher');
+   matcherConfigLoadUI();
 }
 
 async function matcherConfigExportListener() {
-   let dlElement = await generateExportConfigElement('matcher', 'SteamMatcherConfig');
-   if(!dlElement) {
-      return;
-   }
-   dlElement.click();
+   exportConfig('matcher', 'SteamMatcherConfig');
 }
 
 async function matcherConfigSaveListener() {
