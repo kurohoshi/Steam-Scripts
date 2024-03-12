@@ -1,4 +1,7 @@
+// TODO: figure out a good item description catalog
+
 class Profile {
+   static me;
    static MasterProfileList = [];
    static appMetaData = {}; // Can be put into its own class
    static itemDescriptions = {}; // Can be put into its own class
@@ -57,6 +60,8 @@ class Profile {
    pfp;
    state;
    tradeToken;
+   pastNames = [];
+   last_updated = 0;
 
    friends;
 
@@ -76,6 +81,10 @@ class Profile {
       this.pfp        = props.pfp;
       this.state      = props.state;
       this.tradeToken = props.tradeToken;
+
+      if(!Profile.me && this.idMe()) {
+         Profile.me = this;
+      }
    }
 
    async getTradeFriends() {
@@ -139,6 +148,9 @@ class Profile {
    }
 
    async isFriend(profile) {
+      if(!this.friends) {
+         await this.getTradeFriends(); // A more generic friends list finding is required
+      }
       if(this.friends.some(x => x.id === profile.id || x.url === profile.url)) {
          return true;
       }
@@ -154,16 +166,59 @@ class Profile {
       return false;
    }
 
+   static async loadProfiles(profileids) {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
+      let dataset = await SteamToolsDbManager.getProfiles(profileids);
+
+      for(let id in dataset) {
+         let data = dataset[id];
+         let profile = Profile.MasterProfileList.find(x => x.id === data.id);
+         if(profile) {
+            profile.id         ??= data.id;
+            profile.url        ??= data.url;
+            profile.name       ??= data.name;
+            profile.pfp        ??= data.pfp;
+            profile.state      ??= data.state;
+            profile.tradeToken ??= data.tradeToken;
+            profile.friends    ??= data.friends;
+            profile.last_updated ??= data.last_updated;
+         } else {
+           profile = new Profile(data);
+           Profile.MasterProfileList.push(profile); 
+         }
+
+         if(Profile.utils.isOutdated7days(profile.last_updated)) {
+            await Profile.findMoreDataForProfile(profile);
+         }
+
+         // fetch badgepages and inventories? app metadata? item descriptions?
+      }
+   }
+
+   async saveProfile() {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
+      await SteamToolsDbManager.setProfile(this);
+   }
+
    static async findProfile(str) {
       if(typeof str !== 'string') {
          throw "findProfile(): Parameter is not a string!";
       }
 
       let profile;
-      if(this.utils.isSteamId64Format(str)) {
+      if(Profile.utils.isSteamId64Format(str)) {
          if(!(profile = Profile.MasterProfileList.find(x => x.id === str))) {
-            console.log(`findProfile(): No profile found for id ${str}. Creating new profile...`);
-            profile = await Profile.addNewProfile({id: str});
+            await Profile.loadProfiles(str);
+            if(!(profile = Profile.MasterProfileList.find(x => x.id === str))) {
+               console.log(`findProfile(): No profile found for id ${str}. Creating new profile...`);
+               profile = await Profile.addNewProfile({id: str});
+            }
          }
       }
       if(!profile) {
@@ -176,6 +231,11 @@ class Profile {
       if(!profile) {
          console.warn("findProfile(): Unable to find or create a Profile instance!");
       }
+
+      if(!Profile.me && this.isMe()) {
+         Profile.me = profile;
+      }
+
       return profile;
    }
 
@@ -227,6 +287,9 @@ class Profile {
             profile.url = profiledata.url.replace(/(^id\/)|(\/$)/g, '');
          case profiledata.url.startsWith('profiles'): // assuming no customURL if url uses profileid
             profile.name = profiledata.personaname;
+            if(profile.pastNames && Array.isArray(profile.pastNames) && profile.pastNames[length-1] !== profile.name) {
+               profile.pastNames.push(profile.name);
+            }
             break;
          default:
             console.warn(`findMoreDataForProfile(): ${JSON.stringify(profiledata)} is neither id or custom URL, investigate!`);
@@ -239,6 +302,9 @@ class Profile {
          ? 2 : profiledata.classList.contains("online")
          ? 1 : profiledata.classList.contains("offline")
          ? 0 : null;
+
+      profile.last_updated = Date.now();
+      await this.saveProfile();
 
       return true;
    }
@@ -271,10 +337,63 @@ class Profile {
    /***********************************************************************/
    /***************************** App Methods *****************************/
    /***********************************************************************/
+   static async findAppMetaData(appid) {
+      if(!Profile.appMetaData[appid]) {
+         await Profile.loadAppMetaData(appid);
+      }
+
+      // attempt to use user's own badgepage to scrape basic app data
+      if(!Profile.appMetaData[appid]) {
+         let myProfile;
+         if(!Profile.me) {
+            myProfile = await Profile.findProfile(Profile.utils.getMySteamId());
+         }
+         
+         if(!myProfile) {
+            console.error('findAppMetaData(): Somehow user\'s profile cannot be found!');
+            return;
+         }
+         await myProfile.getBadgepageStock(appid);
+      }
+
+      return Profile.appMetaData[appid];
+   };
+
+   static async loadAppMetaData(appids) {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
+      let dataset = await SteamToolsDbManager.getAppDatas(appids);
+
+      for(let appid in dataset) {
+         let existingData = Profile.appMetaData[appid];
+         if(existingData) {
+            existingData.name ??= dataset[appid].name;
+            Object.assign(existingData.badges.normal, dataset[appid].badges.normal);
+            Object.assign(existingData.badges.foil, dataset[appid].badges.foil);
+            for(let [cardIndex, card] of dataset[appid].cards.entries()) {
+               Object.assign(existingData.cards[cardIndex], card);
+            }
+         } else {
+            Profile.appMetaData[appid] = dataset[appid];
+         }
+      }
+   }
+
+   static async saveAppMetaData(appid) {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
+      await SteamToolsDbManager.setAppData(Profile.appMetaData[appid]);
+   }
+
    updateAppMetaData(appid, key, val) {
       if(!Profile.appMetaData[appid]) {
-         Profile.appMetaData[appid] = {appid: appid};
+         await Profile.findAppMetaData(appid);
       }
+      Profile.appMetaData[appid] ??= {appid: appid};
       Profile.appMetaData[appid][key] = val;
    }
 
