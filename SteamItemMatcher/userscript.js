@@ -404,6 +404,7 @@ class Profile {
    state;
    tradeToken;
    pastNames = [];
+   last_updated = 0;
 
    friends;
 
@@ -491,7 +492,7 @@ class Profile {
 
    async isFriend(profile) {
       if(!this.friends) {
-         await this.getTradeFriends();
+         await this.getTradeFriends(); // A more generic friends list finding is required
       }
       if(this.friends.some(x => x.id === profile.id || x.url === profile.url)) {
          return true;
@@ -526,9 +527,14 @@ class Profile {
             profile.state      ??= data.state;
             profile.tradeToken ??= data.tradeToken;
             profile.friends    ??= data.friends;
+            profile.last_updated ??= data.last_updated;
          } else {
-           profile = new Profile(data);
-           Profile.MasterProfileList.push(profile);
+            profile = new Profile(data);
+            Profile.MasterProfileList.push(profile);
+         }
+
+         if(Profile.utils.isOutdated7days(profile.last_updated)) {
+            await Profile.findMoreDataForProfile(profile);
          }
 
          // fetch badgepages and inventories? app metadata? item descriptions?
@@ -543,14 +549,13 @@ class Profile {
       await SteamToolsDbManager.setProfile(this);
    }
 
-   // include loading profile data from db
    static async findProfile(str) {
       if(typeof str !== 'string') {
          throw "findProfile(): Parameter is not a string!";
       }
 
       let profile;
-      if(this.utils.isSteamId64Format(str)) {
+      if(Profile.utils.isSteamId64Format(str)) {
          if(!(profile = Profile.MasterProfileList.find(x => x.id === str))) {
             await Profile.loadProfiles(str);
             if(!(profile = Profile.MasterProfileList.find(x => x.id === str))) {
@@ -645,6 +650,9 @@ class Profile {
          ? 1 : profiledata.classList.contains("offline")
          ? 0 : null;
 
+      profile.last_updated = Date.now();
+      await this.saveProfile();
+
       return true;
    }
 
@@ -683,16 +691,20 @@ class Profile {
 
       // attempt to use user's own badgepage to scrape basic app data
       if(!Profile.appMetaData[appid]) {
-         let myProfile = await Profile.findProfile(Profile.utils.getMySteamId());
+         let myProfile;
+         if(!Profile.me) {
+            myProfile = await Profile.findProfile(Profile.utils.getMySteamId());
+         }
+
          if(!myProfile) {
             console.error('findAppMetaData(): Somehow user\'s profile cannot be found!');
             return;
          }
-         await myProfile.getBadgepageStock();
+         await myProfile.getBadgepageStock(appid);
       }
 
       return Profile.appMetaData[appid];
-   };
+   }
 
    static async loadAppMetaData(appids) {
       if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
@@ -725,20 +737,20 @@ class Profile {
    }
 
    // change to find app meta data
-   updateAppMetaData(appid, key, val) {
+   async updateAppMetaData(appid, key, val) {
       if(!Profile.appMetaData[appid]) {
-         await Profile.loadAppMetaData(appid);
+         await Profile.findAppMetaData(appid);
       }
       Profile.appMetaData[appid] ??= {appid: appid};
       Profile.appMetaData[appid][key] = val;
    }
 
-   static async loadItemDescription(classids) {
+   static async loadItemDescription(appid, contextid, classids) {
       if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
          return;
       }
 
-      let dataset = await SteamToolsDbManager.getItemDescripts(753, 6, classids); // hardcoded for now
+      let dataset = await SteamToolsDbManager.getItemDescripts(appid, contextid, classids); // hardcoded for now
 
       for(let data in dataset) {
          if(Profile.itemDescriptions[data.classid]) {
@@ -1148,7 +1160,7 @@ class Profile {
             });
          }
          if(!cardData[i][`img${rarity}`]) {
-            cardData[i][`img${rarity}`] = x.children[0].querySelector(".gamecard").src.replace(/https\:\/\/community\.akamai\.steamstatic\.com\/economy\/image\//g, '');
+            cardData[i][`img${rarity}`] = x.children[0].querySelector(".gamecard").src.replace(/https:\/\/community\.akamai\.steamstatic\.com\/economy\/image\//g, '');
          }
          return { count: parseInt(count) };
       });
@@ -1204,7 +1216,7 @@ class Profile {
                continue;
             }
 
-            let badgeLink = badges[i].querySelector(".badge_row_overlay").href.replace(/https?:\/\/steamcommunity\.com\/((id)|(profiles))\/[^\/]+\/gamecards\//g, '');
+            let badgeLink = badges[i].querySelector(".badge_row_overlay").href.replace(/https?:\/\/steamcommunity\.com\/((id)|(profiles))\/[^/]+\/gamecards\//g, '');
             let badgeAppid = badgeLink.match(/^\d+/g)[0];
             if(badgeLink.endsWith("border=1")) {
                list.foil.push(badgeAppid);

@@ -186,8 +186,8 @@ class Profile {
             profile.friends    ??= data.friends;
             profile.last_updated ??= data.last_updated;
          } else {
-           profile = new Profile(data);
-           Profile.MasterProfileList.push(profile); 
+            profile = new Profile(data);
+            Profile.MasterProfileList.push(profile); 
          }
 
          if(Profile.utils.isOutdated7days(profile.last_updated)) {
@@ -253,6 +253,8 @@ class Profile {
       }
    }
 
+   static #mergeProfiles(id, url) {
+      // merge together profile instances that are duplicate due to obtaining id and url separately without each others other info
    static async findMoreDataForProfile(profile) {
       if(!profile.id && !profile.url) {
          console.error("findMoreDataForProfile(): Needs an id or url!");
@@ -357,7 +359,6 @@ class Profile {
       }
 
       return Profile.appMetaData[appid];
-   };
 
    static async loadAppMetaData(appids) {
       if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
@@ -715,6 +716,8 @@ class Profile {
       this.inventory.tradable_only = true;
    }
 
+
+      await SteamToolsDbManager.setBadgepages(this.id, this.badgepages);
    async getBadgepageStock(appid, foil=false) {
       if(!this.id) {
          await Profile.findMoreDataForProfile(this);
