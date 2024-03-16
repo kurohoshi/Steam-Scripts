@@ -82,24 +82,12 @@ class Profile {
       this.state      = props.state;
       this.tradeToken = props.tradeToken;
 
-      if(!Profile.me && this.idMe()) {
+      if(!Profile.me && this.isMe()) {
          Profile.me = this;
       }
    }
 
    async getTradeFriends() {
-      let addToList = async (props, prop) => {
-         let foundMaster = Profile.MasterProfileList.find(x => x[prop] === props[prop]);
-         if(!foundMaster) {
-            let newProf = await Profile.addNewProfile(props);
-            if(newProf !== undefined) {
-               this.friends.push(newProf);
-            }
-         } else {
-            this.friends.push(foundMaster);
-         }
-      }
-
       if(!(await this.isMe())) {
          console.warn("getTradeFriends(): This is not user's profile! Try using getFriends() instead");
          return;
@@ -116,21 +104,15 @@ class Profile {
 
       this.friends = [];
       for(let profile of [...doc.querySelectorAll(".FriendBlock")]) {
-         let newProps = {};
-
-         newProps.pfp = profile.querySelector("img").src.replace(/(https:\/\/avatars\.akamai\.steamstatic\.com\/)|(_medium\.jpg)/g, '');
-         newProps.state = profile.classList.contains("in-game")
-            ? 2 : profile.classList.contains("online")
-            ? 1 : profile.classList.contains("offline")
-            ? 0 : null;
-            newProps.name = profile.querySelector('.friendBlockContent').firstChild.textContent.trim();
-         let profileString = profile.querySelector('a').href.replace(/https:\/\/steamcommunity\.com\//g, '');
+         let profileString = profile.querySelector('a').href.replace(/^https:\/\/steamcommunity\.com\//g, '');
          if(profileString.startsWith('profiles')) {
-            newProps.id = profileString.replace(/^profiles\//g, '');
-            await addToList(newProps, "id");
+            let id = profileString.replace(/^profiles\//g, '');
+            let foundProfile = await Profile.findProfile(id);
+            this.friends.push(foundProfile);
          } else if(profileString.startsWith('id')) {
-            newProps.url = profileString.replace(/^id\//g, '');
-            await addToList(newProps, "url");
+            let url = profileString.replace(/^id\//g, '');
+            let foundProfile = await Profile.findProfile(url);
+            this.friends.push(foundProfile);
          } else {
             console.warn(`getTradeFriends(): ${profileString} is neither id or custom URL, investigate!`);
          }
@@ -149,6 +131,10 @@ class Profile {
 
    async isFriend(profile) {
       if(!this.friends) {
+         if(!(await this.isMe())) {
+            console.error('isFriend(): Method ran on a profile that is not user\'s, exiting!');
+            return;
+         }
          await this.getTradeFriends(); // A more generic friends list finding is required
       }
       if(this.friends.some(x => x.id === profile.id || x.url === profile.url)) {
@@ -166,14 +152,17 @@ class Profile {
       return false;
    }
 
-   static async loadProfiles(profileids) {
+   static async loadProfiles(profileids, useURL=false) {
       if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
          return;
       }
 
-      let dataset = await SteamToolsDbManager.getProfiles(profileids);
+      let dataset = await SteamToolsDbManager.getProfiles(profileids, useURL);
 
       for(let id in dataset) {
+         if(!dataset[id]) {
+            continue;
+         }
          let data = dataset[id];
          let profile = Profile.MasterProfileList.find(x => x.id === data.id);
          if(profile) {
@@ -190,7 +179,7 @@ class Profile {
             Profile.MasterProfileList.push(profile); 
          }
 
-         if(Profile.utils.isOutdated7days(profile.last_updated)) {
+         if(Profile.utils.isOutdated(profile.last_updated, 7)) {
             await Profile.findMoreDataForProfile(profile);
          }
 
@@ -213,16 +202,20 @@ class Profile {
 
       let profile;
       if(Profile.utils.isSteamId64Format(str)) {
-         if(!(profile = Profile.MasterProfileList.find(x => x.id === str))) {
+         profile = Profile.MasterProfileList.find(x => x.id === str);
+         if(!profile) {
             await Profile.loadProfiles(str);
-            if(!(profile = Profile.MasterProfileList.find(x => x.id === str))) {
+            profile = Profile.MasterProfileList.find(x => x.id === str);
+            if(!(profile)) {
                console.log(`findProfile(): No profile found for id ${str}. Creating new profile...`);
                profile = await Profile.addNewProfile({id: str});
             }
          }
       }
       if(!profile) {
-         if(!(profile = Profile.MasterProfileList.find(x => x.url === str))) {
+         profile = Profile.MasterProfileList.find(x => x.url === str);
+         if(!profile) {
+            await Profile.loadProfiles(str, true);
             console.log(`findProfile(): No profile found for url ${str}. Creating new profile...`);
             profile = await Profile.addNewProfile({url: str});
          }
@@ -230,9 +223,10 @@ class Profile {
 
       if(!profile) {
          console.warn("findProfile(): Unable to find or create a Profile instance!");
+         return;
       }
 
-      if(!Profile.me && this.isMe()) {
+      if(!Profile.me && profile.isMe()) {
          Profile.me = profile;
       }
 
@@ -244,9 +238,11 @@ class Profile {
          if( !(await Profile.findMoreDataForProfile(props)) ) {
             throw "addNewProfile(): invalid profile";
          }
-         Profile.MasterProfileList.push(new Profile(props));
-         
-         return Profile.MasterProfileList[Profile.MasterProfileList.length-1];
+
+         let newProfile = new Profile(props);
+         Profile.MasterProfileList.push(newProfile);
+         await newProfile.saveProfile();
+         return newProfile;
       } catch(e) {
          console.error(e);
          return undefined;
@@ -255,6 +251,8 @@ class Profile {
 
    static #mergeProfiles(id, url) {
       // merge together profile instances that are duplicate due to obtaining id and url separately without each others other info
+   }
+
    static async findMoreDataForProfile(profile) {
       if(!profile.id && !profile.url) {
          console.error("findMoreDataForProfile(): Needs an id or url!");
@@ -306,7 +304,9 @@ class Profile {
          ? 0 : null;
 
       profile.last_updated = Date.now();
-      await this.saveProfile();
+      if(profile instanceof Profile) {
+         await profile.saveProfile();
+      }
 
       return true;
    }
@@ -326,12 +326,13 @@ class Profile {
       let id = Profile.utils.getSteamProfileId64(parsedData[0].replace(/partner=/g, ''));
       let token = parsedData[1].replace(/token=/g, '');
 
-      let profile = Profile.MasterProfileList.find(x => x.id === id);
+      let profile = await Profile.findProfile(id);
       if(!profile) {
-         await Profile.addNewProfile({id: id, tradeToken: token});
-      } else {
-         profile.tradeToken = token;
+         console.warn(`addTradeURL(): Profile ${id} not found. Please doublecheck that trade url is valid!`);
+         return;
       }
+
+      profile.tradeToken = token;
 
       console.log(`addTradeURL(): Trade token added to ${id}.`);
    }
@@ -359,6 +360,7 @@ class Profile {
       }
 
       return Profile.appMetaData[appid];
+   }
 
    static async loadAppMetaData(appids) {
       if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
@@ -390,7 +392,8 @@ class Profile {
       await SteamToolsDbManager.setAppData(Profile.appMetaData[appid]);
    }
 
-   updateAppMetaData(appid, key, val) {
+   // change to find app meta data
+   async updateAppMetaData(appid, key, val) {
       if(!Profile.appMetaData[appid]) {
          await Profile.findAppMetaData(appid);
       }
@@ -749,7 +752,7 @@ class Profile {
             });
          }
          if(!cardData[i][`img${rarity}`]) {
-            cardData[i][`img${rarity}`] = x.children[0].querySelector(".gamecard").src.replace(/https\:\/\/community\.akamai\.steamstatic\.com\/economy\/image\//g, '');
+            cardData[i][`img${rarity}`] = x.children[0].querySelector(".gamecard").src.replace(/https:\/\/community\.akamai\.steamstatic\.com\/economy\/image\//g, '');
          }
          return { count: parseInt(count) };
       });
@@ -805,7 +808,7 @@ class Profile {
                continue;
             }
 
-            let badgeLink = badges[i].querySelector(".badge_row_overlay").href.replace(/https?:\/\/steamcommunity\.com\/((id)|(profiles))\/[^\/]+\/gamecards\//g, '');
+            let badgeLink = badges[i].querySelector(".badge_row_overlay").href.replace(/https?:\/\/steamcommunity\.com\/((id)|(profiles))\/[^/]+\/gamecards\//g, '');
             let badgeAppid = badgeLink.match(/^\d+/g)[0];
             if(badgeLink.endsWith("border=1")) {
                list.foil.push(badgeAppid);
