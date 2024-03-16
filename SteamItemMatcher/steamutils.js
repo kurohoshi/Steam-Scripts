@@ -28,5 +28,8 @@ var steamToolsUtils = {
    },
    isSimplyObject: function(obj) {
       return typeof obj === 'object' && !Array.isArray(obj) && obj !== null;
+   },
+   isOutdated: function(epochTime, days) {
+      return epochTime < Date.now()-days*24*60*60*1000;
    }
 };
