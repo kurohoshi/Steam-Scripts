@@ -2310,7 +2310,7 @@ var cssMatcher = `/* body {
 }
 .matcher-config {
    --config-col: 2;
-   --config-col-height: 28rem;
+   --config-col-height: 31rem;
    --btn-bg-clr-purple: linear-gradient( to bottom, #6C2DC7 5%, #2E1A47 95%);
    --btn-bg-clr-hvr-purple: linear-gradient( to bottom, #D891EF 5%, #8467D7 95%);
    --btn-clr-purple: lavender;
@@ -2326,10 +2326,11 @@ var cssMatcher = `/* body {
    --btn-bg-clr-hvr-red: linear-gradient( to bottom, #ff5e5e 5%, #c20000 95%);
    --btn-clr-red: rgb(255, 181, 181);
 
-   margin: auto;
+   margin-inline: auto;
+   margin-block: 2.5rem;
    padding: 15px;
    /* min-width: 680px; */
-   min-width: 775px; /* cap to prevent layout overflow on left side matcher config*/
+   min-width: 775px; /* cap to prevent layout overflow on left side matcher config */
    max-width: 946px;
    background-color: #262627;
    border-left: 1px solid #101010;
@@ -2354,10 +2355,15 @@ var cssMatcher = `/* body {
 }
 .matcher-config-group {
    padding: 0.375rem;
-   display: flex;
-   flex-wrap: wrap;
-   gap: 0.25rem;
+   /* padding: 0.375rem 0.375rem 0.125rem; */
+   /* display: flex; */
+   /* flex-wrap: wrap; */
+   /* gap: 0.25rem; */
    border: solid 1px #808080;
+
+   /* > * {
+      margin-bottom: 0.25rem;
+   } */
 }
 .matcher-config-header {
    width: 100%;
@@ -2376,6 +2382,31 @@ var cssMatcher = `/* body {
 
 .matcher-config-option {
    display: inline-block;
+   margin-top: 0.375rem;
+}
+.matcher-config-option ~ .matcher-config-option {
+   display: inline-block;
+   margin-left: 0.375rem;
+}
+.matcher-config-btn-group {
+   display: inline-flex;
+   margin-top: 0.375rem;
+   gap: 0.25rem;
+}
+.matcher-config-btn-group.right {
+   float: right;
+}
+
+.matcher-config-actions {
+   padding: 0.375rem;
+}
+.matcher-config-action {
+   margin-inline: auto;
+   text-align: center;
+
+   * ~ * {
+      margin-left: 0.375rem;
+   }
 }
 
 /****** Button Style Toggle Button START ******/
@@ -2385,7 +2416,6 @@ var cssMatcher = `/* body {
    z-index: -1;
 }
 .matcher-config input[type="checkbox"].button + label {
-   margin: 0.25rem 0.25rem 0.25rem 0;
    padding: .375rem;
    display: inline-block;
    user-select: none;
@@ -2474,8 +2504,36 @@ var cssMatcher = `/* body {
 }
 /****** Radio Style Toggle Button END ******/
 
+/***** Horizontal rule with text START *****/
+.h-break {
+   margin-block: 0.25rem;
+   overflow: hidden;
+   font-size: large;
+   text-align: center;
+   /* display: block; */
+}
+.h-break:before,
+.h-break:after {
+   content: "";
+   display: inline-block;
+   /* background-color: #808080; */
+   background-color: #6C2DC7;
+   height: 0.125rem;
+   width: 50%;
+   position: relative;
+   vertical-align: middle;
+}
+.h-break:before {
+   right: 0.5rem;
+   margin-left: -50%;
+}
+.h-break:after {
+   left: 0.5rem;
+   margin-right: -50%;
+}
+/****** Horizontal rule with text END ******/
+
 .matcher-config button {
-   margin-right: 0.25rem;
    padding: 0.25rem;
    border: 1px solid #3a3a3a;
    border-radius: 3px;
@@ -2530,6 +2588,9 @@ var cssMatcher = `/* body {
 }
 .matcher-config button.wide {
    padding: 0.25rem 1rem;
+}
+.matcher-config button.max {
+   width: 100%;
 }
 
 .matcher-conf-list {
@@ -2722,14 +2783,14 @@ var cssMatcher = `/* body {
 }
 .conf-list-dialog {
    display: none;
-   margin: 2rem;
+   margin: 1rem;
 
    > * {
       margin-bottom: 0.75rem;
    }
 }
 .conf-list-dialog.active {
-   display: initial;
+   display: block;
 }
 .conf-list-dialog-divider,
 .conf-list-dialog-action {
