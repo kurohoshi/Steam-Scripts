@@ -161,7 +161,7 @@ const SteamToolsDbManager = {
       return true;
    },
    // get multiple: probably used indexrange+getAll, or iteratively execute get with the same or batches of transactions
-   get: function(ObjStoreName, keys, successCb) {
+   get: function(ObjStoreName, indexName, keys, successCb) {
       const MAX_REQ = 10;
       if(!Array.isArray(keys)) {
          keys = [keys];
@@ -184,15 +184,18 @@ const SteamToolsDbManager = {
                   res();
                }
                const getValue = (transaction, startIndex, offset) => {
-                  const objStoreReq = transaction.objectStore(ObjStoreName).get(keys[startIndex+offset]);
+                  let objStoreReq = transaction.objectStore(ObjStoreName);
+                  if(indexName) {
+                     objStoreReq = objStoreReq.index(indexName);
+                  }
+                  objStoreReq = objStoreReq.get(keys[startIndex+offset]);
+
                   objStoreReq.onsuccess = (event) => {
                      let cbResult;
                      if(typeof successCb === 'function') {
                         cbResult = successCb(event);
                      }
-                     if(cbResult === undefined) {
-                        cbResult = event.target.result;
-                     }
+                     cbResult ??= event.target.result;
                      result[keys[startIndex+offset]] = cbResult;
 
                      if((offset+1 < MAX_REQ) && (startIndex+offset+1<keys.length)) {
@@ -236,7 +239,7 @@ const SteamToolsDbManager = {
 };
 
 SteamToolsDbManager.getToolConfig = async function(toolname) {
-   return await this.get('config', toolname);
+   return await this.get('config', undefined, toolname);
 }
 
 SteamToolsDbManager.setToolConfig = async function(toolname) {
@@ -520,12 +523,12 @@ class Profile {
       return false;
    }
 
-   static async loadProfiles(profileids) {
+   static async loadProfiles(profileids, useURL=false) {
       if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
          return;
       }
 
-      let dataset = await SteamToolsDbManager.getProfiles(profileids);
+      let dataset = await SteamToolsDbManager.getProfiles(profileids, useURL);
 
       for(let id in dataset) {
          let data = dataset[id];
@@ -1295,11 +1298,13 @@ class Profile {
 }
 
 
-SteamToolsDbManager.getProfiles = async function(profileids) {
-   return await this.get("profiles", profileids);
+SteamToolsDbManager.getProfiles = async function(profileids, useURL=false) {
+   return useURL
+      ? (await this.get("profiles", 'url', profileids))
+      : (await this.get("profiles", undefined, profileids));
 }
 SteamToolsDbManager.setProfile = async function(profile) {
-   let savedData = await this.get("profiles", profile.id);
+   let savedData = await this.get("profiles", undefined, profile.id);
    savedData = savedData[profile.id] ? savedData[profile.id] : {};
    savedData.id         = profile.id || savedData.id;
    savedData.url        = profile.url || savedData.url;
@@ -1312,10 +1317,10 @@ SteamToolsDbManager.setProfile = async function(profile) {
    await this.set("profiles", savedData, profile.id);
 }
 SteamToolsDbManager.getBadgepages = async function(profileids) {
-   return await this.get("badgepages", profileids);
+   return await this.get("badgepages", undefined, profileids);
 }
 SteamToolsDbManager.setBadgepages = async function(profileid, badgepages) {
-   let savedData = await this.get("badgepages", profileid);
+   let savedData = await this.get("badgepages", undefined, profileid);
    if(savedData[profileid]) {
       savedData = savedData[profileid];
       for(let [rarity, appList] of badgepages.entries()) {
@@ -1332,10 +1337,10 @@ SteamToolsDbManager.setBadgepages = async function(profileid, badgepages) {
    await this.set("badgepages", savedData, profileid);
 }
 SteamToolsDbManager.getAppDatas = async function(appids) {
-   return await this.get("app_data", appids);
+   return await this.get("app_data", undefined, appids);
 }
 SteamToolsDbManager.setAppData = async function(appdata) {
-   let savedData = await this.get("app_data", appdata.appid);
+   let savedData = await this.get("app_data", undefined, appdata.appid);
    if(savedData[appdata.appid]) {
       savedData = savedData[appdata.appid];
       savedData.appid = appdata.appid || savedData.appid;
@@ -1354,11 +1359,11 @@ SteamToolsDbManager.setAppData = async function(appdata) {
 }
 SteamToolsDbManager.getItemDescripts = async function(appid, contextid, classids) {
    let getList = classids.map(x => `${appid}_${contextid}_${x}`);
-   return await this.get("item_descripts", getList);
+   return await this.get("item_descripts", undefined, getList);
 }
 SteamToolsDbManager.setItemDescripts = async function(item, contextid, appid) {
    let key = `${item.appid || appid}_${item.contextid || contextid}_${item.classid}`;
-   let savedData = await this.get("item_descripts", key);
+   let savedData = await this.get("item_descripts", undefined, key);
    if(savedData[key]) {
       savedData = savedData[key];
       Object.assign(savedData, item);
@@ -1370,7 +1375,7 @@ SteamToolsDbManager.setItemDescripts = async function(item, contextid, appid) {
 }
 SteamToolsDbManager.getProfileInventories = async function(profileid, appid, contextids) {
    let getList = contextids.map(x => `${profileid}_${appid}_${x}`);
-   return await this.get("inventories", getList);
+   return await this.get("inventories", undefined, getList);
 }
 SteamToolsDbManager.setProfileInventory = async function(inventoryData, profileid, appid, contextid) {
    // No need to update sublevel data, overwrite all old data
@@ -1378,7 +1383,7 @@ SteamToolsDbManager.setProfileInventory = async function(inventoryData, profilei
 }
 SteamToolsDbManager.getMatchResults = async function(profileid1, profileid2List) {
    let getList = profileid2List.map(x => `${profileid1}_${x}`);
-   return await this.get("item_matcher_results", getList);
+   return await this.get("item_matcher_results", undefined, getList);
 }
 SteamToolsDbManager.setMatchResult = async function(result) {
    // No need to update sublevel data, overwrite all old data
