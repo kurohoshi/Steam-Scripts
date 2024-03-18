@@ -1604,6 +1604,8 @@ async function gotoMatcherConfigPage() {
    MatcherConfigShortcuts.MAIN_ELEM.querySelector('.matcher-conf-list-entries').addEventListener('click', matcherConfigSelectListEntryListener);
    document.getElementById('conf-list-dialog-cancel').addEventListener('click', matcherConfigListDialogCancelListener);
    document.getElementById('conf-list-dialog-confirm').addEventListener('click', matcherConfigListDialogConfirmListener);
+   document.getElementById('matcher-config-match-full').addEventListener('click', matcherConfigFullMatchListener);
+   document.getElementById('matcher-config-match-one').addEventListener('click', matcherConfigSingleMatchListener);
    // apply event listeners to go onto other actions like default matching, single account matching, input trade url links to add trade tokens, etc
 
    MatcherConfigShortcuts.listActionBarElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-action');
@@ -2109,6 +2111,48 @@ function resetDefaultMatcherConfigListener() {
    matcherConfigLoadUI();
 }
 
+function matcherConfigFullMatchListener() {
+   console.warn('matcherConfigFullMatchListener(): Not Implemented Yet!');
+
+   // check if settings are the same in db, prompt user to save if they want
+   // generate matcher page with a loading animation
+   // defer to an in-progress matching function
+}
+
+function matcherConfigSingleMatchListener() {
+   console.warn('matcherConfigFullMatchListener(): Not Implemented Yet!');
+
+   // verify that the provided profileid/customurl is valid, cancel if invalid
+   // check if settings are the same in db, prompt user to save if they want
+   // generate matcher page with a loading animation
+   // defer to an in-progress matching function
+}
+
+function matcherStartMatching() {
+   console.warn('matcherStartMatching(): Not Implemented Yet!');
+   // friend group matching
+   //    generate match block on document
+   //    check against blacklist
+   //    begin matching (no trade token is necessary)
+   // asf group matching
+   //    generate match block on document
+   //    grab asf profile from the asf api if needed
+   //    check for any/fair group selection from config
+   //    check against blacklist
+   //    find asf profiles and add their trade tokens as well
+   //    begin matching (trade token should already be auto added from the asf data)
+   // custom list
+   //    generate match block on document
+   //    check against blacklist
+   //    begin matching (trade token should be provided by the user)
+   // after matching has finished, defer to a function to finish the matching process
+}
+
+function matcherFinishMatching() {
+   console.warn('matcherFinishMatching(): Not Implemented Yet!');
+
+   // wrap up any processes left over
+}
 /****************************************************/
 /***************** Item Matcher END *****************/
 /****************************************************/
