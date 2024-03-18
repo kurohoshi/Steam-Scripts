@@ -26,7 +26,9 @@ const TOOLS_MENU = [
 ];
 const DB_OBJECTSTORE_CONFIGS = [
    { name: 'config',         keypath: undefined, autoincr: undefined },
-   { name: 'profiles',       keypath: undefined, autoincr: undefined },
+   { name: 'profiles',       keypath: undefined, autoincr: undefined, indices: [
+      { name: 'url', keyPath: 'url', options: undefined }
+   ]},
    { name: 'badgepages',     keypath: undefined, autoincr: undefined },
    { name: 'app_data',       keypath: undefined, autoincr: undefined },
    { name: 'item_descripts', keypath: undefined, autoincr: undefined },
@@ -110,11 +112,11 @@ const SteamToolsDbManager = {
             this.db = event.target.result;
 
             if(event.oldVersion === 0) {
-               // NOTE: no keys/indices, we create our own key on add(), then create our own keyrange later?
                // NOTE: objconfig should be validated
                for(let objConfig of DB_OBJECTSTORE_CONFIGS) {
+                  let newObjStore;
                   if(!objConfig.keypath && !objConfig.autoincr) {
-                     this.db.createObjectStore(objConfig.name);
+                     newObjStore = this.db.createObjectStore(objConfig.name);
                   } else {
                      let options = {};
                      if(typeof objConfig.keypath === 'string') {
@@ -123,7 +125,13 @@ const SteamToolsDbManager = {
                      if(objConfig.autoincr) {
                         options.autoincr = true;
                      }
-                     this.db.createObjectStore(objConfig.name, options);
+                     newObjStore = this.db.createObjectStore(objConfig.name, options);
+                  }
+
+                  if(objConfig.indices && Array.isArray(objConfig.indices)) {
+                     for(let indexerEntry of objConfig.indices) {
+                        newObjStore.createIndex(indexerEntry.name, indexerEntry.keyPath, indexerEntry.options);
+                     }
                   }
                }
             }
