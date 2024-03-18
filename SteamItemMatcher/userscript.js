@@ -438,25 +438,22 @@ class Profile {
       this.pfp        = props.pfp;
       this.state      = props.state;
       this.tradeToken = props.tradeToken;
+      this.pastNames  = props.pastNames;
+      this.last_updated = props.last_updated;
 
-      if(!Profile.me && this.idMe()) {
-         Profile.me = this;
+      // Bad place for a single execution block, find a better place
+      if(!Profile.me) {
+         Profile.findProfile(Profile.utils.getMySteamId()).then((profile) => {
+            if(profile instanceof Profile) {
+               Profile.me = profile;
+            } else {
+               console.error('new Profile(): Couldn\'n find user profile! Something is probably wrong!');
+            }
+         });
       }
    }
 
    async getTradeFriends() {
-      let addToList = async (props, prop) => {
-         let foundMaster = Profile.MasterProfileList.find(x => x[prop] === props[prop]);
-         if(!foundMaster) {
-            let newProf = await Profile.addNewProfile(props);
-            if(newProf !== undefined) {
-               this.friends.push(newProf);
-            }
-         } else {
-            this.friends.push(foundMaster);
-         }
-      }
-
       if(!(await this.isMe())) {
          console.warn("getTradeFriends(): This is not user's profile! Try using getFriends() instead");
          return;
@@ -473,21 +470,15 @@ class Profile {
 
       this.friends = [];
       for(let profile of [...doc.querySelectorAll(".FriendBlock")]) {
-         let newProps = {};
-
-         newProps.pfp = profile.querySelector("img").src.replace(/(https:\/\/avatars\.akamai\.steamstatic\.com\/)|(_medium\.jpg)/g, '');
-         newProps.state = profile.classList.contains("in-game")
-            ? 2 : profile.classList.contains("online")
-            ? 1 : profile.classList.contains("offline")
-            ? 0 : null;
-            newProps.name = profile.querySelector('.friendBlockContent').firstChild.textContent.trim();
-         let profileString = profile.querySelector('a').href.replace(/https:\/\/steamcommunity\.com\//g, '');
+         let profileString = profile.querySelector('a').href.replace(/^https:\/\/steamcommunity\.com\//g, '');
          if(profileString.startsWith('profiles')) {
-            newProps.id = profileString.replace(/^profiles\//g, '');
-            await addToList(newProps, "id");
+            let id = profileString.replace(/^profiles\//g, '');
+            let foundProfile = await Profile.findProfile(id);
+            this.friends.push(foundProfile);
          } else if(profileString.startsWith('id')) {
-            newProps.url = profileString.replace(/^id\//g, '');
-            await addToList(newProps, "url");
+            let url = profileString.replace(/^id\//g, '');
+            let foundProfile = await Profile.findProfile(url);
+            this.friends.push(foundProfile);
          } else {
             console.warn(`getTradeFriends(): ${profileString} is neither id or custom URL, investigate!`);
          }
@@ -506,6 +497,10 @@ class Profile {
 
    async isFriend(profile) {
       if(!this.friends) {
+         if(!(await this.isMe())) {
+            console.error('isFriend(): Method ran on a profile that is not user\'s, exiting!');
+            return;
+         }
          await this.getTradeFriends(); // A more generic friends list finding is required
       }
       if(this.friends.some(x => x.id === profile.id || x.url === profile.url)) {
@@ -523,14 +518,17 @@ class Profile {
       return false;
    }
 
-   static async loadProfiles(profileids, useURL=false) {
+   static async loadProfiles(profileStrings, useURL=false) {
       if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
          return;
       }
 
-      let dataset = await SteamToolsDbManager.getProfiles(profileids, useURL);
+      let dataset = await SteamToolsDbManager.getProfiles(profileStrings, useURL);
 
       for(let id in dataset) {
+         if(!dataset[id]) {
+            continue;
+         }
          let data = dataset[id];
          let profile = Profile.MasterProfileList.find(x => x.id === data.id);
          if(profile) {
@@ -547,7 +545,7 @@ class Profile {
             Profile.MasterProfileList.push(profile);
          }
 
-         if(Profile.utils.isOutdated7days(profile.last_updated)) {
+         if(Profile.utils.isOutdated(profile.last_updated, 7)) {
             await Profile.findMoreDataForProfile(profile);
          }
 
@@ -570,26 +568,34 @@ class Profile {
 
       let profile;
       if(Profile.utils.isSteamId64Format(str)) {
-         if(!(profile = Profile.MasterProfileList.find(x => x.id === str))) {
+         profile = Profile.MasterProfileList.find(x => x.id === str);
+         if(!profile) {
             await Profile.loadProfiles(str);
-            if(!(profile = Profile.MasterProfileList.find(x => x.id === str))) {
+            profile = Profile.MasterProfileList.find(x => x.id === str);
+            if(!(profile)) {
                console.log(`findProfile(): No profile found for id ${str}. Creating new profile...`);
                profile = await Profile.addNewProfile({id: str});
             }
          }
       }
       if(!profile) {
-         if(!(profile = Profile.MasterProfileList.find(x => x.url === str))) {
-            console.log(`findProfile(): No profile found for url ${str}. Creating new profile...`);
-            profile = await Profile.addNewProfile({url: str});
+         profile = Profile.MasterProfileList.find(x => x.url === str);
+         if(!profile) {
+            await Profile.loadProfiles(str, true);
+            profile = Profile.MasterProfileList.find(x => x.url === str);
+            if(!(profile)) {
+               console.log(`findProfile(): No profile found for url ${str}. Creating new profile...`);
+               profile = await Profile.addNewProfile({url: str});
+            }
          }
       }
 
       if(!profile) {
          console.warn("findProfile(): Unable to find or create a Profile instance!");
+         return;
       }
 
-      if(!Profile.me && this.isMe()) {
+      if(!Profile.me && profile.isMe()) {
          Profile.me = profile;
       }
 
@@ -601,9 +607,11 @@ class Profile {
          if( !(await Profile.findMoreDataForProfile(props)) ) {
             throw "addNewProfile(): invalid profile";
          }
-         Profile.MasterProfileList.push(new Profile(props));
 
-         return Profile.MasterProfileList[Profile.MasterProfileList.length-1];
+         let newProfile = new Profile(props);
+         Profile.MasterProfileList.push(newProfile);
+         await newProfile.saveProfile();
+         return newProfile;
       } catch(e) {
          console.error(e);
          return undefined;
@@ -665,7 +673,9 @@ class Profile {
          ? 0 : null;
 
       profile.last_updated = Date.now();
-      await this.saveProfile();
+      if(profile instanceof Profile) {
+         await profile.saveProfile();
+      }
 
       return true;
    }
@@ -685,11 +695,15 @@ class Profile {
       let id = Profile.utils.getSteamProfileId64(parsedData[0].replace(/partner=/g, ''));
       let token = parsedData[1].replace(/token=/g, '');
 
-      let profile = Profile.MasterProfileList.find(x => x.id === id);
+      let profile = await Profile.findProfile(id);
       if(!profile) {
-         await Profile.addNewProfile({id: id, tradeToken: token});
-      } else {
+         console.warn(`addTradeURL(): Profile ${id} not found. Please doublecheck that trade url is valid!`);
+         return;
+      }
+
+      if(profile.tradeToken !== token) {
          profile.tradeToken = token;
+         await profile.saveProfile();
       }
 
       console.log(`addTradeURL(): Trade token added to ${id}.`);
