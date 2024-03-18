@@ -1452,11 +1452,11 @@ GLOBALSETTINGSDEFAULTS.matcher = {
 const MatcherConfigShortcuts = {};
 
 async function gotoMatcherConfigPage() {
-   const generateConfigHeaderString = (id, title) => `<div class="matcher-config-header" data-id="${id}"><span>${title}</span></div>`;
+   const generateConfigHeaderString = (title) => `<div class="matcher-config-header"><span>${title}</span></div>`;
    const generateConfigButtonString = (id, label) => `<div class="matcher-config-option"><input type="checkbox" class="button" id="${id}"><label for="${id}">${label}</label></div>`;
    const generateConfigButtonsString = (checkList) => checkList.map(x => generateConfigButtonString(x.id, x.label)).join('');
-   const generateConfigButtonGroupString = (groups) => Object.values(globalSettings.matcher.config).map(x => {
-      return `<div class="matcher-config-group">${generateConfigHeaderString(x.id, x.label)}${generateConfigButtonsString(x.options)}</div>`
+   const generateConfigButtonGroupString = () => Object.values(globalSettings.matcher.config).map(x => {
+      return `<div class="matcher-config-group" data-id="${x.id}">${generateConfigHeaderString(x.label)}${generateConfigButtonsString(x.options)}</div>`
    }).join('');
    const generateConfigListTabs = (list) => {
       let HTMLString = '';
@@ -1523,15 +1523,27 @@ async function gotoMatcherConfigPage() {
    +    '<div class="matcher-options">'
    +       generateConfigButtonGroupString()
    +       '<div class="matcher-config-group">'
-   +          '<div class="matcher-config-header"><span>Import/Export Settings</span></div>'
-   +          '<div class="matcher-config-option">'
+   +          '<div class="matcher-config-header">'
+   +             '<span>Configuration Settings</span>'
+   +          '</div>'
+   +          '<div class="matcher-config-btn-group">'
    +             '<button id="matcher-config-import" class="blue">Import Settings</button>'
    +             '<button id="matcher-config-export" class="blue">Export Settings</button>'
    +          '</div>'
+   +          '<div class="matcher-config-btn-group right">'
+   +             '<button id="matcher-config-reset" class="blue">Reload Settings</button>'
+   +             '<button id="matcher-config-save" class="green">Save Settings</button>'
+   +          '</div>'
    +       '</div>'
-   +       '<div class="matcher-setting center">'
-   +          '<button id="matcher-config-reset" class="blue">Reset</button>'
-   +          '<button id="matcher-config-save" class="green">Save</button>'
+   +       '<div class="matcher-config-actions">'
+   +          '<div class="matcher-config-action">'
+   +             '<button id="matcher-config-match-full" class="purple max">Full Match</button>'
+   +          '</div>'
+   +          '<div class="h-break">OR</div>'
+   +          '<div class="matcher-config-action">'
+   +             '<input type="text" name="match-profileid" id="match-single-profileid">'
+   +             '<button id="matcher-config-match-one" class="purple">Match</button>'
+   +          '</div>'
    +       '</div>'
    +    '</div>'
    +    '<div class="matcher-conf-list">'
@@ -1546,6 +1558,7 @@ async function gotoMatcherConfigPage() {
    +             '<div id="entry-action-del"></div>'
    +             '<div id="entry-action-edit"></div>'
    +          '</div>'
+   +          '<div class="conf-list-entry-action-disabled"></div>'
    +       '</div>'
    +       '<div class="matcher-conf-list-list">'
    +          '<div class="conf-list-entry-form-container">'
