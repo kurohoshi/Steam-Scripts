@@ -1320,13 +1320,14 @@ SteamToolsDbManager.getProfiles = async function(profileids, useURL=false) {
 SteamToolsDbManager.setProfile = async function(profile) {
    let savedData = await this.get("profiles", undefined, profile.id);
    savedData = savedData[profile.id] ? savedData[profile.id] : {};
-   savedData.id         = profile.id || savedData.id;
-   savedData.url        = profile.url || savedData.url;
-   savedData.name       = profile.name || savedData.name;
-   savedData.pfp        = profile.pfp || savedData.pfp;
-   savedData.state      = profile.state || savedData.state;
-   savedData.tradeToken = profile.tradeToken || savedData.tradeToken;
-   savedData.friends    = profile.friends || savedData.friends;
+   savedData.id         = profile.id         ?? savedData.id;
+   savedData.url        = profile.url        ?? savedData.url;
+   savedData.name       = profile.name       ?? savedData.name;
+   savedData.pfp        = profile.pfp        ?? savedData.pfp;
+   savedData.state      = profile.state      ?? savedData.state;
+   savedData.tradeToken = profile.tradeToken ?? savedData.tradeToken;
+   savedData.friends    = profile.friends    ?? savedData.friends;
+   savedData.last_updated = profile.last_updated ?? savedData.last_updated;
 
    await this.set("profiles", savedData, profile.id);
 }
@@ -1731,6 +1732,7 @@ function matcherConfigSelectListTabListener(event) {
       matcherConfigSetEntryActionBar('add');
    }
 
+   matcherConfigResetEntryForm();
    matcherConfigShowActiveList();
 }
 
@@ -1806,14 +1808,8 @@ function matcherConfigSelectListEntryListener(event) {
    matcherConfigSelectListEntry(entryElem);
 }
 
-function matcherConfigSelectListEntry(entryElem) {
-   if(entryElem.classList.contains('selected')) {
-      entryElem.classList.remove('selected');
-      MatcherConfigShortcuts.selectedListEntryElem = undefined;
-
-      matcherConfigResetEntryForm();
-      matcherConfigSetEntryActionBar('add');
-   } else {
+function matcherConfigSelectListEntry(entryElem, toggle=true) {
+   if(!entryElem.classList.contains('selected')) {
       if(MatcherConfigShortcuts.selectedListEntryElem) {
          MatcherConfigShortcuts.selectedListEntryElem.classList.remove('selected');
       }
@@ -1821,6 +1817,12 @@ function matcherConfigSelectListEntry(entryElem) {
       MatcherConfigShortcuts.selectedListEntryElem = entryElem;
       entryElem.classList.add('selected');
       matcherConfigSetEntryActionBar('modify');
+   } else if(toggle) {
+      entryElem.classList.remove('selected');
+      MatcherConfigShortcuts.selectedListEntryElem = undefined;
+
+      matcherConfigResetEntryForm();
+      matcherConfigSetEntryActionBar('add');
    }
 }
 
@@ -1931,6 +1933,8 @@ async function matcherConfigEntryFormAddListener(event) {
       if(profileEntry) {
          // app found: prompt user if they want to overwrite existing data
          let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-profileid="${profileEntry.profileid}"]`);
+         MatcherConfigShortcuts.entryEditOld = profileEntry;
+         MatcherConfigShortcuts.entryEditNew = { descript: description };
          matcherConfigSelectListEntry(selectedEntryElem, false);
          document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
          document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
@@ -1944,6 +1948,8 @@ async function matcherConfigEntryFormAddListener(event) {
             if(profileEntry) {
                // app found: prompt user if they want to overwrite existing data
                let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-profileid="${profileEntry.profileid}"]`);
+               MatcherConfigShortcuts.entryEditOld = profileEntry;
+               MatcherConfigShortcuts.entryEditNew = { descript: description };
                matcherConfigSelectListEntry(selectedEntryElem, false);
                document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
                document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
@@ -1984,6 +1990,8 @@ async function matcherConfigEntryFormAddListener(event) {
       if(appidEntry) {
          // app found: prompt user if they want to overwrite existing data
          let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-appid="${appidEntry.appid}"]`);
+         MatcherConfigShortcuts.entryEditOld = appidEntry;
+         MatcherConfigShortcuts.entryEditNew = { descript: description };
          matcherConfigSelectListEntry(selectedEntryElem, false);
          document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
          document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
@@ -2055,9 +2063,12 @@ function matcherConfigListDialogCancelListener(event) {
    MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
    MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
    //MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
+   MatcherConfigShortcuts.entryEditOld = undefined;
+   MatcherConfigShortcuts.entryEditNew = undefined;
 }
 
 function matcherConfigListDialogConfirmListener(event) {
+   Object.assign(MatcherConfigShortcuts.entryEditOld, MatcherConfigShortcuts.entryEditNew);
    MatcherConfigShortcuts.selectedListEntryElem.innerHTML = document.getElementById('conf-list-entry-new').innerHTML;
    MatcherConfigShortcuts.listDialogElem.classList.remove('active');
    document.getElementById('conf-list-entry-old').innerHTML = '';
@@ -2066,6 +2077,8 @@ function matcherConfigListDialogConfirmListener(event) {
    MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
    MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
    matcherConfigResetEntryForm();
+   MatcherConfigShortcuts.entryEditOld = undefined;
+   MatcherConfigShortcuts.entryEditNew = undefined;
 }
 
 async function matcherConfigImportListener() {
