@@ -47,10 +47,10 @@ const steamToolsUtils = {
       return JSON.parse(JSON.stringify(obj));
    },
    getSessionId: function() {
-      return window.g_sessionID;
+      return unsafeWindow.g_sessionID;
    },
    getMySteamId: function() {
-      return window.g_steamID;
+      return unsafeWindow.g_steamID;
    },
    isSteamId64Format: function(str) {
       return /76561\d{12}/.test(str);
@@ -66,6 +66,9 @@ const steamToolsUtils = {
    },
    isSimplyObject: function(obj) {
       return typeof obj === 'object' && !Array.isArray(obj) && obj !== null;
+   },
+   isOutdated: function(epochTime, days) {
+      return epochTime < Date.now()-days*24*60*60*1000;
    },
    generateExportDataElement: function(name, filename, data) {
       if(!data) {
@@ -108,7 +111,7 @@ const SteamToolsDbManager = {
 
             if(event.oldVersion === 0) {
                // NOTE: no keys/indices, we create our own key on add(), then create our own keyrange later?
-               // NTOE: objconfig should be validated
+               // NOTE: objconfig should be validated
                for(let objConfig of DB_OBJECTSTORE_CONFIGS) {
                   if(!objConfig.keypath && !objConfig.autoincr) {
                      this.db.createObjectStore(objConfig.name);
@@ -1784,13 +1787,13 @@ function matcherConfigSelectListEntry(entryElem) {
 // needs testing
 function matcherConfigUpdateChecklistListener(event) {
    console.log(event.currentTarget); // debugging
-   if(!event.currentTarget.matches('.matcher-config-option')) {
+   if(!event.target.matches('input')) {
       return;
    }
    let groupId = event.currentTarget.dataset.id;
-   let optionId = event.target.dataset.id;
+   let optionId = event.target.id;
 
-   for(let group in Object.values(globalSettings.matcher.config)) {
+   for(let group of Object.values(globalSettings.matcher.config)) {
       if(group.id === groupId) {
          group.options.find(x => x.id === optionId).value = event.target.checked;
       }
@@ -1844,22 +1847,26 @@ function matcherConfigDeleteListEntryListener(event) {
 
    if(listGroup === 'matchlist' || listGroup === 'blacklist') {
       let profileid = MatcherConfigShortcuts.selectedListEntryElem.dataset.profileid;
-      let selectedIndex = globalSettings.matcher.lists[listGroup].findIndex(x => x.profileid === profileid);
+      let selectedIndex = globalSettings.matcher.lists[listGroup].data.findIndex(x => x.profileid === profileid);
       if(selectedIndex === -1) {
          console.warn('matcherConfigDeleteListEntryListener(): Profileid not found, which means list and data are not synced!');
          return;
       }
-      globalSettings.matcher.lists[listGroup].splice(selectedIndex, 1);
+      globalSettings.matcher.lists[listGroup].data.splice(selectedIndex, 1);
       MatcherConfigShortcuts.selectedListEntryElem.remove();
+      MatcherConfigShortcuts.selectedListEntryElem = undefined;
+      matcherConfigSetEntryActionBar('add');
    } else if(listGroup === 'applist') {
       let appid = MatcherConfigShortcuts.selectedListEntryElem.dataset.appid;
-      let selectedIndex = globalSettings.matcher.lists[listGroup].findIndex(x => x.appid === appid);
+      let selectedIndex = globalSettings.matcher.lists[listGroup].data.findIndex(x => x.appid === appid);
       if(selectedIndex === -1) {
          console.warn('matcherConfigDeleteListEntryListener(): Appid not found, which means list and data are not synced!');
          return;
       }
-      globalSettings.matcher.lists[listGroup].splice(selectedIndex, 1);
+      globalSettings.matcher.lists[listGroup].data.splice(selectedIndex, 1);
       MatcherConfigShortcuts.selectedListEntryElem.remove();
+      MatcherConfigShortcuts.selectedListEntryElem = undefined;
+      matcherConfigSetEntryActionBar('add');
    } else {
       console.warn('matcherConfigDeleteListEntryListener(): List deletion not implemented, nothing will be changed!');
    }
@@ -1883,10 +1890,8 @@ async function matcherConfigEntryFormAddListener(event) {
 
       if(profileEntry) {
          // app found: prompt user if they want to overwrite existing data
-         console.log(profileEntry)
-         console.log(MatcherConfigShortcuts.listElems[currentTab])
          let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-profileid="${profileEntry.profileid}"]`);
-         matcherConfigSelectListEntry(selectedEntryElem);
+         matcherConfigSelectListEntry(selectedEntryElem, false);
          document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
          document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
          document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
@@ -1899,7 +1904,7 @@ async function matcherConfigEntryFormAddListener(event) {
             if(profileEntry) {
                // app found: prompt user if they want to overwrite existing data
                let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-profileid="${profileEntry.profileid}"]`);
-               matcherConfigSelectListEntry(selectedEntryElem);
+               matcherConfigSelectListEntry(selectedEntryElem, false);
                document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
                document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
                document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
@@ -1939,7 +1944,7 @@ async function matcherConfigEntryFormAddListener(event) {
       if(appidEntry) {
          // app found: prompt user if they want to overwrite existing data
          let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-appid="${appidEntry.appid}"]`);
-         matcherConfigSelectListEntry(selectedEntryElem);
+         matcherConfigSelectListEntry(selectedEntryElem, false);
          document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
          document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
          document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
@@ -2008,8 +2013,8 @@ function matcherConfigListDialogCancelListener(event) {
    document.getElementById('conf-list-entry-old').innerHTML = '';
    document.getElementById('conf-list-entry-new').innerHTML = '';
    MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
-   MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
    MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
+   //MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
 }
 
 function matcherConfigListDialogConfirmListener(event) {
@@ -2018,8 +2023,9 @@ function matcherConfigListDialogConfirmListener(event) {
    document.getElementById('conf-list-entry-old').innerHTML = '';
    document.getElementById('conf-list-entry-new').innerHTML = '';
    MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
-   MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
    MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
+   MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
+   matcherConfigResetEntryForm();
 }
 
 async function matcherConfigImportListener() {

@@ -9,10 +9,10 @@ var steamToolsUtils = {
       return JSON.parse(JSON.stringify(obj));
    },
    getSessionId: function() {
-      return window.g_sessionID;
+      return unsafeWindow.g_sessionID;
    },
    getMySteamId: function() {
-      return window.g_steamID;
+      return unsafeWindow.g_steamID;
    },
    isSteamId64Format: function(str) {
       return /76561\d{12}/.test(str);
@@ -24,7 +24,7 @@ var steamToolsUtils = {
       return String(parseInt(steamid64.substring(5))-197960265728);
    },
    getSteamLanguage: function() {
-      return g_strLanguage;
+      return unsafeWindow.g_strLanguage;
    },
    isSimplyObject: function(obj) {
       return typeof obj === 'object' && !Array.isArray(obj) && obj !== null;
