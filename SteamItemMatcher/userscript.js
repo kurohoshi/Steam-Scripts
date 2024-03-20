@@ -1488,6 +1488,7 @@ async function gotoMatcherConfigPage() {
    GM_addStyle(cssMatcher);
 
    MatcherConfigShortcuts.MAIN_ELEM.innerHTML = '';
+   document.body.classList.remove('profile_page'); // profile page causes bg color to be black
 
    let config = await SteamToolsDbManager.getToolConfig('matcher');
    if(config.matcher) {
