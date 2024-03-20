@@ -33,7 +33,8 @@ const DB_OBJECTSTORE_CONFIGS = [
    { name: 'app_data',       keypath: undefined, autoincr: undefined },
    { name: 'item_descripts', keypath: undefined, autoincr: undefined },
    { name: 'inventories',    keypath: undefined, autoincr: undefined },
-   { name: 'item_matcher_results', keypath: undefined, autoincr: undefined }
+   { name: 'item_matcher_results', keypath: undefined, autoincr: undefined },
+   { name: 'item_nameids', keypath: undefined, autoincr: undefined }
 ];
 
 const steamToolsUtils = {
@@ -320,6 +321,106 @@ function importConfig(toolname) {
    });
 }
 
+SteamToolsDbManager.getProfiles = async function(profileids, useURL=false) {
+   return useURL
+      ? (await this.get("profiles", 'url', profileids))
+      : (await this.get("profiles", undefined, profileids));
+}
+SteamToolsDbManager.setProfile = async function(profile) {
+   let savedData = await this.get("profiles", undefined, profile.id);
+   savedData = savedData[profile.id] ?? {};
+   savedData.id         = profile.id         ?? savedData.id;
+   savedData.url        = profile.url        ?? savedData.url;
+   savedData.name       = profile.name       ?? savedData.name;
+   savedData.pfp        = profile.pfp        ?? savedData.pfp;
+   savedData.state      = profile.state      ?? savedData.state;
+   savedData.tradeToken = profile.tradeToken ?? savedData.tradeToken;
+   savedData.friends    = profile.friends    ?? savedData.friends;
+   savedData.last_updated = profile.last_updated ?? savedData.last_updated;
+
+   await this.set("profiles", savedData, profile.id);
+}
+SteamToolsDbManager.getBadgepages = async function(profileids) {
+   return await this.get("badgepages", undefined, profileids);
+}
+SteamToolsDbManager.setBadgepages = async function(profileid, badgepages) {
+   let savedData = await this.get("badgepages", undefined, profileid);
+   if(savedData[profileid]) {
+      savedData = savedData[profileid];
+      for(let [rarity, appList] of badgepages.entries()) {
+         for(let [appid, data] of Object.entries(appList)) {
+            if(data.last_updated>savedData[rarity][appid].last_updated) {
+               savedData[rarity][appid] = data;
+            }
+         }
+      }
+   } else {
+      savedData = badgepages;
+   }
+
+   await this.set("badgepages", savedData, profileid);
+}
+SteamToolsDbManager.getAppDatas = async function(appids) {
+   return await this.get("app_data", undefined, appids);
+}
+SteamToolsDbManager.setAppData = async function(appdata) {
+   let savedData = await this.get("app_data", undefined, appdata.appid);
+   savedData = savedData[appdata.appid];
+
+   if(savedData) {
+      savedData.appid = appdata.appid ?? savedData.appid;
+      savedData.name  = appdata.name  ?? savedData.name;
+      for(let i=0; i<appdata.cards.length; i++) {
+         Object.assign(savedData.cards[i], appdata.cards[i]);
+      }
+      for(let [rarity, badgeList] of Object.entries(appdata.badges)) {
+         Object.assign(savedData.badges[rarity], badgeList);
+      }
+   } else {
+      savedData = appdata;
+   }
+
+   await this.set("app_data", savedData, savedData.appid);
+}
+SteamToolsDbManager.getItemDescripts = async function(appid, contextid, classids) {
+   let getList = classids.map(x => `${appid}_${contextid}_${x}`);
+   return await this.get("item_descripts", undefined, getList);
+}
+SteamToolsDbManager.setItemDescripts = async function(item, contextid, appid) {
+   let key = `${item.appid || appid}_${item.contextid || contextid}_${item.classid}`;
+   let savedData = await this.get("item_descripts", undefined, key);
+   if(savedData[key]) {
+      savedData = savedData[key];
+      Object.assign(savedData, item);
+   } else {
+      savedData = item;
+   }
+
+   await this.set("item_descripts", savedData, key);
+}
+SteamToolsDbManager.getProfileInventories = async function(profileid, appid, contextids) {
+   let getList = contextids.map(x => `${profileid}_${appid}_${x}`);
+   return await this.get("inventories", undefined, getList);
+}
+SteamToolsDbManager.setProfileInventory = async function(inventoryData, profileid, appid, contextid) {
+   // No need to update sublevel data, overwrite all old data
+   await this.set("inventories", inventoryData, `${profileid}_${appid}_${contextid}`);
+}
+SteamToolsDbManager.getMatchResults = async function(profileid1, profileid2List) {
+   let getList = profileid2List.map(x => `${profileid1}_${x}`);
+   return await this.get("item_matcher_results", undefined, getList);
+}
+SteamToolsDbManager.setMatchResult = async function(result) {
+   // No need to update sublevel data, overwrite all old data
+   await this.set("item_matcher_results", result, `${result.inventory1.meta.profileid}_${result.inventory2.meta.profileid}`);
+}
+SteamToolsDbManager.getItemNameIds = async function(appid, hashnames) {
+   let hashList = hashnames.map(x => `${appid}/${x}`);
+   return await this.get("item_nameids", undefined, hashList);
+}
+SteamToolsDbManager.setItemNameId = async function(appid, hashname, item_nameid) {
+   await this.set("item_nameids", item_nameid, `${appid}/${hashname}`);
+}
 
 /*******************************************************/
 /**************** Booster Crafter BEGIN ****************/
@@ -1311,99 +1412,6 @@ class Profile {
    }
 }
 
-
-SteamToolsDbManager.getProfiles = async function(profileids, useURL=false) {
-   return useURL
-      ? (await this.get("profiles", 'url', profileids))
-      : (await this.get("profiles", undefined, profileids));
-}
-SteamToolsDbManager.setProfile = async function(profile) {
-   let savedData = await this.get("profiles", undefined, profile.id);
-   savedData = savedData[profile.id] ? savedData[profile.id] : {};
-   savedData.id         = profile.id         ?? savedData.id;
-   savedData.url        = profile.url        ?? savedData.url;
-   savedData.name       = profile.name       ?? savedData.name;
-   savedData.pfp        = profile.pfp        ?? savedData.pfp;
-   savedData.state      = profile.state      ?? savedData.state;
-   savedData.tradeToken = profile.tradeToken ?? savedData.tradeToken;
-   savedData.friends    = profile.friends    ?? savedData.friends;
-   savedData.last_updated = profile.last_updated ?? savedData.last_updated;
-
-   await this.set("profiles", savedData, profile.id);
-}
-SteamToolsDbManager.getBadgepages = async function(profileids) {
-   return await this.get("badgepages", undefined, profileids);
-}
-SteamToolsDbManager.setBadgepages = async function(profileid, badgepages) {
-   let savedData = await this.get("badgepages", undefined, profileid);
-   if(savedData[profileid]) {
-      savedData = savedData[profileid];
-      for(let [rarity, appList] of badgepages.entries()) {
-         for(let [appid, data] of Object.entries(appList)) {
-            if(data.last_updated>savedData[rarity][appid].last_updated) {
-               savedData[rarity][appid] = data;
-            }
-         }
-      }
-   } else {
-      savedData = badgepages;
-   }
-
-   await this.set("badgepages", savedData, profileid);
-}
-SteamToolsDbManager.getAppDatas = async function(appids) {
-   return await this.get("app_data", undefined, appids);
-}
-SteamToolsDbManager.setAppData = async function(appdata) {
-   let savedData = await this.get("app_data", undefined, appdata.appid);
-   if(savedData[appdata.appid]) {
-      savedData = savedData[appdata.appid];
-      savedData.appid = appdata.appid || savedData.appid;
-      savedData.name  = appdata.name || savedData.name;
-      savedData.cards = appdata.cards || savedData.cards;
-      for(let [rarity, badgeList] of Object.entries(appdata.badges)) {
-         for(let [level, imgLink] of Object.entries(badgeList)) {
-            savedData.badges[rarity][level] = imgLink;
-         }
-      }
-   } else {
-      savedData = appdata;
-   }
-
-   await this.set("app_data", savedData, savedData.appid);
-}
-SteamToolsDbManager.getItemDescripts = async function(appid, contextid, classids) {
-   let getList = classids.map(x => `${appid}_${contextid}_${x}`);
-   return await this.get("item_descripts", undefined, getList);
-}
-SteamToolsDbManager.setItemDescripts = async function(item, contextid, appid) {
-   let key = `${item.appid || appid}_${item.contextid || contextid}_${item.classid}`;
-   let savedData = await this.get("item_descripts", undefined, key);
-   if(savedData[key]) {
-      savedData = savedData[key];
-      Object.assign(savedData, item);
-   } else {
-      savedData = item;
-   }
-
-   await this.set("item_descripts", savedData, key);
-}
-SteamToolsDbManager.getProfileInventories = async function(profileid, appid, contextids) {
-   let getList = contextids.map(x => `${profileid}_${appid}_${x}`);
-   return await this.get("inventories", undefined, getList);
-}
-SteamToolsDbManager.setProfileInventory = async function(inventoryData, profileid, appid, contextid) {
-   // No need to update sublevel data, overwrite all old data
-   await this.set("inventories", inventoryData, `${profileid}_${appid}_${contextid}`);
-}
-SteamToolsDbManager.getMatchResults = async function(profileid1, profileid2List) {
-   let getList = profileid2List.map(x => `${profileid1}_${x}`);
-   return await this.get("item_matcher_results", undefined, getList);
-}
-SteamToolsDbManager.setMatchResult = async function(result) {
-   // No need to update sublevel data, overwrite all old data
-   await this.set("item_matcher_results", result, `${result.inventory1.meta.profileid}_${result.inventory2.meta.profileid}`);
-}
 
 GLOBALSETTINGSDEFAULTS.matcher = {
    config: {
