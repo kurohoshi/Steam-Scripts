@@ -2153,9 +2153,9 @@ function matcherFinishMatching() {
 
    // wrap up any processes left over
 }
-/****************************************************/
-/***************** Item Matcher END *****************/
-/****************************************************/
+/************************************************/
+/*************** Item Matcher END ***************/
+/************************************************/
 
 /************************************************/
 /**************** Scrapers BEGIN ****************/
@@ -2315,7 +2315,12 @@ DataCollectors.scrapeTradeTokens = async function() {
 /***********************************************/
 function generateSuperNav() {
    let navContainer = document.querySelector("#global_header .supernav_container");
-   if(navContainer === null) {
+   if(!navContainer) {
+      return;
+   }
+
+   let nextNavHeader = navContainer.querySelector(".submenu_username");
+   if(!nextNavHeader) {
       return;
    }
 
@@ -2331,7 +2336,6 @@ function generateSuperNav() {
       }
    }
 
-   let nextNavHeader = navContainer.querySelector(".submenu_username");
    nextNavHeader.insertAdjacentElement("afterend", htmlMenu);
    nextNavHeader.insertAdjacentHTML("afterend", htmlStringHeader);
 
