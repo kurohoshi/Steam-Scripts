@@ -1542,7 +1542,7 @@ async function gotoMatcherConfigPage() {
    +          '</div>'
    +          '<div class="h-break">OR</div>'
    +          '<div class="matcher-config-action">'
-   +             '<input type="text" name="match-profileid" id="match-single-profileid">'
+   +             '<input type="text" name="match-profileid" id="match-single-profileid" placeholder="profileid/customUrlId">'
    +             '<button id="matcher-config-match-one" class="purple">Match</button>'
    +          '</div>'
    +       '</div>'
