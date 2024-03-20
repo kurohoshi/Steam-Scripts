@@ -765,8 +765,16 @@ class Profile {
                name: x.children[1].childNodes[x.children[1].childNodes.length-3].textContent.trim()
             });
          }
-         if(!cardData[i][`img${rarity}`]) {
-            cardData[i][`img${rarity}`] = x.children[0].querySelector(".gamecard").src.replace(/https:\/\/community\.akamai\.steamstatic\.com\/economy\/image\//g, '');
+         if(!cardData[i][`img_card${rarity}`]) {
+            cardData[i][`img_card${rarity}`] = x.children[0].querySelector(".gamecard").src.replace(/https:\/\/community\.akamai\.steamstatic\.com\/economy\/image\//g, '');
+         }
+         let img_full = x.querySelector('.with_zoom');
+         if(img_full) {
+            img_full = img_full.outerHTML.match(/onclick="[^"]+"/g)[0];
+            img_full = img_full.replaceAll('&quot;', '"');
+            img_full = img_full.match(/[^/]+\.jpg/g)[0];
+            img_full = img_full.replace('.jpg', '');
+            cardData[i][`img_full${rarity}`] = img_full;
          }
          return { count: parseInt(count) };
       });
