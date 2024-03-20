@@ -742,7 +742,9 @@ class Profile {
          return false;
       }
 
-      let profiledata = profilePage.textContent.match(/(?<=g_rgProfileData = ){.+}(?=;\n)/g);
+      let profiledata = profilePage.textContent
+         .match(/g_rgProfileData = {[^;]+?}/g)
+         .replace(/^g_rgProfileData = /, '');
       if(!profiledata) {
          console.error("findMoreDataForProfile(): profile data object not found!");
          return false;
@@ -785,16 +787,26 @@ class Profile {
       return (await this.isFriend(partner) || partner.tradeToken !== undefined);
    }
 
-   static async addTradeURL(url) {
-      url = url.trim();
-      if(!/(?<=^https:\/\/steamcommunity\.com\/tradeoffer\/new\/\?)partner=\d+&token=.{8}$/.test(url)) {
-         console.error("addTradeURL(): invalid trade URL, trade token not added");
+   static async addTradeURL(data) {
+      let id, token;
+      if(typeof data === 'string') {
+         data = data.trim();
+         if(!/^https:\/\/steamcommunity\.com\/tradeoffer\/new\/\?partner=\d+&token=.{8}$/.test(data)) {
+            console.error("addTradeURL(): invalid trade URL, trade token not added");
+            return;
+         }
+
+         data = data.replace('https://steamcommunity.com/tradeoffer/new/?', '');
+         let parsedData = data.split('&');
+         id = Profile.utils.getSteamProfileId64(parsedData[0].replace('partner=', ''));
+         token = parsedData[1].replace('token=', '');
+      } else if(Profile.utils.isSimplyObject(data)) {
+         ({ partner: id, token } = data);
+         id = Profile.utils.getSteamProfileId64(id);
+      } else {
+         console.warn('addTradeURL(): Invalid datatype provided!')
          return;
       }
-
-      let parsedData = url.match(/partner=\d+|token=.+$/g);
-      let id = Profile.utils.getSteamProfileId64(parsedData[0].replace(/partner=/g, ''));
-      let token = parsedData[1].replace(/token=/g, '');
 
       let profile = await Profile.findProfile(id);
       if(!profile) {
@@ -805,9 +817,8 @@ class Profile {
       if(profile.tradeToken !== token) {
          profile.tradeToken = token;
          await profile.saveProfile();
+         console.log(`addTradeURL(): Trade token added to ${id}.`);
       }
-
-      console.log(`addTradeURL(): Trade token added to ${id}.`);
    }
 
    /***********************************************************************/
