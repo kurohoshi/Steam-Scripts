@@ -145,15 +145,15 @@ const SteamToolsDbManager = {
    },
    setProfile: async function(profile) {
       let savedData = await this.get("profiles", profile.id);
-      savedData = savedData[profile.id] ? savedData[profile.id] : {};
-      savedData.id         ??= profile.id;
-      savedData.url        ??= profile.url;
-      savedData.name       ??= profile.name;
-      savedData.pfp        ??= profile.pfp;
-      savedData.state      ??= profile.state;
-      savedData.tradeToken ??= profile.tradeToken;
-      savedData.friends    ??= profile.friends;
-      savedData.last_updated ??= profile.last_updated;
+      savedData = savedData[profile.id] ?? {};
+      savedData.id         = profile.id         ?? savedData.id;
+      savedData.url        = profile.url        ?? savedData.url;
+      savedData.name       = profile.name       ?? savedData.name;
+      savedData.pfp        = profile.pfp        ?? savedData.pfp;
+      savedData.state      = profile.state      ?? savedData.state;
+      savedData.tradeToken = profile.tradeToken ?? savedData.tradeToken;
+      savedData.friends    = profile.friends    ?? savedData.friends;
+      savedData.last_updated = profile.last_updated ?? savedData.last_updated;
 
       await this.set("profiles", savedData, profile.id);
    },
