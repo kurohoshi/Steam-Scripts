@@ -81,9 +81,18 @@ class Profile {
       this.pfp        = props.pfp;
       this.state      = props.state;
       this.tradeToken = props.tradeToken;
+      this.pastNames  = props.pastNames;
+      this.last_updated = props.last_updated;
 
-      if(!Profile.me && this.isMe()) {
-         Profile.me = this;
+      // Bad place for a single execution block, find a better place
+      if(!Profile.me) {
+         Profile.findProfile(Profile.utils.getMySteamId()).then((profile) => {
+            if(profile instanceof Profile) {
+               Profile.me = profile;
+            } else {
+               console.error('new Profile(): Couldn\'n find user profile! Something is probably wrong!');
+            }
+         });
       }
    }
 
