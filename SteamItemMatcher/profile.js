@@ -185,7 +185,7 @@ class Profile {
             profile.last_updated ??= data.last_updated;
          } else {
             profile = new Profile(data);
-            Profile.MasterProfileList.push(profile); 
+            Profile.MasterProfileList.push(profile);
          }
 
          if(Profile.utils.isOutdated(profile.last_updated, 7)) {
@@ -283,7 +283,7 @@ class Profile {
          console.error("findMoreDataForProfile(): invalid URL");
          return false;
       }
-      
+
       let profiledata = profilePage.textContent
          .match(/g_rgProfileData = {[^;]+?}/g)
          .replace(/^g_rgProfileData = /, '');
@@ -377,7 +377,7 @@ class Profile {
          if(!Profile.me) {
             myProfile = await Profile.findProfile(Profile.utils.getMySteamId());
          }
-         
+
          if(!myProfile) {
             console.error('findAppMetaData(): Somehow user\'s profile cannot be found!');
             return;
@@ -485,7 +485,7 @@ class Profile {
       let response = await fetch(`https://steamcommunity.com/inventory/${this.id}/753/6?l=${Profile.utils.getSteamLanguage()}&count=1`);
       await Profile.utils.sleep((await this.isMe()) ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2);
       let resdata = await response.json();
-   
+
       this.inventory.size = resdata.total_inventory_count;
    }
 
@@ -588,7 +588,7 @@ class Profile {
                   count: asset.amount
                }]
             }
-            
+
             this.updateItemDescription(desc.classid, desc);
          }
 
@@ -755,18 +755,18 @@ class Profile {
       console.log(`getBadgepageStock(): getting badgepage of app ${appid} from profile ${this.id}`);
       let response = await fetch(`https://steamcommunity.com/profiles/${this.id}/gamecards/${appid}/${foil ? "?border=1" : ""}`);
       await Profile.utils.sleep(Profile.utils.FETCH_DELAY);
-   
+
       let parser = new DOMParser();
       let doc = parser.parseFromString(await response.text(), "text/html");
 
       // check if private profile here
-   
+
       let rarity = foil ? 1 : 0;
       let newData = {};
       let name = doc.querySelector("a.whiteLink:nth-child(5)").textContent.trim();
       this.updateAppMetaData(appid, "name", name);
       let cardData = Profile.appMetaData[appid].cards ?? [];
-      
+
       newData.data = [...doc.querySelectorAll(".badge_card_set_card")].map((x, i) => {
          let count = x.children[1].childNodes.length === 5 ? parseInt(x.children[1].childNodes[1].textContent.replace(/[()]/g, '')) : 0;
          if(isNaN(count)) {
@@ -811,7 +811,7 @@ class Profile {
          console.error("getApplistFromBadgepage(): Profile is not user's! This method is reserved for the user only.");
          return;
       }
-      
+
       let list = { normal: [], foil: [] };
       let page = 1;
       let more = true;
@@ -821,7 +821,7 @@ class Profile {
          console.log(`getApplistFromBadgepage(): getting badgepage ${page} from profile ${this.id}`);
          let response = await fetch(`https://steamcommunity.com/profiles/${this.id}/badges/?p=${page++}`);
          await Profile.utils.sleep(Profile.utils.FETCH_DELAY);
-      
+
          let parser = new DOMParser();
          let doc = parser.parseFromString(await response.text(), "text/html");
 
