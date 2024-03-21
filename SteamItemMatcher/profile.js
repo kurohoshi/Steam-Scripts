@@ -161,12 +161,12 @@ class Profile {
       return false;
    }
 
-   static async loadProfiles(profileids, useURL=false) {
+   static async loadProfiles(profileStrings, useURL=false) {
       if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
          return;
       }
 
-      let dataset = await SteamToolsDbManager.getProfiles(profileids, useURL);
+      let dataset = await SteamToolsDbManager.getProfiles(profileStrings, useURL);
 
       for(let id in dataset) {
          if(!dataset[id]) {
