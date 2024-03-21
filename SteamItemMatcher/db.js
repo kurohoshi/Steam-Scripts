@@ -91,7 +91,7 @@ const SteamToolsDbManager = {
                   if(indexName) {
                      objStoreReq = objStoreReq.index(indexName);
                   }
-                  objStoreReq.get(keys[startIndex+offset]);
+                  objStoreReq = objStoreReq.get(keys[startIndex+offset]);
                   objStoreReq.onsuccess = (event) => {
                      let cbResult;
                      if(typeof successCb === 'function') {
