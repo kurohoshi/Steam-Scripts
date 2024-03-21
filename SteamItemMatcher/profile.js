@@ -225,8 +225,11 @@ class Profile {
          profile = Profile.MasterProfileList.find(x => x.url === str);
          if(!profile) {
             await Profile.loadProfiles(str, true);
-            console.log(`findProfile(): No profile found for url ${str}. Creating new profile...`);
-            profile = await Profile.addNewProfile({url: str});
+            profile = Profile.MasterProfileList.find(x => x.url === str);
+            if(!(profile)) {
+               console.log(`findProfile(): No profile found for url ${str}. Creating new profile...`);
+               profile = await Profile.addNewProfile({url: str});
+            }
          }
       }
 
