@@ -17,7 +17,7 @@ const SteamToolsDbManager = {
             this.db = event.target.result;
 
             if(event.oldVersion === 0) {
-               // NTOE: objconfig should be validated
+               // NOTE: objconfig should be validated
                for(let objConfig of DB_OBJECTSTORE_CONFIGS) {
                   if(!objConfig.keypath && !objConfig.autoincr) {
                      this.db.createObjectStore(objConfig.name);
