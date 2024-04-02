@@ -87,7 +87,7 @@ const SteamToolsDbManager = {
                   res();
                }
                const getValue = (transaction, startIndex, offset) => {
-                  let objStoreReq = transaction.objectStore(ObjStoreName)
+                  let objStoreReq = transaction.objectStore(ObjStoreName);
                   if(indexName) {
                      objStoreReq = objStoreReq.index(indexName);
                   }
@@ -144,7 +144,7 @@ const SteamToolsDbManager = {
          : (await this.get("profiles", undefined, profileids));
    },
    setProfile: async function(profile) {
-      let savedData = await this.get("profiles", profile.id);
+      let savedData = await this.get("profiles", undefined, profile.id);
       savedData = savedData[profile.id] ?? {};
       savedData.id         = profile.id         ?? savedData.id;
       savedData.url        = profile.url        ?? savedData.url;
@@ -158,10 +158,10 @@ const SteamToolsDbManager = {
       await this.set("profiles", savedData, profile.id);
    },
    getBadgepages: async function(profileids) {
-      return await this.get("badgepages", profileids);
+      return await this.get("badgepages", undefined, profileids);
    },
    setBadgepages: async function(profileid, badgepages) {
-      let savedData = await this.get("badgepages", profileid);
+      let savedData = await this.get("badgepages", undefined, profileid);
       if(savedData[profileid]) {
          savedData = savedData[profileid];
          for(let [rarity, appList] of badgepages.entries()) {
@@ -178,12 +178,12 @@ const SteamToolsDbManager = {
       await this.set("badgepages", savedData, profileid);
    },
    getAppDatas: async function(appids) {
-      return await this.get("app_data", appids);
+      return await this.get("app_data", undefined, appids);
    },
-   setAppData: async function(appdata) {
-      let savedData = await this.get("app_data", appdata.appid);
-      if(savedData[appdata.appid]) {
-         savedData = savedData[appdata.appid];
+   setAppData: async function(appid, appdata) {
+      let savedData = await this.get("app_data", undefined, appid);
+      if(savedData[appid]) {
+         savedData = savedData[appid];
          savedData.appid ??= appdata.appid;
          savedData.name  ??= appdata.name;
          savedData.cards ??= appdata.cards;
@@ -196,15 +196,15 @@ const SteamToolsDbManager = {
          savedData = appdata;
       }
 
-      await this.set("app_data", savedData, savedData.appid);
+      await this.set("app_data", savedData, appid);
    },
    getItemDescripts: async function(appid, contextid, classids) {
       let getList = classids.map(x => `${appid}_${contextid}_${x}`);
-      return await this.get("item_descripts", getList);
+      return await this.get("item_descripts", undefined, getList);
    },
    setItemDescripts: async function(item, contextid, appid) {
       let key = `${item.appid || appid}_${item.contextid || contextid}_${item.classid}`;
-      let savedData = await this.get("item_descripts", key);
+      let savedData = await this.get("item_descripts", undefined, key);
       if(savedData[key]) {
          savedData = savedData[key];
          Object.assign(savedData, item);
@@ -215,16 +215,16 @@ const SteamToolsDbManager = {
       await this.set("item_descripts", savedData, key);
    },
    getProfileInventories: async function(profileid, appid, contextids) {
-      let getList = contextids.map(x => `${profileid}_${appid}_${x}`);
-      return await this.get("inventories", getList);
+      let getList = Array.isArray(contextids) ? contextids.map(x => `${profileid}_${appid}_${x}`) : `${profileid}_${appid}_${contextids}`;
+      return await this.get("inventories", undefined, getList);
    },
    setProfileInventory: async function(inventoryData, profileid, appid, contextid) {
       // No need to update sublevel data, overwrite all old data
       await this.set("inventories", inventoryData, `${profileid}_${appid}_${contextid}`);
    },
    getMatchResults: async function(profileid1, profileid2List) {
-      let getList = profileid2List.map(x => `${profileid1}_${x}`);
-      return await this.get("item_matcher_results", getList);
+      let getList = Array.isArray(profileid2List) ? profileid2List.map(x => `${profileid1}_${x}`) : `${profileid1}_${profileid2List}`;
+      return await this.get("item_matcher_results", undefined, getList);
    },
    setMatchResult: async function(result) {
       // No need to update sublevel data, overwrite all old data
