@@ -2464,17 +2464,99 @@ function matcherConfigFullMatchListener() {
    // defer to an in-progress matching function
 }
 
-function matcherConfigSingleMatchListener() {
-   console.warn('matcherConfigFullMatchListener(): Not Implemented Yet!');
-
+async function matcherConfigSingleMatchListener() {
    // verify that the provided profileid/customurl is valid, cancel if invalid
    // check if settings are the same in db, prompt user to save if they want
    // generate matcher page with a loading animation
    // defer to an in-progress matching function
+   MatcherConfigShortcuts.configMenu.classList.add('overlay');
+   MatcherConfigShortcuts.matchSingleProfileProfileid.value = MatcherConfigShortcuts.matchSingleProfileProfileid.value.trim();
+   let profile = await Profile.findProfile(MatcherConfigShortcuts.matchSingleProfileProfileid.value);
+   if( !profile || (await profile.isMe()) ) {
+      alert('Invalid profile!');
+      MatcherConfigShortcuts.configMenu.classList.remove('overlay');
+      return;
+   }
+
+   let savedConfig = await SteamToolsDbManager.getToolConfig('matcher');
+   if(JSON.stringify(globalSettings.matcher) !== JSON.stringify(savedConfig.matcher)) {
+      let userPrompt = prompt('WARNING: Settings have not been saved! Save now? (y/n/cancel)');
+      if(!userPrompt[0].localeCompare('y', 'en', { sensitivity: 'base' })) {
+         await SteamToolsDbManager.setToolConfig('matcher');
+         console.log('matcherConfigSingleMatchListener(): Saved Settings. Continuing to matching process...');
+      } else if(!userPrompt[0].localeCompare('n', 'en', { sensitivity: 'base' })) {
+         console.log('matcherConfigSingleMatchListener(): Settings will not be saved. Continuing to matching process...');
+      } else if(!userPrompt[0].localeCompare('c', 'en', { sensitivity: 'base' })) {
+         console.log('matcherConfigSingleMatchListener(): Cancelled. Matching will not continue...');
+         MatcherConfigShortcuts.configMenu.classList.remove('overlay');
+         return;
+      } else {
+         console.log('matcherConfigSingleMatchListener(): Invalid input. Matching will not continue...');
+         MatcherConfigShortcuts.configMenu.classList.remove('overlay');
+         return;
+      }
+   }
+
+   await matcherStartMatching(profile);
 }
 
-function matcherStartMatching() {
+async function matcherStartMatching(profile) {
+   const generateMatchGroupString = (groupName) => `<div class="match-group" data-group="${groupName}"></div>`;
+   const generateMatchNameHeaderString = (profile, reverseDirection=false) => {
+      return `<div class="match-name${reverseDirection?' align-right':''}">`
+      +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}/` : `profiles/${profile.id}/`}" class="avatar ${profile.getStateString()}">`
+      +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
+      +    '</a>'
+      +    profile.name
+      + '</div>'
+   };
+   const generateMatchContainerString = (profile1, profile2) => {
+      return '<div class="match-container-outer loading">'
+      +    `<div class="match-container grid" data-profileid1="${profile1.id}" data-profileid2="${profile2.id}">`
+      +       '<div class="match-header">'
+      +          generateMatchNameHeaderString(profile1, true)
+      +          '<div class="match-item-action trade"></div>'
+      +          generateMatchNameHeaderString(profile2)
+      +       '</div>'
+      +    '</div>'
+      +    '<div class="userscript-overlay">'
+      +       '<div class="userscript-throbber">'
+      +          '<div class="throbber-bar"></div><div class="throbber-bar"></div><div class="throbber-bar"></div>'
+      +       '</div>'
+      +    '</div>'
+      + '</div>'
+   };
+
+   GM_addStyle(cssMatcher);
+
    console.warn('matcherStartMatching(): Not Implemented Yet!');
+   // UI setup (remove tool supernav)
+   Object.keys(MatcherConfigShortcuts).forEach(key => (key === 'MAIN_ELEM') || delete MatcherConfigShortcuts[key]);
+   MatcherConfigShortcuts.MAIN_ELEM.innerHTML = '<div class="match-results">'
+   + '</div>';
+
+   addColorFilterSvg(MatcherConfigShortcuts.MAIN_ELEM);
+
+   MatcherConfigShortcuts.results = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.match-results');
+   MatcherConfigShortcuts.resultGroups = {};
+
+   if(!Profile.me) {
+      await Profile.addNewProfile(steamToolsUtils.getMySteamId());
+   }
+
+   if(profile) {
+      MatcherConfigShortcuts.results.insertAdjacentHTML('beforeend', generateMatchGroupString('single'));
+      MatcherConfigShortcuts.resultGroups.single = MatcherConfigShortcuts.results.querySelector('[data-group="single"]');
+      MatcherConfigShortcuts.resultGroups.single.insertAdjacentHTML('beforeend', generateMatchContainerString(Profile.me, profile));
+
+      await matcherMatchProfile();
+
+      let emptyContainer = MatcherConfigShortcuts.resultGroups.single.querySelector('.match-container-outer.loading');
+      if(emptyContainer) {
+         emptyContainer.remove();
+      }
+   }
+
    // friend group matching
    //    generate match block on document
    //    check against blacklist
@@ -2490,13 +2572,78 @@ function matcherStartMatching() {
    //    generate match block on document
    //    check against blacklist
    //    begin matching (trade token should be provided by the user)
-   // after matching has finished, defer to a function to finish the matching process
+
+   // finish matching process here
 }
 
-function matcherFinishMatching() {
-   console.warn('matcherFinishMatching(): Not Implemented Yet!');
+async function matcherMatchProfile() {
+   const generateItemTypeContainerString = (itemType) => `<div class="match-item-type" data-type="${itemType}"></div>`;
+   const generateRarityContainerString = (rarity) => `<div class="match-item-rarity" data-rarity="${rarity}"></div>`;
+   const generateAppContainerString = (appid) => `<div class="match-item-app" data-appid="${appid}"></div>`;
+   const generateItemListContainerString = (itemType, rarity, appid, swapList) => {
+      return '<div class="match-item-list left">'
+      +    generateAppItemsString(itemType, rarity, appid, swapList, true)
+      + '</div>'
+      + '<div class="match-item-action trade"></div>'
+      + '<div class="match-item-list right">'
+      +    generateAppItemsString(itemType, rarity, appid, swapList, false)
+      + '</div>';
+   };
+   const generateAppItemsString = (itemType, rarity, appid, swapList, leftSide=true) => {
+      const getClassid = (index) => matchResult.inventory1.data[itemType][rarity][appid][index].classid;
+      const generateAppItemString = (qty, i) => {
+         let itemClassid = getClassid(i);
+         let itemDescription = Profile.itemDescriptions[itemClassid];
+         return `<div class="match-item" data-classid="${itemClassid}" data-qty="${Math.abs(qty)}" title="${itemDescription.name}">`
+         +    `<img src="${'https://community.cloudflare.steamstatic.com/economy/image/'+itemDescription.icon_url+'/96fx96f?allow_animated=1'}" alt="${itemDescription.name}">`
+         +    `<div class="match-item-name">${itemDescription.name}</div>`
+         + '</div>';
+      };
 
-   // wrap up any processes left over
+      return swapList.map((swapAmount, index) =>
+         leftSide ? (swapAmount<0 ? generateAppItemString(swapAmount, index) : '') : (swapAmount>0 ? generateAppItemString(swapAmount, index) : '')
+      ).join('');
+   }
+
+   let shortcuts = {};
+   let loadingContainer = MatcherConfigShortcuts.results.querySelector('.match-container-outer.loading > .match-container');
+   if(!loadingContainer) {
+      console.warn('matcherMatchProfile(): No loading container found!');
+      return;
+   }
+
+   let matchResult = await Matcher.matchInv(loadingContainer.dataset.profileid1, loadingContainer.dataset.profileid2);
+   if(!matchResult || steamToolsUtils.isEmptyObject(matchResult.results)) {
+      console.warn('matcherMatchProfile(): No results to be rendered');
+      return;
+   }
+
+   for(let result in matchResult.results) {
+      let [itemType, rarity, appid] = result.split('_');
+
+      shortcuts[itemType] ??= { elem: null, rarities: {} };
+      if(!shortcuts[itemType].elem) {
+         loadingContainer.insertAdjacentHTML('beforeend', generateItemTypeContainerString(itemType));
+         shortcuts[itemType].elem = loadingContainer.querySelector(`[data-type="${itemType}"]`);
+      }
+      shortcuts[itemType].rarities[rarity] ??= { elem: null, appids: {} };
+      if(!shortcuts[itemType].rarities[rarity].elem) {
+         shortcuts[itemType].elem.insertAdjacentHTML('beforeend', generateRarityContainerString(rarity));
+         shortcuts[itemType].rarities[rarity].elem = shortcuts[itemType].elem.querySelector(`[data-rarity="${rarity}"]`);
+      }
+      shortcuts[itemType].rarities[rarity].appids[appid] ??= { elem: null };
+      if(!shortcuts[itemType].rarities[rarity].appids[appid].elem) {
+         shortcuts[itemType].rarities[rarity].elem.insertAdjacentHTML('beforeend', generateAppContainerString(appid));
+         shortcuts[itemType].rarities[rarity].appids[appid].elem = shortcuts[itemType].rarities[rarity].elem.querySelector(`[data-appid="${appid}"]`);
+      }
+      shortcuts[itemType].rarities[rarity].appids[appid].elem.insertAdjacentHTML('beforeend', generateItemListContainerString(itemType, rarity, appid, matchResult.results[result].swap));
+   }
+
+   console.log(matchResult);
+   console.log(Profile.itemDescriptions)
+
+
+   loadingContainer.parentElement.classList.remove('loading');
 }
 /************************************************/
 /*************** Item Matcher END ***************/
