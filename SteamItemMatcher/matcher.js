@@ -66,22 +66,34 @@ let Matcher = {
          }
       }
 
-      let found = await Profile.findProfile(profile);
-      
-      if(!found) {
-         throw `matcher.getInventory(): Profile ${profile} is invalid!`;
+      let profile1, profile2;
+      if(!(profile instanceof Profile)) {
+         profile1 = await Profile.findProfile(profile);
+         if(!profile1) {
+            throw `matcher.getInventory(): Profile ${profile} is invalid!`;
+         }
+      } else {
+         profile1 = profile;
       }
-
-      if(!found.inventory || found.inventory.last_updated<(Date.now()-this.UPDATE_PERIOD)) {
-         await found.getProfileInventory("trade", ref);
-         if(!found.inventory) {
-            throw `matcher.getInventory(): Getting inventory for ${profile} failed!`;
+      if(ref !== undefined) {
+         if(!(ref instanceof Profile)) {
+            profile2 = await Profile.findProfile(ref);
+            if(!profile2) {
+               throw `matcher.getInventory(): Profile ${ref} is invalid!`;
+            }
+         } else {
+            profile2 = ref;
          }
       }
 
-      let inventory = this.utils.deepClone(found.inventory);
+         await profile1.getProfileInventory("trade", ref);
+         if(!profile1.inventory) {
+            throw `matcher.getInventory(): Getting inventory for ${((profile instanceof Profile) ? profile.id : profile)} failed!`;
+         }
+
+      let inventory = this.utils.deepClone(profile1.inventory);
       inventory.itemsets = itemSetsIter;
-      inventory.meta = { profileid: found.id };
+      inventory.meta = { profileid: profile1.id };
       return inventory;
    },
    getBadgeCards: async function(profile, list) {
@@ -102,7 +114,7 @@ let Matcher = {
          meta: { profileid: found.id }
       }
    },
-   matchInv: async function(profile1, profile2, helper=false) {
+   matchInv: async function(profile1, profile2, { helper=false, autoValidate=false } = { helper: false, autoValidate: false }) {
       let fillMissingItems = (target, source) => {
          for(let i=0; i<source.length; i++) {
             if(!target.some(x => x.classid === source[i].classid)) {
@@ -111,11 +123,13 @@ let Matcher = {
          }
       }
 
-      if(profile1 === undefined) {
+      if(typeof profile1 !== 'string' && !(profile1 instanceof Profile)) {
          throw "matchInv(): No profiles provided. inventories not set!";
-      } else if(profile2 === undefined) {
+      } else if(typeof profile2 !== 'string' && !(profile2 instanceof Profile)) {
+         helper = profile2?.helper ?? helper;
+         autoValidate = profile2?.autoValidate ?? autoValidate;
          profile2 = profile1;
-         profile1 = this.utils.getMySteamId();
+         profile1 = Profile.me || this.utils.getMySteamId();
       }
 
       let inventory1;
@@ -150,7 +164,7 @@ let Matcher = {
             continue;
          }
 
-         if(!inventory2.data[itemType] || !inventory2.data[itemType][rarity] || !inventory2.data[itemType][rarity][appid]) {
+         if(!inventory2.data[itemType]?.[rarity]?.[appid]) {
             // console.log("No Match!");
             continue;
          }
@@ -166,7 +180,7 @@ let Matcher = {
             console.log(set2);
             continue;
          } else if(set1.length === 1) {
-            console.log(`matchInv(): Item type ${itemType} from app ${appid} only has 1 item, nothing to compare. skipping...`);
+            // console.log(`matchInv(): Item type ${itemType} from app ${appid} only has 1 item, nothing to compare. skipping...`);
             continue;
          }
 
@@ -182,7 +196,7 @@ let Matcher = {
             let swapset1 = set1.map((x, i) => x.count + swap[i]);
             let swapset2 = set2.map((x, i) => x.count - swap[i]);
             let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), helper);
-            if(!balanceResult.swap.some((x, i) => x)) {
+            if(!balanceResult.history.length) {
                break;
             }
 
@@ -200,7 +214,11 @@ let Matcher = {
       }
 
       this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid].tradable = true;
-      this.validate(inventory1.meta.profileid, inventory2.meta.profileid);
+      if(autoValidate) {
+         this.validate(inventory1.meta.profileid, inventory2.meta.profileid);
+      }
+
+      return this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid];
    },
    matchBadge: async function(profile1, profile2, list=this.badgeList, helper=false) {
       if(profile1 === undefined) {
