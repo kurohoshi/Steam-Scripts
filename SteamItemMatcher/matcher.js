@@ -22,7 +22,7 @@ let Matcher = {
       } else {
          currentLevel = 4;
       }
-      
+
       return existanceLevel < currentLevel;
    },
    setBadgeList: async function(list) {
@@ -92,7 +92,7 @@ let Matcher = {
       let found = await Profile.findProfile(profile);
       if(!found) {
          throw `getBadgeCards(): Profile ${profile} is invalid!`;
-      } 
+      }
 
       await found.getBadgepageStockAll(list.normal);
       await found.getBadgepageStockAll(list.foil, true);
@@ -100,7 +100,7 @@ let Matcher = {
       return{
          data: this.utils.deepClone(found.badgepages),
          meta: { profileid: found.id }
-      } 
+      }
    },
    matchInv: async function(profile1, profile2, helper=false) {
       let fillMissingItems = (target, source) => {
@@ -128,7 +128,7 @@ let Matcher = {
          console.error(e);
          return;
       }
-      
+
 
       if(this.matchResultsList[inventory1.meta.profileid]) {
          if(this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid]) {
@@ -145,7 +145,6 @@ let Matcher = {
          results: {}
       };
 
-
       for (let [set1, appid, rarity, itemType] of inventory1.itemsets()) {
          if(!this.MATCH_TYPE_LIST.includes(itemType)) {
             continue;
@@ -155,7 +154,7 @@ let Matcher = {
             // console.log("No Match!");
             continue;
          }
-         let set2 = inventory2.data[itemType][rarity][appid];  
+         let set2 = inventory2.data[itemType][rarity][appid];
 
          fillMissingItems(set1, set2);
          fillMissingItems(set2, set1);
@@ -170,7 +169,7 @@ let Matcher = {
             console.log(`matchInv(): Item type ${itemType} from app ${appid} only has 1 item, nothing to compare. skipping...`);
             continue;
          }
-         
+
          let swap = Array(set1.length).fill(0);
          let history = [];
 
@@ -246,7 +245,7 @@ let Matcher = {
       for(let rarity of list1.data) {
          for(let appid in list1.data[rarity]) {
             let set1 = list1.data[rarity][appid].data.sort((a, b) => a.index - b.index).map(x => x.count);
-            
+
             if(!list2.data[rarity]) {
                break;
             } else if(!list2.data[rarity][appid]) {
@@ -276,7 +275,7 @@ let Matcher = {
                if(!balanceResult.swap.some((x, i) => x)) {
                   break;
                }
-   
+
                for(let x=0; x<swap.length; x++) {
                   swap[x] += (flip ? -balanceResult.swap[x] : balanceResult.swap[x]);
                }
@@ -347,7 +346,7 @@ let Matcher = {
       for(let max=1, maxlen=setlen*2; max<maxlen; max++) {
          let i     = max<=setlen ? 0 : max-setlen;
          let start = i;
-         let end = max<=setlen ? max : setlen;
+         let end   = max<=setlen ? max : setlen;
          while(i<end) {
             let j = end-1-i+start;
             if(bin1[i][0] === bin2[j][0]) { // don't swap same item
@@ -362,7 +361,7 @@ let Matcher = {
                i++;
                continue;
             }
-            
+
             // compare variance change before and after swap for both parties
             // [<0] good swap (variance will decrease)
             // [=0] neutral swap (variance stays the same)
@@ -380,7 +379,7 @@ let Matcher = {
                binSwap(bin1, i, true, 0);
                bin1_j_elem[1]--;
                binSwap(bin1, binIndices[bin1_j_elem[0]][0], false, 0);
-               
+
                bin2[j][1]++;
                binSwap(bin2, j, true, 1);
                bin2_i_elem[1]--;
@@ -414,7 +413,7 @@ let Matcher = {
          let [itemType, rarity, appid] = category.split('_');
          let set1 = group1[itemType][rarity][appid];
          let set2 = group2[itemType][rarity][appid];
-         
+
          set.avg = [
             set1.reduce((a, b) => a + b.count, 0.0) / set1.length,
             set2.reduce((a, b) => a + b.count, 0.0) / set2.length,
@@ -471,7 +470,7 @@ let Matcher = {
    generateRequestPayload: async function(profile1, profile2, message="", reverse=true) {
       // https://steamcommunity.com/tradeoffer/new/?partner=[STEAM3_ID]&forum_owner=[forum_owner]&forum_topic=[gidtopic]
       // steamid_owner = "10358279"+(forum_owner+1429521408)
-      
+
       // POST https://steamcommunity.com/tradeoffer/new/send
       // Request payload
       // let reqPayload = {
@@ -500,7 +499,7 @@ let Matcher = {
       //       trading_topic: { // using game's trade forum trade link
       //          steamid_owner:"[steamid_owner]",
       //          forumtype:"Trading",
-      //          gidfeature:-1,  
+      //          gidfeature:-1,
       //          gidtopic:"[gidtopic]"
       //       }
       //    }
@@ -665,7 +664,7 @@ let Matcher = {
          } else {
             console.warn(`isASFNeutralPlus(): Neutrality calculation result for set1 of ${category} is ${neutrality}.`);
          }
-         
+
          neutrality = calcNeutrality(inv2[itemType][rarity][appid], set, false);
          if(neutrality === 0) {
             set.asfnplus += 2;
