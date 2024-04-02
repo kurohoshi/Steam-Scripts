@@ -186,10 +186,21 @@ const SteamToolsDbManager = {
          savedData = savedData[appid];
          savedData.appid ??= appdata.appid;
          savedData.name  ??= appdata.name;
-         savedData.cards ??= appdata.cards;
-         for(let [rarity, badgeList] of Object.entries(appdata.badges)) {
-            for(let [level, imgLink] of Object.entries(badgeList)) {
-               savedData.badges[rarity][level] = imgLink;
+         if(appdata.badges) {
+            savedData.badges ??= { normal: {}, foil: {} };
+            for(let rarity in appdata.badges) {
+               for(let level in appdata.badges[rarity]) {
+                  savedData.badges[rarity][level] ??= appdata.badges[rarity][level];
+               }
+            }
+         }
+         if(appdata.cards) {
+            savedData.cards ??= [];
+            for(let i=0; i<appdata.cards.length; i++) {
+               savedData.cards[i] ??= {};
+               for(let prop in appdata.cards[i]) {
+                  savedData.cards[i][prop] ??= appdata.cards[i][prop];
+               }
             }
          }
       } else {
