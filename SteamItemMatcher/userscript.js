@@ -37,6 +37,8 @@ const DB_OBJECTSTORE_CONFIGS = [
    { name: 'item_nameids', keypath: undefined, autoincr: undefined }
 ];
 
+const MONTHS_ARRAY = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 const steamToolsUtils = {
    INV_FETCH_DELAY1: 3*1000, // for trade offer window or own inv
    INV_FETCH_DELAY2: 60*1000, // for others' regular inv
