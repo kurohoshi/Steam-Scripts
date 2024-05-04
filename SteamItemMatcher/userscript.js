@@ -455,15 +455,15 @@ async function setupBadgepageFilter() {
       globalSettings.badgepageFilter.itemIds[index] = itemId;
    }
 
-   addColorFilterSvg(document.getElementById('responsive_page_template_content'));
+   addSvgBlock(document.getElementById('responsive_page_template_content'));
    GM_addStyle(cssGlobal);
    GM_addStyle(cssEnhanced);
    GM_addStyle(cssMatcher);
 
-   let friendFilterHTMLString = '<div class="enhanced-options right">'
-   +    '<button id="friend-filter" class="purple wide">Filter Friends</button>'
-   +    '<button id="good-swaps" class="purple wide">Display Good Swaps</button>'
-   +    '<button id="balance-cards" class="purple wide">Balance Cards</button>'
+   let friendFilterHTMLString = '<div class="enhanced-options right userscript-vars">'
+   +    '<button id="friend-filter" class="userscript-btn purple wide">Filter Friends</button>'
+   +    '<button id="good-swaps" class="userscript-btn purple wide">Display Good Swaps</button>'
+   +    '<button id="balance-cards" class="userscript-btn purple wide">Balance Cards</button>'
    + '</div>';
    let headerLinkElem = document.querySelector('.badge_cards_to_collect');
    headerLinkElem.insertAdjacentHTML('beforebegin', friendFilterHTMLString);
@@ -609,6 +609,120 @@ async function badgepageFilterShowGoodSwapsListener() {
    let { friendsCardStock } = globalSettings.badgepageFilter;
    let processedFriends = new Set();
    let goodSwapListElem = document.querySelector('#good-swaps-results > .enhanced-body');
+
+   for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
+      let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
+      if(processedFriends.has(profileUrl)) {
+         continue;
+      }
+
+      await badgepageFilterFetchFriend(profileElem);
+      let profile = friendsCardStock[profileUrl];
+
+      if(!profile?.stock) {
+         continue;
+      } else if(!profile?.possibleCards?.some(x => x.length)) {
+         continue;
+      }
+
+      let profileGoodSwapHTMLString = '<div class="match-container-outer">'
+      +    '<div class="match-container max3">'
+      +       '<div class="match-header">'
+      +          '<div class="match-name">'
+      +             `<a href="${profile.profileLink}" class="avatar ${profile.state ?? 'offline'}">`
+      +                `<img src="${profile.pfp}">`
+      +             '</a>'
+      +             profile.name
+      +          '</div>'
+      +       '</div>'
+      +       generateMatchRowsHTMLString(profile.id3, profile.possibleCards, profile.lowestCards)
+      +    '</div>'
+      + '</div>';
+      goodSwapListElem.insertAdjacentHTML('beforeend', profileGoodSwapHTMLString);
+
+      processedFriends.add(profileUrl);
+   }
+
+   document.querySelector('.userscript-throbber').remove();
+}
+
+async function badgepageFilterBalanceCardsListener() {
+   const generateMatchItemsHTMLString = (matchResult, leftSide=true) => {
+      const generateMatchItemHTMLString = (qty, i) => {
+         return `<div class="match-item" data-qty="${Math.abs(qty)}" title="${cardInfoList[i].name}"><img src="${cardInfoList[i].img + '/96fx96f?allow_animated=1' }" alt="${cardInfoList[i].name}"></div>`
+      };
+      let { cardInfoList } = globalSettings.badgepageFilter;
+      return matchResult.map((swapAmount, index) =>
+         leftSide ? (swapAmount<0 ? generateMatchItemHTMLString(swapAmount, index) : '') : (swapAmount>0 ? generateMatchItemHTMLString(swapAmount, index) : '')
+      ).join('');
+   };
+   const generateMatchRowHTMLString = (matchResult) => {
+      return '<div class="match-item-row align-right">'
+      +    '<div class="match-item-list left">'
+      +       generateMatchItemsHTMLString(matchResult, true)
+      +    '</div>'
+      +    `<div class="match-item-action trade"></div>`
+      +    '<div class="match-item-list right">'
+      +       generateMatchItemsHTMLString(matchResult, false)
+      + '</div>';
+   };
+
+   let HTMLString = '<div class="badge_detail_tasks footer"></div>'
+   + '<div id="balance-results" class="enhanced-section">'
+   +    '<div class="enhanced-header">Balanced Matches</div>'
+   +    '<div class="enhanced-body"></div>'
+   + '</div>'
+   + '<div class="userscript-throbber">'
+   +    '<div class="throbber-bar"></div><div class="throbber-bar"></div><div class="throbber-bar"></div>'
+   + '</div>';
+   document.querySelector('.badge_row_inner').insertAdjacentHTML('beforeend', HTMLString);
+
+   let { myCardStock, friendsCardStock } = globalSettings.badgepageFilter;
+   let processedFriends = new Set();
+   let balanceMatchingListElem = document.querySelector('#balance-results > .enhanced-body');
+
+   for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
+      let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
+      if(processedFriends.has(profileUrl)) {
+         continue;
+      }
+
+      await badgepageFilterFetchFriend(profileElem);
+      let profile = friendsCardStock[profileUrl];
+
+      if(!profile?.stock) {
+         continue;
+      }
+
+      let balanceResult = Matcher.balanceVariance(myCardStock, profile.stock);
+      if(!balanceResult.swap.some(x => x)) {
+         continue;
+      }
+
+      let profileBalancedMatchingHTMLString = '<div class="match-container-outer">'
+      +    '<div class="match-container">'
+      +       '<div class="match-header">'
+      +          '<div class="match-name">'
+      +             `<a href="${profile.profileLink}" class="avatar ${profile.state ?? 'offline'}">`
+      +                `<img src="${profile.pfp}">`
+      +             '</a>'
+      +             profile.name
+      +          '</div>'
+      +       '</div>'
+      +       generateMatchRowHTMLString(balanceResult.swap)
+      +    '</div>'
+      + '</div>';
+      balanceMatchingListElem.insertAdjacentHTML('beforeend', profileBalancedMatchingHTMLString);
+
+      processedFriends.add(profileUrl);
+   }
+
+   document.querySelector('.userscript-throbber').remove();
+}
+
+/***********************************************************/
+/***************** Badgepage Filtering END *****************/
+/***********************************************************/
 
 /*******************************************************/
 /**************** Booster Crafter BEGIN ****************/
@@ -2049,16 +2163,10 @@ async function boosterCrafterOpenBoosters() {
       };
 */
 
-   for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
-      let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g);
-      if(processedFriends.has(profileUrl)) {
-         continue;
       if(responseData.success !== 1) {
          throw 'boosterCrafterOpenBoosters(): error opening booster!';
       }
 
-      await badgepageFilterFetchFriend(profileElem);
-      let profile = friendsCardStock[profileUrl];
       for(let cardData of responseData.rgItems) {
          let imgUrl = cardData.image.replace(/https:\/\/community\.(akamai|cloudflare)\.steamstatic\.com\/economy\/image\//g, '');
          currentDropStats[appid][imgUrl] ??= { imgUrl: imgUrl, name: cardData.name, foil: cardData.foil, count: 0 };
@@ -2066,26 +2174,7 @@ async function boosterCrafterOpenBoosters() {
          dropStats[appid][imgUrl] ??= { imgUrl: imgUrl, name: cardData.name, foil: cardData.foil, count: 0 };
          dropStats[appid][imgUrl].count++;
 
-      if(!profile?.stock) {
-         continue;
-      } else if(!profile?.possibleCards?.some(x => x.length)) {
-         continue;
-      }
 
-      let profileGoodSwapHTMLString = '<div class="match-container-outer">'
-      +    '<div class="match-container max3">'
-      +       '<div class="match-header">'
-      +          '<div class="match-name">'
-      +             `<a href="${profile.profileLink}" class="avatar ${profile.state ?? 'offline'}">`
-      +                `<img src="${profile.pfp}">`
-      +             '</a>'
-      +             profile.name
-      +          '</div>'
-      +       '</div>'
-      +       generateMatchRowsHTMLString(profile.id3, profile.possibleCards, profile.lowestCards)
-      +    '</div>'
-      + '</div>';
-      goodSwapListElem.insertAdjacentHTML('beforeend', profileGoodSwapHTMLString);
          let cardElem = boosterCrafterShortcuts.lists.card.list.querySelector(`[data-img-url="${imgUrl}"]`);
          if(cardElem) {
             cardElem.dataset.qty = currentDropStats[appid][imgUrl].count;
@@ -2109,8 +2198,6 @@ async function boosterCrafterOpenBoosters() {
       }
    }
 
-   document.querySelector('.userscript-throbber').remove();
-}
    let currentDropStats = boosterCrafterData.currentDropStats;
    let dropStats = globalSettings.boosterCrafter.stats.drops;
    let openerLoaderProgressElem = document.getElementById('opener-list-progress');
@@ -2120,26 +2207,6 @@ async function boosterCrafterOpenBoosters() {
       selectedEntries = boosterCrafterShortcuts.lists.opener.list.querySelectorAll('.userscript-config-list-entry');
    }
 
-async function badgepageFilterBalanceCardsListener() {
-   const generateMatchItemsHTMLString = (matchResult, leftSide=true) => {
-      const generateMatchItemHTMLString = (qty, i) => {
-         return `<div class="match-item" data-qty="${Math.abs(qty)}" title="${cardInfoList[i].name}"><img src="${cardInfoList[i].img + '/96fx96f?allow_animated=1' }" alt="${cardInfoList[i].name}"></div>`
-      };
-      let { cardInfoList } = globalSettings.badgepageFilter;
-      return matchResult.map((swapAmount, index) =>
-         leftSide ? (swapAmount<0 ? generateMatchItemHTMLString(swapAmount, index) : '') : (swapAmount>0 ? generateMatchItemHTMLString(swapAmount, index) : '')
-      ).join('');
-   };
-   const generateMatchRowHTMLString = (matchResult) => {
-      return '<div class="match-item-row align-right">'
-      +    '<div class="match-item-list left">'
-      +       generateMatchItemsHTMLString(matchResult, true)
-      +    '</div>'
-      +    `<div class="match-item-action trade"></div>`
-      +    '<div class="match-item-list right">'
-      +       generateMatchItemsHTMLString(matchResult, false)
-      + '</div>';
-   };
    let requestBody = new URLSearchParams({
       sessionid: steamToolsUtils.getSessionId()
    });
@@ -2159,20 +2226,8 @@ async function badgepageFilterBalanceCardsListener() {
             throw 'boosterCrafterOpenBoosters(): No boosters left in the list!';
          }
 
-   let HTMLString = '<div class="badge_detail_tasks footer"></div>'
-   + '<div id="balance-results" class="enhanced-section">'
-   +    '<div class="enhanced-header">Balanced Matches</div>'
-   +    '<div class="enhanced-body"></div>'
-   + '</div>'
-   + '<div class="userscript-throbber">'
-   +    '<div class="throbber-bar"></div><div class="throbber-bar"></div><div class="throbber-bar"></div>'
-   + '</div>';
-   document.querySelector('.badge_row_inner').insertAdjacentHTML('beforeend', HTMLString);
          let asset = boosterListEntry.tradables[boosterListEntry.tradables.length-1];
 
-   let { myCardStock, friendsCardStock } = globalSettings.badgepageFilter;
-   let processedFriends = new Set();
-   let balanceMatchingListElem = document.querySelector('#balance-results > .enhanced-body');
          await openBooster(appid, asset.assetid);
          openerListEntry.qtyTradable--;
          openerListEntry.maxTradable--;
@@ -2181,24 +2236,16 @@ async function badgepageFilterBalanceCardsListener() {
          await boosterCrafterConfigSave();
          openerLoaderProgressElem.innerHTML = ++progressCounter;
 
-   for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
-      let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g);
-      if(processedFriends.has(profileUrl)) {
-         continue;
          boosterListEntry.count--;
          boosterListEntry.tradableCount--;
          boosterListEntry.tradables.pop();
       }
 
-      await badgepageFilterFetchFriend(profileElem);
-      let profile = friendsCardStock[profileUrl];
       for(let i=0; i<qtyNontradable; ++i) {
          if(boosterListEntry.nontradables.length === 0) {
             throw 'boosterCrafterOpenBoosters(): No boosters left in the list!';
          }
 
-      if(!profile?.stock) {
-         continue;
          let asset = boosterListEntry.nontradables[boosterListEntry.nontradables.length-1];
 
          await openBooster(appid, asset.assetid);
@@ -2214,9 +2261,6 @@ async function badgepageFilterBalanceCardsListener() {
          boosterListEntry.nontradables.pop();
       }
 
-      let balanceResult = Matcher.balanceVariance(myCardStock, profile.stock);
-      if(!balanceResult.swap.some(x => x)) {
-         continue;
       if(!openerListEntry.maxTradable && !openerListEntry.maxNontradable) {
          delete boosterCrafterData.openerList[appid];
          entryElem.remove();
@@ -2225,20 +2269,6 @@ async function badgepageFilterBalanceCardsListener() {
    }
 }
 
-      let profileBalancedMatchingHTMLString = '<div class="match-container-outer">'
-      +    '<div class="match-container">'
-      +       '<div class="match-header">'
-      +          '<div class="match-name">'
-      +             `<a href="${profile.profileLink}" class="avatar ${profile.state ?? 'offline'}">`
-      +                `<img src="${profile.pfp}">`
-      +             '</a>'
-      +             profile.name
-      +          '</div>'
-      +       '</div>'
-      +       generateMatchRowHTMLString(balanceResult.swap)
-      +    '</div>'
-      + '</div>';
-      balanceMatchingListElem.insertAdjacentHTML('beforeend', profileBalancedMatchingHTMLString);
 function boosterCrafterSetOverlay(overlayContainerElem, overlayEnable, overlayState) {
    if(overlayEnable) {
       overlayContainerElem.classList.add('overlay');
@@ -2246,8 +2276,6 @@ function boosterCrafterSetOverlay(overlayContainerElem, overlayEnable, overlaySt
       overlayContainerElem.classList.remove('overlay');
    }
 
-   document.querySelector('.userscript-throbber').remove();
-}
    if(typeof overlayState === 'string') {
       let overlayElem;
       for(let containerChildElem of overlayContainerElem.children) {
@@ -2259,9 +2287,6 @@ function boosterCrafterSetOverlay(overlayContainerElem, overlayEnable, overlaySt
          }
       }
 
-/***********************************************************/
-/***************** Badgepage Filtering END *****************/
-/***********************************************************/
       if(!overlayElem) {
          console.warn('boosterCrafterSetOverlay(): No overlay element found in immediate children!');
          return;
