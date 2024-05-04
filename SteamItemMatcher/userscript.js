@@ -271,32 +271,6 @@ function exportConfig(toolname, filename) {
 }
 
 function importConfig(toolname) {
-   const isValidConfigObject = obj => {
-      if(obj.config && !steamToolsUtils.isSimplyObject(obj.config)) {
-         return false;
-      }
-      for(let optionGroup of Object.values(obj.config)) {
-         if(!steamToolsUtils.isSimplyObject(optionGroup) || !Array.isArray(optionGroup.options)) {
-            return false;
-         }
-         for(let option of optionGroup.options) {
-            if(typeof option.name !== 'string' || typeof option.id !== 'string' || typeof option.label !== 'string' || typeof option.value !== 'boolean') {
-               return false;
-            }
-         }
-      }
-
-      if(obj.lists && !steamToolsUtils.isSimplyObject(obj.lists)) {
-         return false;
-      }
-      for(let list of Object.values(obj.lists)) {
-         if(!steamToolsUtils.isSimplyObject(list) || !Array.isArray(list.data)) {
-            return false;
-         }
-      }
-
-      return true;
-   }
 
    return new Promise((resolve, reject) => {
       let ulElement = steamToolsUtils.generateImportDataElement(toolname+'-config');
@@ -320,12 +294,7 @@ function importConfig(toolname) {
          const reader = new FileReader();
          reader.onload = (readerEvent) => {
             let loadedConfig = JSON.parse(readerEvent.target.result);
-            if(isValidConfigObject(loadedConfig)) {
-               globalSettings[toolname] = loadedConfig;
-               resolve(loadedConfig);
-            } else {
-               reject('importConfig(): Error loading config!');
-            }
+            resolve(loadedConfig);
          }
          reader.readAsText(file);
       });
@@ -4622,7 +4591,39 @@ function matcherConfigListDialogConfirmListener(event) {
 }
 
 async function matcherConfigImportListener() {
-   await importConfig('matcher');
+   const isValidConfigObject = obj => {
+      if(obj.config && !steamToolsUtils.isSimplyObject(obj.config)) {
+         return false;
+      }
+      for(let optionGroup of Object.values(obj.config)) {
+         if(!steamToolsUtils.isSimplyObject(optionGroup) || !Array.isArray(optionGroup.options)) {
+            return false;
+         }
+         for(let option of optionGroup.options) {
+            if(typeof option.name !== 'string' || typeof option.id !== 'string' || typeof option.label !== 'string' || typeof option.value !== 'boolean') {
+               return false;
+            }
+         }
+      }
+
+      if(obj.lists && !steamToolsUtils.isSimplyObject(obj.lists)) {
+         return false;
+      }
+      for(let list of Object.values(obj.lists)) {
+         if(!steamToolsUtils.isSimplyObject(list) || !Array.isArray(list.data)) {
+            return false;
+         }
+      }
+
+      return true;
+   }
+
+   let importedConfig = await importConfig('matcher');
+   if(!isValidConfigObject(importedConfig)) {
+      throw 'matcherConfigImportListener(): Invalid imported config!';
+   }
+
+   globalSettings.matcher = importedConfig;
    matcherConfigLoadUI();
 }
 
