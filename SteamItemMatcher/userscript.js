@@ -3439,6 +3439,38 @@ async function main() {
 
 setTimeout(main, 0); // macrotask
 
+/***************************************************/
+/****************** CSS Functions ******************/
+/***************************************************/
+function cssAddOverlay() {
+   let innerHTMLString = '';
+   let overlayState;
+   if(arguments.length>0 && typeof arguments[arguments.length-1] === 'object') {
+      overlayState = arguments[arguments.length-1].initialState ?? '';
+   } else {
+      overlayState = '';
+   }
+
+   if(arguments.length>1 || arguments.length===1 && typeof arguments[0]!=='object') {
+      for(let i=0; i<arguments.length; i++) {
+         if(typeof arguments[i] === 'string') {
+            innerHTMLString += arguments[i];
+         }
+      }
+   }
+
+   return `<div class="userscript-overlay ${overlayState}">`
+   +    innerHTMLString
+   + '</div>';
+}
+function cssAddThrobber() {
+   return '<div class="userscript-throbber">'
+   +    '<div class="throbber-bar"></div>'
+   +    '<div class="throbber-bar"></div>'
+   +    '<div class="throbber-bar"></div>'
+   + '</div>';
+}
+
 /**************************************************/
 /**************************************************/
 /******************* CSS Styles *******************/
