@@ -5598,6 +5598,7 @@ input.userscript-input[type="range"] {
 .userscript-bg-filtered.search {
    background-image: url("https://community.akamai.steamstatic.com/public/images//sharedfiles/searchbox_workshop_submit.gif");
    /* filter: url(#filter-steam-gray); */
+   filter: initial;
 }
 .userscript-bg-filtered.search:hover {
    /* filter: url(#filter-steam-gray); */
