@@ -5024,7 +5024,8 @@ DataCollectors.scrapeBadgepage = async function() {
 
    let cardStock = [];
    for(let [index, cardEntry] of document.querySelectorAll('.badge_card_set_card').entries()) {
-      cardStock[index] = cardEntry.children[1].childNodes.length === 5 ? parseInt(cardEntry.children[1].childNodes[1].textContent.replace(/[()]/g, '')) : 0;
+      let cardAmount = cardEntry.children[1].childNodes.length === 5 ? parseInt(cardEntry.children[1].childNodes[1].textContent.replace(/[()]/g, '')) : 0;
+      cardStock[index] = { count: parseInt(cardAmount) };
       savedData.cards[index] ??= {};
       savedData.cards[index].name = cardEntry.children[1].childNodes[cardEntry.children[1].childNodes.length-3].textContent.trim();
       savedData.cards[index][`img_card${isFoil?1:0}`] ??= cardEntry.children[0].querySelector('.gamecard').src.replace(/https:\/\/community\.(cloudflare|akamai)\.steamstatic.com\/economy\/image\//g, '');
