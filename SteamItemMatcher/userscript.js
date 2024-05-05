@@ -5187,6 +5187,10 @@ async function main() {
    await SteamToolsDbManager.setup();
    await DataCollectors.scrapePage();
 
+   if(/^\/(id|profiles)\/[^/]+\/gamecards\/\d+\/?/.test(window.location.pathname) && document.querySelector('.badge_card_to_collect')) {
+      setupBadgepageFilter();
+   }
+
    if(window.location.pathname.includes('/tradingcards/boostercreator/enhanced')) {
       setupBoosterCrafter();
    }
