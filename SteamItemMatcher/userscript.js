@@ -4063,23 +4063,23 @@ GLOBALSETTINGSDEFAULTS.matcher = {
 const MatcherConfigShortcuts = {};
 
 async function gotoMatcherConfigPage() {
-   const generateConfigHeaderString = (title) => `<div class="matcher-config-header"><span>${title}</span></div>`;
-   const generateConfigButtonString = (id, label) => `<div class="matcher-config-option"><input type="checkbox" class="button" id="${id}"><label for="${id}">${label}</label></div>`;
+   const generateConfigHeaderString = (title) => `<div class="userscript-config-header"><span>${title}</span></div>`;
+   const generateConfigButtonString = (id, label) => `<div class="userscript-config-option"><input type="checkbox" class="button" id="${id}"><label for="${id}">${label}</label></div>`;
    const generateConfigButtonsString = (checkList) => checkList.map(x => generateConfigButtonString(x.id, x.label)).join('');
    const generateConfigButtonGroupString = () => Object.values(globalSettings.matcher.config).map(x => {
-      return `<div class="matcher-config-group" data-id="${x.id}">${generateConfigHeaderString(x.label)}${generateConfigButtonsString(x.options)}</div>`
+      return `<div class="userscript-config-group" data-id="${x.id}">${generateConfigHeaderString(x.label)}${generateConfigButtonsString(x.options)}</div>`
    }).join('');
    const generateConfigListTabs = (list) => {
       let HTMLString = '';
       for(let listGroup in list) {
-         HTMLString += `<div class="matcher-conf-list-tab" data-list-name="${listGroup}">${list[listGroup].label}</div>`;
+         HTMLString += `<div class="userscript-config-list-tab" data-list-name="${listGroup}">${list[listGroup].label}</div>`;
       }
       return HTMLString;
    };
    const generateConfigListGroups = (list) => {
       let HTMLString = '';
       for(let listGroup in list) {
-         HTMLString += `<div class="matcher-conf-list-entry-group" data-list-name="${listGroup}"></div>`;
+         HTMLString += `<div class="userscript-config-list-entry-group" data-list-name="${listGroup}"></div>`;
       }
       return HTMLString;
    }
@@ -4095,7 +4095,7 @@ async function gotoMatcherConfigPage() {
    }
 
    // set up css styles for this feature
-   GM_addStyle(cssMatcher);
+   GM_addStyle(cssGlobal);
 
    MatcherConfigShortcuts.MAIN_ELEM.innerHTML = '';
    document.body.classList.remove('profile_page'); // profile page causes bg color to be black
@@ -4107,59 +4107,38 @@ async function gotoMatcherConfigPage() {
       globalSettings.matcher = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcher);
    }
 
-   let matcherConfigHTMLString = '<svg class="solid-clr-filters">'
-   +    '<filter id="filter-red" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-   +       '<feColorMatrix type="matrix" values="0 0 0 0   0.8   0 0 0 0   0   0 0 0 0   0   0 0 0 1   0" />'
-   +    '</filter>'
-   +    '<filter id="filter-red-bright" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-   +       '<feColorMatrix type="matrix" values="0 0 0 0   1   0 0 0 0   0   0 0 0 0   0   0 0 0 1   0" />'
-   +    '</filter>'
-   +    '<filter id="filter-green" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-   +       '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   0.8   0 0 0 0   0   0 0 0 1   0" />'
-   +    '</filter>'
-   +    '<filter id="filter-green-bright" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-   +       '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   1   0 0 0 0   0   0 0 0 1   0" />'
-   +    '</filter>'
-   +    '<filter id="filter-blue" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-   +       '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   0   0 0 0 0   0.8   0 0 0 1   0" />'
-   +    '</filter>'
-   +    '<filter id="filter-blue-bright" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-   +       '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   0   0 0 0 0   1   0 0 0 1   0" />'
-   +    '</filter>'
-   +    '<filter id="filter-steam-gray" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-   +       '<feColorMatrix type="matrix" values="0 0 0 0   0.77   0 0 0 0   0.76   0 0 0 0   0.75   0 0 0 1   0" />'
-   +    '</filter>'
-   + '</svg>'
-   + '<div class="matcher-config">'
-   +    '<div class="matcher-config-title"><span>Matcher Configuration</span></div>'
-   +    '<div class="matcher-options">'
+   addSvgBlock(MatcherConfigShortcuts.MAIN_ELEM);
+
+   let matcherConfigHTMLString = '<div class="userscript-config">'
+   +    '<div class="userscript-config-title"><span>Matcher Configuration</span></div>'
+   +    '<div class="userscript-options">'
    +       generateConfigButtonGroupString()
-   +       '<div class="matcher-config-group">'
-   +          '<div class="matcher-config-header">'
+   +       '<div class="userscript-config-group">'
+   +          '<div class="userscript-config-header">'
    +             '<span>Configuration Settings</span>'
    +          '</div>'
-   +          '<div class="matcher-config-btn-group">'
-   +             '<button id="matcher-config-import" class="blue">Import Settings</button>'
-   +             '<button id="matcher-config-export" class="blue">Export Settings</button>'
+   +          '<div class="userscript-config-btn-group">'
+   +             '<button id="userscript-config-import" class="blue">Import Settings</button>'
+   +             '<button id="userscript-config-export" class="blue">Export Settings</button>'
    +          '</div>'
-   +          '<div class="matcher-config-btn-group right">'
-   +             '<button id="matcher-config-reset" class="blue">Reload Settings</button>'
-   +             '<button id="matcher-config-save" class="green">Save Settings</button>'
+   +          '<div class="userscript-config-btn-group right">'
+   +             '<button id="userscript-config-reset" class="blue">Reload Settings</button>'
+   +             '<button id="userscript-config-save" class="green">Save Settings</button>'
    +          '</div>'
    +       '</div>'
-   +       '<div class="matcher-config-actions">'
-   +          '<div class="matcher-config-action">'
-   +             '<button id="matcher-config-match-full" class="purple max">Full Match</button>'
+   +       '<div class="userscript-config-actions">'
+   +          '<div class="userscript-config-action">'
+   +             '<button id="userscript-config-match-full" class="purple max">Full Match</button>'
    +          '</div>'
    +          '<div class="h-break">OR</div>'
-   +          '<div class="matcher-config-action">'
-   +             '<input type="text" name="match-profileid" id="match-single-profileid" placeholder="profileid/customUrlId">'
-   +             '<button id="matcher-config-match-one" class="purple">Match</button>'
+   +          '<div class="userscript-config-action">'
+   +             '<input type="text" name="match-profileid" id="match-single-profile-profileid" placeholder="profileid/customUrlId">'
+   +             '<button id="userscript-config-match-one" class="purple">Match</button>'
    +          '</div>'
    +       '</div>'
    +    '</div>'
-   +    '<div class="matcher-conf-list">'
-   +       '<div class="matcher-conf-list-header">'
+   +    '<div class="userscript-config-list">'
+   +       '<div class="userscript-config-list-header tabs">'
    +          generateConfigListTabs(globalSettings.matcher.lists)
    +       '</div>'
    +       '<div class="conf-list-entry-action add">'
@@ -4172,7 +4151,7 @@ async function gotoMatcherConfigPage() {
    +          '</div>'
    +          '<div class="conf-list-entry-action-disabled"></div>'
    +       '</div>'
-   +       '<div class="matcher-conf-list-list">'
+   +       '<div class="userscript-config-list-list">'
    +          '<div class="conf-list-entry-form-container">'
    +             '<div class="conf-list-entry-form">'
    +             '</div>'
@@ -4181,20 +4160,25 @@ async function gotoMatcherConfigPage() {
    +             '<div class="content-loader"></div>'
    +             '<div class="conf-list-dialog">'
    +                '<div>Entry already exists, overwrite?</div>'
-   +                '<div id="conf-list-entry-old" class="matcher-conf-list-entry"></div>'
+   +                '<div id="conf-list-entry-old" class="userscript-config-list-entry"></div>'
    +                '<div class="conf-list-dialog-divider">'
    +                   '<div class="dbl-arrows down"></div>'
    +                '</div>'
-   +                '<div id="conf-list-entry-new" class="matcher-conf-list-entry"></div>'
+   +                '<div id="conf-list-entry-new" class="userscript-config-list-entry"></div>'
    +                '<div class="conf-list-dialog-action">'
    +                   '<button id="conf-list-dialog-cancel" class="red wide">No</button>'
    +                   '<button id="conf-list-dialog-confirm" class="green wide">Yes</button>'
    +                '</div>'
    +             '</div>'
    +          '</div>'
-   +          '<div class="matcher-conf-list-entries custom-scroll">'
+   +          '<div class="userscript-config-list-entries userscript-custom-scroll">'
    +             generateConfigListGroups(globalSettings.matcher.lists)
    +          '</div>'
+   +       '</div>'
+   +    '</div>'
+   +    '<div class="userscript-overlay">'
+   +       '<div class="userscript-throbber">'
+   +          '<div class="throbber-bar"></div><div class="throbber-bar"></div><div class="throbber-bar"></div>'
    +       '</div>'
    +    '</div>'
    + '</div>';
@@ -4234,7 +4218,7 @@ async function gotoMatcherConfigPage() {
 async function matcherConfigLoadUI() {
    MatcherConfigShortcuts.listOverlayElem.classList.add('active');
 
-   const configMenuElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.matcher-config');
+   const configMenuElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config');
    if(!configMenuElem) {
       console.warn('updateMatcherConfigUI(): Config menu not found, UI will not be updated');
       return;
@@ -4258,7 +4242,7 @@ async function matcherConfigLoadUI() {
             }
 
             let tradeTokenWarning = listName === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
-            let entryHTMLString = `<div class="matcher-conf-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
+            let entryHTMLString = `<div class="userscript-config-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
             +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar offline">`
             +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
             +    '</a>'
@@ -4271,13 +4255,13 @@ async function matcherConfigLoadUI() {
             let entryHTMLString;
             let appdata = await Profile.findAppMetaData(data.appid);
             if(!appdata) {
-               entryHTMLString = `<div class="matcher-conf-list-entry" data-appid="${data.appid}" data-name="">`
+               entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${data.appid}" data-name="">`
                +    '<a class="app-header"></a>'
                +    `<div class="conf-list-entry-profile">${data.appid}</div>`
                +    `<div class="conf-list-entry-descript">${data.descript}</div>`
                + '</div>';
             } else {
-               entryHTMLString = `<div class="matcher-conf-list-entry" data-appid="${appdata.appid}" data-name="${appdata.name}">`
+               entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${appdata.appid}" data-name="${appdata.name}">`
                +    `<a href="https://steamcommunity.com/my/gamecards/${appdata.appid}}/" target="_blank" rel="noopener noreferrer" class="app-header">`
                +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
                +    '</a>'
@@ -4303,7 +4287,7 @@ async function matcherConfigLoadUI() {
 
    // set active tab
    if(globalSettings.matcher.currentTab) {
-      MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.matcher-conf-list-tab[data-list-name=${globalSettings.matcher.currentTab}]`).classList.add('active');
+      MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.userscript-config-list-tab[data-list-name=${globalSettings.matcher.currentTab}]`).classList.add('active');
       matcherConfigShowActiveList();
    }
 
@@ -4328,11 +4312,11 @@ function matcherConfigSetEntryActionBar(actionBarName) {
 // needs testing
 function matcherConfigSelectListTabListener(event) {
    console.log(event.target); // debugging
-   if(!event.target.matches('.matcher-conf-list-tab') || event.target.matches('.active')) {
+   if(!event.target.matches('.userscript-config-list-tab') || event.target.matches('.active')) {
       return;
    }
 
-   event.currentTarget.querySelector(`.matcher-conf-list-tab.active`)?.classList.remove('active');
+   event.currentTarget.querySelector(`.userscript-config-list-tab.active`)?.classList.remove('active');
    event.target.classList.add('active');
    globalSettings.matcher.currentTab = event.target.dataset.listName;
 
@@ -4395,7 +4379,7 @@ function matcherConfigResetEntryForm() {
 
 function matcherConfigShowActiveList() {
    let currentTab = globalSettings.matcher.currentTab;
-   for(let listGroup of MatcherConfigShortcuts.MAIN_ELEM.querySelectorAll(`.matcher-conf-list-entry-group`)) {
+   for(let listGroup of MatcherConfigShortcuts.MAIN_ELEM.querySelectorAll(`.userscript-config-list-entry-group`)) {
       if(currentTab !== listGroup.dataset.listName) {
          listGroup.classList.remove('active');
       } else {
@@ -4407,14 +4391,14 @@ function matcherConfigShowActiveList() {
 function matcherConfigSelectListEntryListener(event) {
    console.log(event.target);
    let entryElem = event.target;
-   while(!entryElem.matches('.matcher-conf-list-entries')) {
-      if(entryElem.matches('.matcher-conf-list-entry')) {
+   while(!entryElem.matches('.userscript-config-list-entries')) {
+      if(entryElem.matches('.userscript-config-list-entry')) {
          break;
       } else {
          entryElem = entryElem.parentElement;
       }
    }
-   if(!entryElem.matches('.matcher-conf-list-entry')) {
+   if(!entryElem.matches('.userscript-config-list-entry')) {
       return;
    }
 
@@ -4545,7 +4529,7 @@ async function matcherConfigEntryFormAddListener(event) {
 
       if(profileEntry) {
          // app found: prompt user if they want to overwrite existing data
-         let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-profileid="${profileEntry.profileid}"]`);
+         let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.userscript-config-list-entry[data-profileid="${profileEntry.profileid}"]`);
          MatcherConfigShortcuts.entryEditOld = profileEntry;
          MatcherConfigShortcuts.entryEditNew = { descript: description };
          matcherConfigSelectListEntry(selectedEntryElem, false);
@@ -4560,7 +4544,7 @@ async function matcherConfigEntryFormAddListener(event) {
             profileEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.profileid === profile.id);
             if(profileEntry) {
                // app found: prompt user if they want to overwrite existing data
-               let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-profileid="${profileEntry.profileid}"]`);
+               let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.userscript-config-list-entry[data-profileid="${profileEntry.profileid}"]`);
                MatcherConfigShortcuts.entryEditOld = profileEntry;
                MatcherConfigShortcuts.entryEditNew = { descript: description };
                matcherConfigSelectListEntry(selectedEntryElem, false);
@@ -4572,7 +4556,7 @@ async function matcherConfigEntryFormAddListener(event) {
             } else {
                let entryGroupElem = MatcherConfigShortcuts.listElems[currentTab];
                let tradeTokenWarning = currentTab === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
-               let entryHTMLString = `<div class="matcher-conf-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
+               let entryHTMLString = `<div class="userscript-config-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
                +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar offline">`
                +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
                +    '</a>'
@@ -4602,7 +4586,7 @@ async function matcherConfigEntryFormAddListener(event) {
 
       if(appidEntry) {
          // app found: prompt user if they want to overwrite existing data
-         let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.matcher-conf-list-entry[data-appid="${appidEntry.appid}"]`);
+         let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.userscript-config-list-entry[data-appid="${appidEntry.appid}"]`);
          MatcherConfigShortcuts.entryEditOld = appidEntry;
          MatcherConfigShortcuts.entryEditNew = { descript: description };
          matcherConfigSelectListEntry(selectedEntryElem, false);
@@ -4616,7 +4600,7 @@ async function matcherConfigEntryFormAddListener(event) {
          if(!appdata) {
             // no appdata exists, could possibly mean that community data was nuked (eg 梦中女孩) even if the items still exist
             // therefore don't reject entry submission and add entry
-            let entryHTMLString = `<div class="matcher-conf-list-entry" data-appid="${appid}" data-name="">`
+            let entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${appid}" data-name="">`
             +    '<a class="app-header"></a>'
             +    `<div class="conf-list-entry-profile">${appid}</div>`
             +    `<div class="conf-list-entry-descript">${description}</div>`
@@ -4626,13 +4610,13 @@ async function matcherConfigEntryFormAddListener(event) {
             globalSettings.matcher.lists[currentTab].data.push({ appid: appid, descript: description });
          } else {
             let insertBeforeThisEntry;
-            for(let entryElem of MatcherConfigShortcuts.listElems[currentTab].querySelectorAll(`.matcher-conf-list-entry`)) {
+            for(let entryElem of MatcherConfigShortcuts.listElems[currentTab].querySelectorAll(`.userscript-config-list-entry`)) {
                if(entryElem.dataset.name && appdata.name.localeCompare(entryElem.dataset.name) < 0) {
                   insertBeforeThisEntry = entryElem;
                   break;
                }
             }
-            let entryHTMLString = `<div class="matcher-conf-list-entry" data-appid="${appdata.appid}" data-name="${appdata.name}">`
+            let entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${appdata.appid}" data-name="${appdata.name}">`
             +    `<a href="https://steamcommunity.com/my/gamecards/${appdata.appid}}/" target="_blank" rel="noopener noreferrer" class="app-header">`
             +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
             +    '</a>'
@@ -4833,7 +4817,7 @@ async function matcherStartMatching(profile) {
    MatcherConfigShortcuts.MAIN_ELEM.innerHTML = '<div class="match-results">'
    + '</div>';
 
-   addColorFilterSvg(MatcherConfigShortcuts.MAIN_ELEM);
+   addSvgBlock(MatcherConfigShortcuts.MAIN_ELEM);
 
    MatcherConfigShortcuts.results = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.match-results');
    MatcherConfigShortcuts.resultGroups = {};
