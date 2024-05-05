@@ -3,10 +3,11 @@
 class Profile {
    static me;
    static MasterProfileList = [];
-   static appMetaData = {}; // Can be put into its own class
+   static appMetaData = {}; // Can be put into its own class // should use map
    static itemDescriptions = {}; // Can be put into its own class
    static utils = steamToolsUtils;
 
+   static #OUTDATED_INV_PERIOD = 2;
    static MAX_ITEM_COUNT = 4000;
    static ITEM_TYPE_MAP = {
       item_class_2:  "card",
@@ -36,6 +37,7 @@ class Profile {
    }
    static ITEM_TYPE_ORDER = {
       gem: 1,
+      booster: 2,
       card: 3,
       background: 4,
       emoticon: 5,
@@ -96,7 +98,13 @@ class Profile {
       }
    }
 
-   async getTradeFriends() {
+   getStateString() {
+      return this.state === 2
+      ? 'in-game' : this.state === 1
+      ? 'online' : 'offline';
+   }
+
+   async getTradeFriends() { // TODO: stop profile fetching when desired profile is reached, solution to cutting down friend fetching time
       if(!(await this.isMe())) {
          console.warn("getTradeFriends(): This is not user's profile! Try using getFriends() instead");
          return;
@@ -188,7 +196,7 @@ class Profile {
             Profile.MasterProfileList.push(profile);
          }
 
-         if(Profile.utils.isOutdated(profile.last_updated, 7)) {
+         if(Profile.utils.isOutdatedDays(profile.last_updated, 7)) {
             await Profile.findMoreDataForProfile(profile);
          }
 
@@ -285,14 +293,14 @@ class Profile {
       }
 
       let profiledata = profilePage.textContent
-         .match(/g_rgProfileData = {[^;]+?}/g)
+         .match(/g_rgProfileData = {[^}]+}/g)[0]
          .replace(/^g_rgProfileData = /, '');
       if(!profiledata) {
          console.error("findMoreDataForProfile(): profile data object not found!");
          return false;
       }
 
-      profiledata = JSON.parse( profiledata[0].replace(/,"summary":.+(?=}$)/g, '') );
+      profiledata = JSON.parse( profiledata.replace(/,"summary":.+(?=}$)/g, '') );
 
       profile.id = profiledata.steamid;
       profiledata.url = profiledata.url.replace(/https:\/\/steamcommunity\.com\//g, '');
@@ -311,7 +319,7 @@ class Profile {
       }
 
       profiledata = doc.querySelector('.profile_header .playerAvatar');
-      profile.pfp = profiledata.querySelector('img').src.replace(/(https:\/\/avatars\.akamai\.steamstatic\.com\/)|(_full\.jpg)/g, '');
+      profile.pfp = profiledata.querySelector('.playerAvatarAutoSizeInner > img').src.replace(/(https:\/\/avatars\.(cloudflare|akamai)\.steamstatic\.com\/)|(_full\.jpg)/g, '');
       profile.state = profiledata.classList.contains("in-game")
          ? 2 : profiledata.classList.contains("online")
          ? 1 : profiledata.classList.contains("offline")
@@ -373,10 +381,7 @@ class Profile {
 
       // attempt to use user's own badgepage to scrape basic app data
       if(!Profile.appMetaData[appid]) {
-         let myProfile;
-         if(!Profile.me) {
-            myProfile = await Profile.findProfile(Profile.utils.getMySteamId());
-         }
+         let myProfile = Profile.me ?? (await Profile.findProfile(Profile.utils.getMySteamId()));
 
          if(!myProfile) {
             console.error('findAppMetaData(): Somehow user\'s profile cannot be found!');
@@ -398,15 +403,27 @@ class Profile {
       for(let appid in dataset) {
          let existingData = Profile.appMetaData[appid];
          if(existingData) {
-            existingData.name ??= dataset[appid].name;
-            Object.assign(existingData.badges.normal, dataset[appid].badges.normal);
-            Object.assign(existingData.badges.foil, dataset[appid].badges.foil);
-            for(let [cardIndex, card] of dataset[appid].cards.entries()) {
-               Object.assign(existingData.cards[cardIndex], card);
+            dataset[appid].appid ??= parseInt(appid);
+            dataset[appid].name ??= existingData.name;
+            if(existingData.badges) {
+               dataset[appid].badges ??= { normal: {}, foil: {} };
+               for(let rarity in existingData.badges) {
+                  for(let level in existingData.badges[rarity]) {
+                     dataset[appid].badges[rarity][level] ??= existingData.badges[rarity][level];
+                  }
+               }
             }
-         } else {
-            Profile.appMetaData[appid] = dataset[appid];
+            if(existingData.cards) {
+               dataset[appid].cards ??= [];
+               for(let i=0; i<existingData.cards.length; i++) {
+                  for(let prop in existingData.cards[i]) {
+                     dataset[appid].cards[i][prop] ??= existingData.cards[i][prop];
+                  }
+               }
+            }
          }
+
+         Profile.appMetaData[appid] = dataset[appid];
       }
    }
 
@@ -415,22 +432,71 @@ class Profile {
          return;
       }
 
-      await SteamToolsDbManager.setAppData(Profile.appMetaData[appid]);
+      await SteamToolsDbManager.setAppData(appid, Profile.appMetaData[appid]);
    }
 
    // change to find app meta data
-   async updateAppMetaData(appid, key, val) {
-      if(!Profile.appMetaData[appid]) {
+   static async updateAppMetaData(appid, newObj, loadDb=true) {
+      if(!Profile.utils.isSimplyObject(newObj)) {
+         console.warn('updateAppMetaData(): the data provided is not an object!');
+         return;
+      }
+
+      if(!Profile.appMetaData[appid] && loadDb) {
          await Profile.findAppMetaData(appid);
       }
-      Profile.appMetaData[appid] ??= {appid: appid};
-      Profile.appMetaData[appid][key] = val;
+      if(!Profile.appMetaData[appid]) {
+         Profile.appMetaData[appid] = Profile.utils.deepClone(newObj);
+      } else {
+         Profile.appMetaData[appid].appid ??= newObj.appid;
+         Profile.appMetaData[appid].name ??= newObj.name;
+         if(newObj.badges) {
+            Profile.appMetaData[appid].badges ??= { normal: {}, foil: {} };
+            for(let rarity in newObj.badges) {
+               for(let level in newObj.badges[rarity]) {
+                  Profile.appMetaData[appid].badges[rarity][level] ??= newObj.badges[rarity][level];
+               }
+            }
+         }
+         if(newObj.cards) {
+            Profile.appMetaData[appid].cards ??= [];
+            for(let i=0; i<newObj.cards.length; i++) {
+               for(let prop in newObj.cards[i]) {
+                  Profile.appMetaData[appid].cards[i][prop] ??= newObj.cards[i][prop];
+               }
+            }
+         }
+      }
+
+      await Profile.saveAppMetaData(appid);
+   }
+
+   static async loadItemDescription(appid, contextid, classids) {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
+      let dataset = await SteamToolsDbManager.getItemDescripts(appid, contextid, classids); // hardcoded for now
+
+      for(let data in dataset) {
+         if(Profile.itemDescriptions[data.classid]) {
+            // update existing meta data
+         } else {
+            Profile.itemDescriptions[data.classid] = data;
+         }
+      }
+   }
+
+   static async saveItemDescription(classid) {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
+      await SteamToolsDbManager.setItemDescript(Profile.itemDescriptions[classid], 6, 753);
    }
 
    updateItemDescription(classid, dataObject) {
-      if(!Profile.itemDescriptions[classid]) {
-         Profile.itemDescriptions[classid] = {};
-      }
+      Profile.itemDescriptions[classid] ??= {};
       Object.assign(Profile.itemDescriptions[classid], dataObject);
    }
 
@@ -459,9 +525,34 @@ class Profile {
       };
    }
 
-   async getProfileInventory(method="trade", refProfile) {
+   async loadInventory() {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
+      let data = await SteamToolsDbManager.getProfileInventories(this.id, 753, 6);
+      data = data[`${this.id}_${753}_${6}`];
+      if(!this.inventory || this.inventory.last_updated<data.last_updated) {
+         this.inventory = data;
+      }
+   }
+
+   async saveInventory() {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
+      await SteamToolsDbManager.setProfileInventory(this.inventory, this.id, 753, 6);
+   }
+
+   async getProfileInventory(method="trade", refProfile, forceUpdate=false) {
       if(!this.id) {
          await Profile.findMoreDataForProfile(this);
+      }
+
+      await this.loadInventory();
+      if(this.inventory && !Profile.utils.isOutdatedHours(this.inventory.last_updated, Profile.#OUTDATED_INV_PERIOD) && !forceUpdate) {
+         return;
       }
 
       if((await this.isMe()) || method === "inventory") {
@@ -564,27 +655,33 @@ class Profile {
                console.log(desc);
                appname = {internal_name: ""};
             }
-            this.updateAppMetaData(desc.market_fee_app, "name", appname.internal_name);
+
+            await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
 
             asset.amount = parseInt(asset.amount);
+            let assetInsertEntry = { assetid: asset.assetid, count: asset.amount };
             if(itemList[desc.market_fee_app]) { // app subgroup exists
                let classItemGroup = itemList[desc.market_fee_app].find(x => x.classid === asset.classid);
                if(classItemGroup) { // class item subgroup exists
                   if(desc.tradable) {
-                     classItemGroup.tradables.push({ assetid: asset.assetid, count: asset.amount });
+                     classItemGroup.tradables.push(assetInsertEntry);
+                  } else {
+                     classItemGroup.nontradables.push(assetInsertEntry);
                   }
                   classItemGroup.count += asset.amount;
                } else { // class item subgroup does not exist
                   itemList[desc.market_fee_app].push({
                      classid: asset.classid,
-                     tradables: desc.tradable ? [{ assetid: asset.assetid, count: asset.amount }]: [],
+                     tradables: desc.tradable ? [assetInsertEntry]: [],
+                     nontradables: desc.tradable ? [] : [assetInsertEntry],
                      count: asset.amount
                   });
                }
             } else { // app subgroup does not exist
                itemList[desc.market_fee_app] = [{
                   classid: asset.classid,
-                  tradables: desc.tradable ? [{ assetid: asset.assetid, count: asset.amount }]: [],
+                  tradables: desc.tradable ? [assetInsertEntry]: [],
+                  nontradables: desc.tradable ? [] : [assetInsertEntry],
                   count: asset.amount
                }]
             }
@@ -605,19 +702,19 @@ class Profile {
       this.inventory.tradable_only = false;
    }
 
-   async getTradeInventory(myProf, last_itemType = undefined, count = Number.MAX_SAFE_INTEGER) {
+   async getTradeInventory(refProf, last_itemType = undefined, count = Number.MAX_SAFE_INTEGER) {
       if(!this.id) {
          await Profile.findMoreDataForProfile(this);
       }
 
       if(await this.isMe()) {
          console.warn("getTradeInventory(): Inventory fetch is user, getInventory() is recommended instead");
-      } else if(typeof myProf === "string") {
-         if(!(myProf = await Profile.findProfile(myProf))) {
+      } else if(typeof refProf === "string") {
+         if(!(refProf = await Profile.findProfile(refProf))) {
             console.error("getTradeInventory(): Invalid profile string! Aborting...");
             return;
          }
-      } else if(!(myProf instanceof Profile)) {
+      } else if(!(refProf instanceof Profile)) {
          console.error("getTradeInventory(): Inventory fetch is not user, but own profile was not provided! Aborting...");
          return;
       }
@@ -631,7 +728,7 @@ class Profile {
       let currentPathSearch = window.location.pathname + window.location.search;
       let partnerString = `?partner=${Profile.utils.getSteamProfileId3(this.id)}`;
       let tokenString = (await this.isMe()) ? undefined : this.tradeToken;
-      tokenString = !tokenString || (await myProf.isFriend(this.id)) ? '' : `&token=${tokenString}`;
+      tokenString = !tokenString || (await refProf.isFriend(this.id)) ? '' : `&token=${tokenString}`; // redo this to avoid isFriend
 
       this.resetInventory();
 
@@ -662,7 +759,7 @@ class Profile {
             throw "Steam Inventory Fetch: Missing Parameters, or Steam is complaining about nothing.";
          }
 
-         await Profile.utils.sleep(Profile.utils.INV_FETCH_DELAY1);
+         // await Profile.utils.sleep(Profile.utils.INV_FETCH_DELAY1);
          resdata = await response.json();
 
          for(let asset of Object.values(resdata.rgInventory)) {
@@ -704,7 +801,7 @@ class Profile {
                console.log(desc);
                appname = {internal_name: ""};
             }
-            this.updateAppMetaData(desc.market_fee_app, "name", appname.internal_name);
+            await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
 
             asset.amount = parseInt(asset.amount);
             if(itemList[desc.market_fee_app]) { // app subgroup exists
@@ -745,8 +842,30 @@ class Profile {
       this.inventory.tradable_only = true;
    }
 
+   async loadBadgepages() {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
+
+      let dataset = await SteamToolsDbManager.getBadgepages(this.id);
+
+      for(let [rarity, applist] in Object.entries(dataset)) {
+         for(let [appid, data] in Object.entries(applist)) {
+            if(data.last_updated>this.badgepages[rarity][appid].last_updated) {
+               this.badgepages[rarity][appid] = data;
+            }
+         }
+      }
+   }
+
+   async saveBadgepages() {
+      if(!SteamToolsDbManager || !SteamToolsDbManager.isSetup()) {
+         return;
+      }
 
       await SteamToolsDbManager.setBadgepages(this.id, this.badgepages);
+   }
+
    async getBadgepageStock(appid, foil=false) {
       if(!this.id) {
          await Profile.findMoreDataForProfile(this);
@@ -759,40 +878,54 @@ class Profile {
       let parser = new DOMParser();
       let doc = parser.parseFromString(await response.text(), "text/html");
 
-      // check if private profile here
+      // check for private profile here
+
+      if(!doc.querySelector('.badge_gamecard_page')) {
+         let meta = { appid: appid, name: null };
+         // NOTE: has a different pathname for non-gamecard badges
+         // if(doc.querySelector('.badge_icon')) {
+         //    let badgeImg = doc.querySelector('.badge_icon').src.replace(/^.*\/public\/images\/badges\/|\.png(\?.+)?/g, '');
+         //    meta.badges = { normal: {[`${badgeImg}`]: badgeImg }};
+         //    meta.name = doc.querySelector('.badge_title').textContent.trim();
+         // }
+         await Profile.updateAppMetaData(appid, meta, false);
+         return;
+      }
 
       let rarity = foil ? 1 : 0;
       let newData = {};
-      let name = doc.querySelector("a.whiteLink:nth-child(5)").textContent.trim();
-      this.updateAppMetaData(appid, "name", name);
-      let cardData = Profile.appMetaData[appid].cards ?? [];
+      let metadata = { appid: appid, name: null, badges: { normal: {}, foil: {} }, cards: [] };
+      metadata.name = doc.querySelector("a.whiteLink:nth-child(5)").textContent.trim();
+      let level = doc.querySelector('.badge_info_description :nth-child(2)')?.textContent.trim().match(/\d+/g)[0];
+      if(level) {
+         let badgeImg = doc.querySelector('.badge_icon')
+            ?.src.replace(/https:\/\/cdn\.(cloudflare|akamai)\.steamstatic\.com\/steamcommunity\/public\/images\/items\//, '')
+            .replace(/^\d+\//, '').replace('.png', '');
+         metadata.badges[foil?'foil':'normal'][level] = badgeImg;
+      }
 
       newData.data = [...doc.querySelectorAll(".badge_card_set_card")].map((x, i) => {
          let count = x.children[1].childNodes.length === 5 ? parseInt(x.children[1].childNodes[1].textContent.replace(/[()]/g, '')) : 0;
          if(isNaN(count)) {
             console.warn(`getBadgepageStock(): Error getting card count for appid ${appid} at index ${i}`);
          }
-         if(!cardData[i]) {
-            cardData.push({
-               name: x.children[1].childNodes[x.children[1].childNodes.length-3].textContent.trim()
-            });
-         }
-         if(!cardData[i][`img_card${rarity}`]) {
-            cardData[i][`img_card${rarity}`] = x.children[0].querySelector(".gamecard").src.replace(/https:\/\/community\.akamai\.steamstatic\.com\/economy\/image\//g, '');
-         }
+         metadata.cards[i] = {};
+         metadata.cards[i].name = x.children[1].childNodes[x.children[1].childNodes.length-3].textContent.trim();
+         metadata.cards[i][`img_card${rarity}`] = x.children[0].querySelector(".gamecard")
+            ?.src.replace(/https:\/\/community\.(cloudflare|akamai)\.steamstatic\.com\/economy\/image\//g, '');
          let img_full = x.querySelector('.with_zoom');
          if(img_full) {
-            img_full = img_full.outerHTML.match(/onclick="[^"]+"/g)[0];
-            img_full = img_full.replaceAll('&quot;', '"');
-            img_full = img_full.match(/[^/]+\.jpg/g)[0];
-            img_full = img_full.replace('.jpg', '');
-            cardData[i][`img_full${rarity}`] = img_full;
+            img_full = img_full.outerHTML.match(/onclick="[^"]+"/g)[0]
+               ?.replaceAll('&quot;', '"')
+               ?.match(/[^/]+\.jpg/g)[0]
+               ?.replace('.jpg', '');
+            metadata.cards[i][`img_full${rarity}`] = img_full;
          }
          return { count: parseInt(count) };
       });
       newData.last_updated = Date.now();
 
-      this.updateAppMetaData(appid, "cards", cardData);
+      await Profile.updateAppMetaData(appid, metadata, false);
       this.badgepages[rarity][appid] = newData;
    }
 
