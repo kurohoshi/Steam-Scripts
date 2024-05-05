@@ -5009,7 +5009,7 @@ DataCollectors.scrapeBadgepage = async function() {
    }
 
    let savedData = await SteamToolsDbManager.getAppDatas(appid);
-   savedData = savedData[appid] ?? { appid: appid, badges: { normal: {}, foil: {} }, cards: [] };
+   savedData = savedData[appid] ?? { appid: appid, name: null, badges: { normal: {}, foil: {} }, cards: [] };
 
    let isFoil = window.location.search.includes("border=1");
 
