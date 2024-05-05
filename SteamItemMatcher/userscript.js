@@ -4731,7 +4731,7 @@ async function matcherConfigLoadListener() {
    }
 }
 
-function resetDefaultMatcherConfigListener() {
+function matcherConfigResetDefaultListener() {
    // prompt user to confirm action
 
    globalSettings.matcher = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcher);
