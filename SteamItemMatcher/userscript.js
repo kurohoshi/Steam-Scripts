@@ -5052,9 +5052,9 @@ DataCollectors.scrapeItemNameId = async function() {
    }
 
    let itemNameId = document.body.querySelector('.responsive_page_template_content > script:last-of-type').textContent
-      .match(/Market_LoadOrderSpread\(\s*?\d+\s*?\)/g)
+      .match(/Market_LoadOrderSpread\(\s*?\d+\s*?\)/g)[0]
       .match(/\d+/);
-   if(!itemNameId || itemNameId.length!==2) {
+   if(!itemNameId || itemNameId.length!==1) {
       console.warn('scrapeItemNameId(): No id found, or unexpected number of ids found, investigate!');
       return;
    }
