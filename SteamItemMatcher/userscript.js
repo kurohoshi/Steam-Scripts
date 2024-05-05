@@ -4938,7 +4938,7 @@ const DataCollectors = {};
 DataCollectors.scrapePage = async function() {
    const SCRAPER_LUT = [
       { regex: /^\/(id|profiles)\/[^/]+\/?$/, fnName: 'scrapeProfileData' },
-      { regex: /^\/(id|profiles)\/[^/]+\/gamecards\/\d+\/?$/, fnName: 'scrapeBadgepage' },
+      { regex: /^\/(id|profiles)\/[^/]+\/gamecards\/\d+\/?/, fnName: 'scrapeBadgepage' },
       { regex: /^\/market\/listings\/\d+\/[^/]+\/?$/, fnName: 'scrapeItemNameId' }
    ];
 
@@ -4999,7 +4999,7 @@ DataCollectors.scrapeBadgepage = async function() {
       console.warn('scrapeItemNameId(): No appid found, or multiple appids found, investigate!');
       return;
    }
-   appid = parseInt(appid);
+   appid = parseInt(appid[0]);
 
    if(document.querySelector('.profile_fatalerror')) {
       return;
@@ -5015,7 +5015,7 @@ DataCollectors.scrapeBadgepage = async function() {
    let level = document.querySelector('.badge_info_description :nth-child(2)')?.textContent.trim().match(/\d+/g)[0];
    if(level && !savedData.badges[isFoil?'foil':'normal'][level]) {
       let badgeImg = document.querySelector('.badge_icon');
-      badgeImg = badgeImg ? badgeImg.src.replace('https://cdn.akamai.steamstatic.com/steamcommunity/public/images/items/', '') : undefined;
+      badgeImg = badgeImg ? badgeImg.src.replace(/https:\/\/cdn\.(cloudflare|akamai)\.steamstatic\.com\/steamcommunity\/public\/images\/items\//, '') : undefined;
       savedData.badges[isFoil?'foil':'normal'][level] = badgeImg.replace(/^\d+\//, '').replace('.png', '');
    }
 
@@ -5030,7 +5030,7 @@ DataCollectors.scrapeBadgepage = async function() {
          if(img_full) {
             img_full = img_full.outerHTML.match(/onclick="[^"]+"/g)[0];
             img_full = img_full.replaceAll('&quot;', '"');
-            img_full = img_full.match(/[^/]+\.jpg/g)[0];
+            img_full = img_full.match(/[^/]+(\.jpg)?/g)[0];
             img_full = img_full.replace('.jpg', '');
             savedData.cards[index][`img_full${isFoil?1:0}`] = img_full;
          }
@@ -5045,7 +5045,7 @@ DataCollectors.scrapeItemNameId = async function() {
 
    let pathhashname = window.location.pathname
       .replace(/^\/market\/listings\//, '')
-      .match(/^d+\/[^/]+/);
+      .match(/^\d+\/[^/]+/);
    if(!pathhashname || pathhashname.length>1) {
       console.warn('scrapeItemNameId(): No hashname found, or multiple hashnamess found, investigate!');
       return;
