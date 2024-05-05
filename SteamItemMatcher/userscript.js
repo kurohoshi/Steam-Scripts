@@ -4183,34 +4183,37 @@ async function gotoMatcherConfigPage() {
    +    '</div>'
    + '</div>';
 
-   MatcherConfigShortcuts.MAIN_ELEM.insertAdjacentHTML("afterbegin", matcherConfigHTMLString);
+   MatcherConfigShortcuts.MAIN_ELEM.insertAdjacentHTML("beforeend", matcherConfigHTMLString);
 
-   for(let buttonGroup of MatcherConfigShortcuts.MAIN_ELEM.querySelectorAll('.matcher-config-group')) {
-      buttonGroup.addEventListener('change', matcherConfigUpdateChecklistListener);
-   }
-   document.getElementById('matcher-config-import').addEventListener('click', matcherConfigImportListener);
-   document.getElementById('matcher-config-export').addEventListener('click', matcherConfigExportListener);
-   document.getElementById('matcher-config-reset').addEventListener('click', matcherConfigLoadListener);
-   document.getElementById('matcher-config-save').addEventListener('click', matcherConfigSaveListener);
-   MatcherConfigShortcuts.MAIN_ELEM.querySelector('.matcher-conf-list-header').addEventListener('click', matcherConfigSelectListTabListener);
-   document.getElementById('entry-action-add').addEventListener('click', matcherConfigAddListEntryListener);
-   document.getElementById('entry-action-edit').addEventListener('click', matcherConfigEditListEntryListener);
-   document.getElementById('entry-action-del').addEventListener('click', matcherConfigDeleteListEntryListener);
-   MatcherConfigShortcuts.MAIN_ELEM.querySelector('.matcher-conf-list-entries').addEventListener('click', matcherConfigSelectListEntryListener);
-   document.getElementById('conf-list-dialog-cancel').addEventListener('click', matcherConfigListDialogCancelListener);
-   document.getElementById('conf-list-dialog-confirm').addEventListener('click', matcherConfigListDialogConfirmListener);
-   document.getElementById('matcher-config-match-full').addEventListener('click', matcherConfigFullMatchListener);
-   document.getElementById('matcher-config-match-one').addEventListener('click', matcherConfigSingleMatchListener);
-   // apply event listeners to go onto other actions like default matching, single account matching, input trade url links to add trade tokens, etc
-
+   // element shortcuts
+   MatcherConfigShortcuts.configMenu = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config');
    MatcherConfigShortcuts.listActionBarElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-action');
    MatcherConfigShortcuts.listFormContainerElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-form-container');
    MatcherConfigShortcuts.listOverlayElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-overlay');
    MatcherConfigShortcuts.listDialogElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-dialog');
    MatcherConfigShortcuts.listElems = {};
    for(let entryGroup in globalSettings.matcher.lists) {
-      MatcherConfigShortcuts.listElems[entryGroup] = MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.matcher-conf-list-entry-group[data-list-name=${entryGroup}]`);
+      MatcherConfigShortcuts.listElems[entryGroup] = MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.userscript-config-list-entry-group[data-list-name=${entryGroup}]`);
    }
+
+   for(let buttonGroup of MatcherConfigShortcuts.MAIN_ELEM.querySelectorAll('.userscript-config-group')) {
+      buttonGroup.addEventListener('change', matcherConfigUpdateChecklistListener);
+   }
+   document.getElementById('userscript-config-import').addEventListener('click', matcherConfigImportListener);
+   document.getElementById('userscript-config-export').addEventListener('click', matcherConfigExportListener);
+   document.getElementById('userscript-config-reset').addEventListener('click', matcherConfigLoadListener);
+   document.getElementById('userscript-config-save').addEventListener('click', matcherConfigSaveListener);
+   MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-header').addEventListener('click', matcherConfigSelectListTabListener);
+   document.getElementById('entry-action-add').addEventListener('click', matcherConfigAddListEntryListener);
+   document.getElementById('entry-action-edit').addEventListener('click', matcherConfigEditListEntryListener);
+   document.getElementById('entry-action-del').addEventListener('click', matcherConfigDeleteListEntryListener);
+   MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-entries').addEventListener('click', matcherConfigSelectListEntryListener);
+   document.getElementById('conf-list-dialog-cancel').addEventListener('click', matcherConfigListDialogCancelListener);
+   document.getElementById('conf-list-dialog-confirm').addEventListener('click', matcherConfigListDialogConfirmListener);
+   document.getElementById('userscript-config-match-full').addEventListener('click', matcherConfigFullMatchListener);
+   document.getElementById('userscript-config-match-one').addEventListener('click', matcherConfigSingleMatchListener);
+
+   MatcherConfigShortcuts.matchSingleProfileProfileid = document.getElementById('match-single-profile-profileid');
 
    matcherConfigLoadUI();
 }
