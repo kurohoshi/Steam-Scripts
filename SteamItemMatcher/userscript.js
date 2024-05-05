@@ -344,24 +344,34 @@ SteamToolsDbManager.setBadgepages = async function(profileid, badgepages) {
 SteamToolsDbManager.getAppDatas = async function(appids) {
    return await this.get("app_data", undefined, appids);
 }
-SteamToolsDbManager.setAppData = async function(appdata) {
-   let savedData = await this.get("app_data", undefined, appdata.appid);
-   savedData = savedData[appdata.appid];
-
-   if(savedData) {
-      savedData.appid = appdata.appid ?? savedData.appid;
-      savedData.name  = appdata.name  ?? savedData.name;
-      for(let i=0; i<appdata.cards.length; i++) {
-         Object.assign(savedData.cards[i], appdata.cards[i]);
+SteamToolsDbManager.setAppData = async function(appid, appdata) {
+   let savedData = await this.get("app_data", undefined, appid);
+   if(savedData[appid]) {
+      savedData = savedData[appid];
+      savedData.appid ??= appdata.appid;
+      savedData.name  ??= appdata.name;
+      if(appdata.badges) {
+         savedData.badges ??= { normal: {}, foil: {} };
+         for(let rarity in appdata.badges) {
+            for(let level in appdata.badges[rarity]) {
+               savedData.badges[rarity][level] ??= appdata.badges[rarity][level];
+            }
+         }
       }
-      for(let [rarity, badgeList] of Object.entries(appdata.badges)) {
-         Object.assign(savedData.badges[rarity], badgeList);
+      if(appdata.cards) {
+         savedData.cards ??= [];
+         for(let i=0; i<appdata.cards.length; i++) {
+            savedData.cards[i] ??= {};
+            for(let prop in appdata.cards[i]) {
+               savedData.cards[i][prop] ??= appdata.cards[i][prop];
+            }
+         }
       }
    } else {
       savedData = appdata;
    }
 
-   await this.set("app_data", savedData, savedData.appid);
+   await this.set("app_data", savedData, appid);
 }
 SteamToolsDbManager.getItemDescripts = async function(appid, contextid, classids) {
    let getList = classids.map(x => `${appid}_${contextid}_${x}`);
@@ -380,7 +390,7 @@ SteamToolsDbManager.setItemDescripts = async function(item, contextid, appid) {
    await this.set("item_descripts", savedData, key);
 }
 SteamToolsDbManager.getProfileInventories = async function(profileid, appid, contextids) {
-   let getList = contextids.map(x => `${profileid}_${appid}_${x}`);
+   let getList = Array.isArray(contextids) ? contextids.map(x => `${profileid}_${appid}_${x}`) : `${profileid}_${appid}_${contextids}`;
    return await this.get("inventories", undefined, getList);
 }
 SteamToolsDbManager.setProfileInventory = async function(inventoryData, profileid, appid, contextid) {
@@ -388,7 +398,7 @@ SteamToolsDbManager.setProfileInventory = async function(inventoryData, profilei
    await this.set("inventories", inventoryData, `${profileid}_${appid}_${contextid}`);
 }
 SteamToolsDbManager.getMatchResults = async function(profileid1, profileid2List) {
-   let getList = profileid2List.map(x => `${profileid1}_${x}`);
+   let getList = Array.isArray(profileid2List) ? profileid2List.map(x => `${profileid1}_${x}`) : `${profileid1}_${profileid2List}`;
    return await this.get("item_matcher_results", undefined, getList);
 }
 SteamToolsDbManager.setMatchResult = async function(result) {
@@ -396,7 +406,7 @@ SteamToolsDbManager.setMatchResult = async function(result) {
    await this.set("item_matcher_results", result, `${result.inventory1.meta.profileid}_${result.inventory2.meta.profileid}`);
 }
 SteamToolsDbManager.getItemNameIds = async function(appid, hashnames) {
-   let hashList = hashnames.map(x => `${appid}/${x}`);
+   let hashList = Array.isArray(hashnames) ? hashnames.map(x => `${appid}/${x}`) : `${appid}/${hashnames}`;
    return await this.get("item_nameids", undefined, hashList);
 }
 SteamToolsDbManager.setItemNameId = async function(appid, hashname, item_nameid) {
@@ -446,8 +456,8 @@ async function setupBadgepageFilter() {
       globalSettings.badgepageFilter.cardInfoList.push({
          name: textNodes[textNodes.length-3].textContent.trim(),
          img: cardEntry.querySelector('img').src
-   });
-}
+      });
+   }
 
    for(let missingCardElem of document.querySelectorAll('.badge_card_to_collect')) {
       let itemId = parseInt(missingCardElem.querySelector('img').id.slice(9));
