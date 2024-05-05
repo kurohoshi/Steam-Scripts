@@ -5162,7 +5162,7 @@ function generateSuperNav() {
       return;
    }
 
-   let nextNavHeader = navContainer.querySelector(".submenu_username");
+   let nextNavHeader = navContainer.querySelector(".submenu_Profile"); // steam modified on 2024/5/2
    if(!nextNavHeader) {
       return;
    }
