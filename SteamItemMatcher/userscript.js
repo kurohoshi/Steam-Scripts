@@ -5004,9 +5004,25 @@ DataCollectors.scrapeBadgepage = async function() {
    }
    appid = parseInt(appid[0]);
 
-   if(document.querySelector('.profile_fatalerror')) {
+   if(!document.querySelector('.badge_gamecard_page')) {
+      let meta = { appid: appid, name: null };
+      // if(document.querySelector('.badge_icon')) {
+      //    let badgeImg = document.querySelector('.badge_icon').src.replace(/^.*\/public\/images\/badges\/|\.png(\?.+)?/g, '');
+      //    meta.badges = { normal: {[`${badgeImg}`]: badgeImg }};
+      //    meta.name = document.querySelector('.badge_title').textContent.trim();
+      // }
+      await Profile.updateAppMetaData(appid, meta, false);
       return;
    }
+
+   let profile = window.location.pathname
+      .match(/^\/[^/]+\/[^/]+/g)[0]
+      ?.replace(/^\/[^/]+\//, '');
+   if(!profile) {
+      console.warn('scrapeBadgepage(): Unable to extract profileid or url from pathname!');
+      return;
+   }
+   profile = await Profile.findProfile(profile);
 
    let savedData = await SteamToolsDbManager.getAppDatas(appid);
    savedData = savedData[appid] ?? { appid: appid, name: null, badges: { normal: {}, foil: {} }, cards: [] };
@@ -5042,7 +5058,8 @@ DataCollectors.scrapeBadgepage = async function() {
    }
 
    console.log(savedData);
-   await SteamToolsDbManager.setAppData(savedData);
+   await Profile.updateAppMetaData(appid, savedData, false);
+   profile.badgepages[`${isFoil?1:0}`][appid] = cardStock;
 }
 DataCollectors.scrapeItemNameId = async function() {
    console.log('scraping item nameid data')
