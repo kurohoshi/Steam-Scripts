@@ -5064,14 +5064,14 @@ DataCollectors.scrapeItemNameId = async function() {
    await SteamToolsDbManager.setItemNameId(hashAppid, hashname, itemNameId[0]);
 }
 DataCollectors.scrapeTradeTokens = async function() {
-   let tradeURLStrings = document.getElementById('responsive_page_template_content').innerHTML.match(/https:\/\/steamcommunity\.com\/tradeoffer\/new\/\?partner=\d{8}&amp;token=\w{8}/g);
+   let tradeURLStrings = document.getElementById('responsive_page_template_content')?.innerHTML.match(/https:\/\/steamcommunity\.com\/tradeoffer\/new\/\?partner=\d{8}&amp;token=\w{8}/g);
    if(tradeURLStrings) {
       for(let urlString of tradeURLStrings) {
          urlString = urlString.replaceAll('&amp;', '&');
          await Profile.addTradeURL(urlString);
       }
    }
-   let tradeObjectStrings = document.getElementById('responsive_page_template_content').innerHTML.match(/ShowTradeOffer\([^{]*?{[^}]*?}[^)]*?\)/g);
+   let tradeObjectStrings = document.getElementById('responsive_page_template_content')?.innerHTML.match(/ShowTradeOffer\([^{]*?{[^}]*?}[^)]*?\)/g);
    if(tradeObjectStrings) {
       for(let objString of tradeObjectStrings) {
          objString = objString.match(/{[^}]*?}/g)[0].replaceAll('&quot;', '"');
