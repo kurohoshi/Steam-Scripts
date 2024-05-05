@@ -4982,7 +4982,7 @@ DataCollectors.scrapeProfileData = async function() {
    }
 
    profileData = document.querySelector('.profile_header .playerAvatar');
-   profile.pfp = profileData.querySelector('img').src.replace(/(https:\/\/avatars\.akamai\.steamstatic\.com\/)|(_full\.jpg)/g, '');
+   profile.pfp = profileData.querySelector('.playerAvatarAutoSizeInner > img').src.replace(/(https:\/\/avatars\.(cloudflare|akamai)\.steamstatic\.com\/)|(_full\.jpg)/g, '');
    profile.state = profileData.classList.contains("in-game")
       ? 2 : profileData.classList.contains("online")
       ? 1 : profileData.classList.contains("offline")
