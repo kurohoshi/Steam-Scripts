@@ -1,0 +1,303 @@
+.match-results {
+    margin: 3rem;
+    padding: 2rem;
+    color: white;
+ }
+ 
+ .match-group {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+ }
+ 
+ .match-container-outer {
+    --img-item-width: 96px;
+    padding: 1px;
+    /* min-width: 650px;
+    max-width: 1035px; */
+    background: linear-gradient( to bottom, #383939 5%, #000000 95%);
+    border-radius: 5px;
+    display: inline-block;
+ }
+ .match-container-outer.loading {
+    min-width: 40rem;
+    min-height: 10rem;
+    position: relative;
+ 
+    > .match-container {
+       min-height: 10rem;
+    }
+    > .userscript-overlay {
+       display: flex;
+    }
+ }
+ 
+ .match-container {
+    padding: 0.625rem;
+    background: linear-gradient( to bottom, #232424 5%, #141414 95%);
+    border-radius: 5px;
+ 
+    img {
+       display: block;
+    }
+ }
+ .match-container.max3{
+    .match-item-list {
+       max-width: calc(var(--img-item-width)*3);
+    }
+ }
+ .match-container.max4{
+    .match-item-list {
+       max-width: calc(var(--img-item-width)*4);
+    }
+ }
+ .match-container.grid {
+    display: grid;
+    /* grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); */
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 5px;
+ 
+    .match-header {
+       /* background-color: lightgreen; */
+       /* display: grid; */
+       grid-column: 1 / -1;
+       /* grid-template-columns: subgrid; */
+       /* grid-template-rows: max-content; */
+       /* justify-items: center; */
+       /* align-items: center; */
+    }
+ }
+ .match-container.flex {
+    display: flex;
+    flex-direction: column;
+ }
+ .match-container:empty {
+    min-width: calc(var(--img-item-width)*3);
+ }
+ 
+ .match-header {
+    /* background-color: lightgreen; */
+    display: flex;
+    justify-content: center;
+ }
+ 
+ .avatar {
+    margin: 0 0.375rem;
+    display: inline-block;
+    padding: 1px;
+ 
+    img {
+       display: block;
+       height: 2rem;
+       width: 2rem;
+       padding: 0.0625rem;
+    }
+ }
+ .avatar.offline {
+    background: linear-gradient( to bottom, rgba(106,106,106,1) 5%, rgba(85,85,85,1) 95%);
+ }
+ .avatar.online {
+    background: linear-gradient( to bottom, rgba(83,164,196,1) 5%, rgba(69,128,151,1) 95%);
+ }
+ .avatar.ingame {
+    background: linear-gradient( to bottom, rgba(143,185,59,1) 5%, rgba(110,140,49,1) 95%);
+ }
+ .match-name {
+    display: flex;
+    color: #ddd;
+    place-items: center;
+    /* background: linear-gradient( to bottom, rgba(33,101,138,1) 5%, rgba(23,67,92,1) 95%); */
+    flex: 1 0 0;
+    padding-inline: 0.75rem;
+    justify-content: center;
+ }
+ .match-name.align-right {
+    flex-direction: row-reverse;
+ }
+ 
+ .match-item-type {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    /* subgrid gaps overrides main grid gap values */
+    row-gap: 5px;
+ }
+ .match-item-type::before {
+    content: "";
+    margin: 2px;
+    /* height: 2px; */
+    height: 1px;
+    /* background: linear-gradient(to right, rgba(255, 255, 255, 0) 0%, rgb(125, 125, 125) 25%, rgb(125, 125, 125) 75%, rgba(255, 255, 255, 0) 100%); */
+    background-color: #333;
+    border-top: 1px solid #000;
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+ }
+ .match-item-rarity {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    row-gap: 5px;
+ }
+ .match-item-app {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+ }
+ .match-item-row {
+    margin-top: 0.75rem;
+    display: flex;
+    align-items: center;
+ }
+ 
+ /*Maybe use media queries to help with sizing and alignment*/
+ .match-item-list {
+    /* min-width: var(--img-item-width); */
+    max-width: calc(var(--img-item-width)*5);
+    padding: 6px 2px 6px 4px;
+    background-color: black;
+    border-radius: 5px;
+    display: flex;
+    flex-wrap: wrap;
+    /* display: inline-grid;
+    grid-template-columns: repeat(auto-fill, var(--img-item-width)); */
+    row-gap: 15px;
+    align-content: center;
+ 
+    @media (max-width: 2100px ) {
+       max-width: calc(var(--img-item-width)*4);
+    }
+    @media (max-width: 1700px ) {
+       max-width: calc(var(--img-item-width)*3);
+    }
+    @media (max-width: 1300px ) {
+       max-width: calc(var(--img-item-width)*2);
+    }
+    @media (max-width: 900px ) {
+       max-width: var(--img-item-width);
+    }
+ }
+ .match-item-list.left {
+    /* ideally we want to calculate the correct right and left margins to have equal free space on the edge of the lists */
+    justify-self: flex-end;
+    justify-content: flex-end;
+    align-items: flex-start;
+    /* background: linear-gradient( to left, transparent 0, rgba(33,101,138,0.75) 60px); */
+    background: linear-gradient( to left, transparent 0, rgba(41,41,41,1) 60px);
+ }
+ .match-item-list.right {
+    justify-self: flex-start;
+    justify-content: flex-start;
+    align-items: flex-start;
+    /* background: linear-gradient( to right, transparent 0, rgba(33,101,138,0.75) 60px); */
+    background: linear-gradient( to right, transparent 0, rgba(41,41,41,1) 60px);
+ }
+ 
+ .match-item {
+    --left-offset: 6px;
+    --right-offset: 8px;
+    min-width: 6rem;
+    min-height: 6rem;
+    display: inline-block;
+    position: relative;
+ 
+    .match-item-qty {
+       height: 22px;
+       width: 22px;
+       font-size: small;
+       text-align: center;
+       display: block;
+       position: absolute;
+       right: var(--right-offset);
+       top: 0;
+       border-radius: 0 0 0 22px;
+       background: rgba(0, 0, 0, 0.6);
+       z-index: 1;
+    }
+ 
+    img:before {
+       content: "";
+       display: block;
+       position: absolute;
+       right: var(--right-offset);
+       left: var(--left-offset);
+       top: 0;
+       bottom: 0;
+       /* Change to something similar to steam trading card bg */
+       background-color: grey;
+       text-align: center;
+    }
+ 
+    .match-item-name {
+       padding-inline: 0.25rem;
+       height: 20px;
+       font-size: x-small;
+       line-height: 20px;
+       text-align: center;
+       white-space: nowrap;
+       overflow: hidden;
+       text-overflow: ellipsis;
+       display: none;
+       position: absolute;
+       right: var(--right-offset);
+       left: var(--left-offset);
+       bottom: 0;
+       background: rgba(0, 0, 0, 0.6);
+       z-index: 1;
+    }
+ }
+ .match-item.good {
+    background: linear-gradient(to right, rgba(0,0,0,0) 0, gold 6%, gold 91%, rgba(0,0,0,0) 98%)
+ }
+ .match-item[data-qty]:before {
+    content: attr(data-qty);
+    height: 20px;
+    width: 20px;
+    line-height: 20px;
+    font-size: x-small;
+    text-align: center;
+    display: block;
+    position: absolute;
+    right: var(--right-offset);
+    top: 0;
+    border-radius: 0 0 0 8px;
+    background: rgba(0, 0, 0, 0.75);
+    z-index: 1;
+ }
+ 
+ .match-item:hover > .match-item-name {
+    display: block;
+ }
+ 
+ .match-item-action {
+    align-self: center;
+    background-color: rgba(0, 0, 0, 0.4);
+ }
+ .match-item-action.trade:before {
+    content: "";
+    display: block;
+    padding: 8px 4px;
+    width: 24px;
+    height: 16px;
+    background: no-repeat url("https://community.cloudflare.steamstatic.com/public/images/skin_1/icon_tradeoffer.png");
+    border-radius: 3px;
+    rotate: 90deg;
+    transform: scaleX(-1);
+    background-position: center center;
+ }
+ .match-item-action.trade:hover:before {
+    filter: url(#filter-steam-sky-blue);
+ }
+ 
+ .match-icon {
+    padding: 8px 4px;
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 3px;
+    rotate: 90deg;
+    transform: scaleX(-1);
+ }
+ 
+ .match-icon:hover {
+    background: #54a5d4;
+ }
