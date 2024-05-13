@@ -59,36 +59,35 @@ function addSvgBlock(elem) {
     +       '<polygon  fill="currentColor" points="147.639,108.361 245.755,10.166 245.834,108.361"></polygon>'
     +    '</svg>'
     + '</div>';
- 
+
     elem.insertAdjacentHTML('afterend', svgString);
- }
+}
 
 function cssAddOverlay() {
     let innerHTMLString = '';
     let overlayState;
     if(arguments.length>0 && typeof arguments[arguments.length-1] === 'object') {
-       overlayState = arguments[arguments.length-1].initialState ?? '';
+        overlayState = arguments[arguments.length-1].initialState ?? '';
     } else {
-       overlayState = '';
+        overlayState = '';
     }
- 
+
     if(arguments.length>1 || arguments.length===1 && typeof arguments[0]!=='object') {
-       for(let i=0; i<arguments.length; i++) {
-          if(typeof arguments[i] === 'string') {
-             innerHTMLString += arguments[i];
-          }
-       }
+        for(let i=0; i<arguments.length; i++) {
+            if(typeof arguments[i] === 'string') {
+                innerHTMLString += arguments[i];
+            }
+        }
     }
- 
+
     return `<div class="userscript-overlay ${overlayState}">`
     +    innerHTMLString
     + '</div>';
- }
- function cssAddThrobber() {
+}
+function cssAddThrobber() {
     return '<div class="userscript-throbber">'
     +    '<div class="throbber-bar"></div>'
     +    '<div class="throbber-bar"></div>'
     +    '<div class="throbber-bar"></div>'
     + '</div>';
- }
- 
+}

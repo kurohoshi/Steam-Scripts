@@ -1,241 +1,241 @@
 .enhanced-section {
-    .enhanced-header {
-       text-align: center;
-       font-size: xx-large;
-       color: white;
-    }
-    .enhanced-body {
-       padding: 0.5rem;
-       display: flex;
-       flex-wrap: wrap;
-       gap: 1rem;
-       justify-content: center;
-    }
-    .btn_medium {
-       padding: 4px;
-    }
- }
- 
- .enhanced-goostatus-container,
- .enhanced-options,
- .enhanced-area {
-    color: #ddd;
- }
- 
- .enhanced-goostatus-container {
-    min-height: 10rem;
-    max-width: 36rem;
- }
- .enhanced-goostatus {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr);
-    align-items: center;
-    gap: 0.5rem;
-    background-color: rgba(0, 0, 0, 0.2);
-    padding: 0.5rem;
-    color: #67c1f5;
- 
-    .enhanced-goostatus-row {
-       display: grid;
-       grid-column: 1 / -1;
-       grid-template-columns: subgrid;
-       align-items: center;
-    }
-    .enhanced-goostatus-row[data-type="nontradable"] .enhanced-goostatus-text {
-       color: rgb(167, 81, 36);
-    }
-    .enhanced-goostatus-section {
-       display: flex;
-       gap: 0.375rem;
-       height: 3.5rem;
-       padding: 0.25rem 0.25rem 0.25rem 0.5rem;
-       background-color: rgba(0, 0, 0, 0.6);
-       border-radius: 0.25rem;
-    }
-    .enhanced-goostatus-section[data-type="sack"]:before {
-       display: inline-block;
-       content: "";
-       height: 3.5rem;
-       width: 3.5rem;
-       background: no-repeat url("https://community.cloudflare.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSIYhY_9XEDYOMNRBsMoGuuOgceXob50kaxV_PHjMO1MHaEqgEgp8j1vFi-EEWgy8C1rHEO7KL7a_BvdKjHWmSRkb934LhoHXvlxRl05GmE1J_3JkUojTQy/56fx56f?allow_animated=1");
-       background-size: contain;
-       background-position-y: -0.25rem;
-    }
-    .enhanced-goostatus-section[data-type="goo"]:before {
-       display: inline-block;
-       content: "";
-       height: 3.5rem;
-       width: 3.5rem;
-       background: no-repeat url("https://community.cloudflare.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSIYhY_9XEDYOMNRBsMoGuuOgceXob50kaxV_PHjMO1MHaEqgEgp8iguA3lGE31m8SwryYL6ab2O6ZodaLCW2STx-shtuc5THG1xUwl4WzR1J_3JnXcaJie/56fx56f?allow_animated=1");
-       background-size: contain;
-       background-position-y: 0.125rem;
-    }
-    .enhanced-goostatus-text {
-       display: inline-block;
-       font-size: x-large;
-       line-height: 3.5rem;
-    }
- }
- 
- .enhanced-options {
-    display: flex;
-    padding: 0.25rem;
-    gap: 1rem;
-    justify-content: space-around;
- 
-    button {
-       border-radius: 0.125rem;
-       border: none;
-       padding: 0.375rem 0.625rem;
-       display: inline-block;
-       cursor: pointer;
-       text-decoration: none;
-       color: var(--btn-clr-purple);
-       background: var(--btn-bg-clr-purple);
-    }
- 
-    button:hover {
-       background: var(--btn-bg-clr-hvr-purple);
-       color: white;
-    }
- }
- .enhanced-options.right {
-    justify-content: right;
- }
- 
- .enhanced-area {
-    --booster-img-width: 75px;
-    margin: 1rem 1rem 0;
-    padding: 1.125rem;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-    gap: 2rem 1rem;
-    background-color: rgba( 0, 0, 0, 0.2 );
-    align-items: center;
- 
-    > .wide {
-       grid-column: 1 / -1;
-    }
- }
- 
- .enhanced-action {
-    padding: 0.625rem;
-    background-color: rgba(0, 0, 0, 0.6);
-    border-radius: 0.375rem;
-    border: 0;
-    color: white;
- }
- .enhanced-action:disabled {
-    opacity: 0.45;
- }
- .enhanced-action:hover {
-    background-color: #67c1f5;
- }
- .enhanced-action:disabled:hover,
- .enhanced-action:active {
-    background-color: rgba(0, 0, 0, 0.6);
- }
- 
- 
- .enhanced-list-container {
-    height: 29.625rem;
- 
-    .userscript-config-list-entry.booster {
-       position: relative;
-    }
-    .userscript-config-list-entry.booster[data-cost]:after {
-       --img-offset: 0.6875rem;
-       --text-offset: 1.625rem;
-       content: attr(data-cost);
-       height: 1.5rem;
-       line-height: 1.5rem;
-       display: block;
-       position: absolute;
-       left: 0;
-       right: 0;
-       bottom: 0;
-       padding-left: calc(var(--img-offset) + var(--text-offset));
-       background-image: url("https://community.cloudflare.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSIYhY_9XEDYOMNRBsMoGuuOgceXob50kaxV_PHjMO1MHaEqgEgp8iguA3lGE31m8SwryYL6ab2O6ZodaLCW2STx-shtuc5THG1xUwl4WzR1J_3JnXcaJie/56fx56f?allow_animated=1");
-       background-repeat: no-repeat;
-       background-size: 1.5rem;
-       background-position-x: var(--img-offset);
-       background-color: rgba(0, 0, 0, 0.8);
-       z-index: 3;
-    }
-    .userscript-config-list-entry.booster[data-cooldown-timer]:after {
-       color: #555;
-    }
-    .userscript-config-list-entry.booster[data-cooldown-timer]:before {
-       padding-bottom: 1.5rem;
-       content: attr(data-cooldown-timer);
-       /* height: 1.5rem; */
-       /* text-align: center; */
-       /* line-height: 1.5rem; */
-       display: flex;
-       justify-content: center;
-       align-items: center;
-       position: absolute;
-       inset: 0 0 0 0;
-       background-color: rgba(0, 0, 0, 0.8);
-       z-index: 1;
-    }
-    .userscript-config-list-entry.booster[data-qty-tradable]:before,
-    .userscript-config-list-entry.booster[data-qty-nontradable]:after {
-       height: 1.25rem;
-       font-size: small;
-       line-height: 1.25rem;
-       display: block;
-       position: absolute;
-    }
-    .userscript-config-list-entry.booster[data-qty-tradable]:before {
-       content: attr(data-qty-tradable);
-       background-color: rgba(0, 0, 0, 0.75);
-       padding-right: 52%;
-       text-align: right;
-       left: 0;
-       right: 0;
-       bottom: 0;
-       z-index: 1;
-    }
-    .userscript-config-list-entry.booster[data-qty-nontradable]:after {
-       content: "+" attr(data-qty-nontradable);
-       color: rgb(167, 81, 36);
-       text-align: left;
-       left: 50%;
-       right: 0;
-       bottom: 0;
-       z-index: 1;
-    }
-    .userscript-config-list-entry.booster[data-qty-nontradable="0"]:after {
-       display: none;
-    }
-    .userscript-config-list-entry.booster[data-qty-nontradable="0"]:before {
-       padding: 0;
-       text-align: center;
-    }
-    .userscript-config-list-entry.card[data-qty]:before {
-       display: block;
-       content: attr(data-qty);
-       padding: 0.25rem;
-       background-color: rgba(0, 0, 0, 0.75);
-       border-radius: inherit;
-       font-size: small;
-       text-align: center;
-       position: absolute;
-       top: 0;
-       right: 0;
-       z-index: 1;
-    }
-    .userscript-config-list-entry.card[data-foil]:before {
-       color: gold;
-    }
- }
- 
- .userscript-config-list-entries.tile {
-    height: 100%;
-    padding: 0.25rem;
-    display: flex;
-    gap: 0.25rem;
-    flex-wrap: wrap;
-    align-content: start;
- }
+   .enhanced-header {
+      text-align: center;
+      font-size: xx-large;
+      color: white;
+   }
+   .enhanced-body {
+      padding: 0.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      justify-content: center;
+   }
+   .btn_medium {
+      padding: 4px;
+   }
+}
+
+.enhanced-goostatus-container,
+.enhanced-options,
+.enhanced-area {
+   color: #ddd;
+}
+
+.enhanced-goostatus-container {
+   min-height: 10rem;
+   max-width: 36rem;
+}
+.enhanced-goostatus {
+   display: grid;
+   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr);
+   align-items: center;
+   gap: 0.5rem;
+   background-color: rgba(0, 0, 0, 0.2);
+   padding: 0.5rem;
+   color: #67c1f5;
+
+   .enhanced-goostatus-row {
+      display: grid;
+      grid-column: 1 / -1;
+      grid-template-columns: subgrid;
+      align-items: center;
+   }
+   .enhanced-goostatus-row[data-type="nontradable"] .enhanced-goostatus-text {
+      color: rgb(167, 81, 36);
+   }
+   .enhanced-goostatus-section {
+      display: flex;
+      gap: 0.375rem;
+      height: 3.5rem;
+      padding: 0.25rem 0.25rem 0.25rem 0.5rem;
+      background-color: rgba(0, 0, 0, 0.6);
+      border-radius: 0.25rem;
+   }
+   .enhanced-goostatus-section[data-type="sack"]:before {
+      display: inline-block;
+      content: "";
+      height: 3.5rem;
+      width: 3.5rem;
+      background: no-repeat url("https://community.cloudflare.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSIYhY_9XEDYOMNRBsMoGuuOgceXob50kaxV_PHjMO1MHaEqgEgp8j1vFi-EEWgy8C1rHEO7KL7a_BvdKjHWmSRkb934LhoHXvlxRl05GmE1J_3JkUojTQy/56fx56f?allow_animated=1");
+      background-size: contain;
+      background-position-y: -0.25rem;
+   }
+   .enhanced-goostatus-section[data-type="goo"]:before {
+      display: inline-block;
+      content: "";
+      height: 3.5rem;
+      width: 3.5rem;
+      background: no-repeat url("https://community.cloudflare.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSIYhY_9XEDYOMNRBsMoGuuOgceXob50kaxV_PHjMO1MHaEqgEgp8iguA3lGE31m8SwryYL6ab2O6ZodaLCW2STx-shtuc5THG1xUwl4WzR1J_3JnXcaJie/56fx56f?allow_animated=1");
+      background-size: contain;
+      background-position-y: 0.125rem;
+   }
+   .enhanced-goostatus-text {
+      display: inline-block;
+      font-size: x-large;
+      line-height: 3.5rem;
+   }
+}
+
+.enhanced-options {
+   display: flex;
+   padding: 0.25rem;
+   gap: 1rem;
+   justify-content: space-around;
+
+   button {
+      border-radius: 0.125rem;
+      border: none;
+      padding: 0.375rem 0.625rem;
+      display: inline-block;
+      cursor: pointer;
+      text-decoration: none;
+      color: var(--btn-clr-purple);
+      background: var(--btn-bg-clr-purple);
+   }
+
+   button:hover {
+      background: var(--btn-bg-clr-hvr-purple);
+      color: white;
+   }
+}
+.enhanced-options.right {
+   justify-content: right;
+}
+
+.enhanced-area {
+   --booster-img-width: 75px;
+   margin: 1rem 1rem 0;
+   padding: 1.125rem;
+   display: grid;
+   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+   gap: 2rem 1rem;
+   background-color: rgba( 0, 0, 0, 0.2 );
+   align-items: center;
+
+   > .wide {
+      grid-column: 1 / -1;
+   }
+}
+
+.enhanced-action {
+   padding: 0.625rem;
+   background-color: rgba(0, 0, 0, 0.6);
+   border-radius: 0.375rem;
+   border: 0;
+   color: white;
+}
+.enhanced-action:disabled {
+   opacity: 0.45;
+}
+.enhanced-action:hover {
+   background-color: #67c1f5;
+}
+.enhanced-action:disabled:hover,
+.enhanced-action:active {
+   background-color: rgba(0, 0, 0, 0.6);
+}
+
+
+.enhanced-list-container {
+   height: 29.625rem;
+
+   .userscript-config-list-entry.booster {
+      position: relative;
+   }
+   .userscript-config-list-entry.booster[data-cost]:after {
+      --img-offset: 0.6875rem;
+      --text-offset: 1.625rem;
+      content: attr(data-cost);
+      height: 1.5rem;
+      line-height: 1.5rem;
+      display: block;
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding-left: calc(var(--img-offset) + var(--text-offset));
+      background-image: url("https://community.cloudflare.steamstatic.com/economy/image/i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSIYhY_9XEDYOMNRBsMoGuuOgceXob50kaxV_PHjMO1MHaEqgEgp8iguA3lGE31m8SwryYL6ab2O6ZodaLCW2STx-shtuc5THG1xUwl4WzR1J_3JnXcaJie/56fx56f?allow_animated=1");
+      background-repeat: no-repeat;
+      background-size: 1.5rem;
+      background-position-x: var(--img-offset);
+      background-color: rgba(0, 0, 0, 0.8);
+      z-index: 3;
+   }
+   .userscript-config-list-entry.booster[data-cooldown-timer]:after {
+      color: #555;
+   }
+   .userscript-config-list-entry.booster[data-cooldown-timer]:before {
+      padding-bottom: 1.5rem;
+      content: attr(data-cooldown-timer);
+      /* height: 1.5rem; */
+      /* text-align: center; */
+      /* line-height: 1.5rem; */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: absolute;
+      inset: 0 0 0 0;
+      background-color: rgba(0, 0, 0, 0.8);
+      z-index: 1;
+   }
+   .userscript-config-list-entry.booster[data-qty-tradable]:before,
+   .userscript-config-list-entry.booster[data-qty-nontradable]:after {
+      height: 1.25rem;
+      font-size: small;
+      line-height: 1.25rem;
+      display: block;
+      position: absolute;
+   }
+   .userscript-config-list-entry.booster[data-qty-tradable]:before {
+      content: attr(data-qty-tradable);
+      background-color: rgba(0, 0, 0, 0.75);
+      padding-right: 52%;
+      text-align: right;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1;
+   }
+   .userscript-config-list-entry.booster[data-qty-nontradable]:after {
+      content: "+" attr(data-qty-nontradable);
+      color: rgb(167, 81, 36);
+      text-align: left;
+      left: 50%;
+      right: 0;
+      bottom: 0;
+      z-index: 1;
+   }
+   .userscript-config-list-entry.booster[data-qty-nontradable="0"]:after {
+      display: none;
+   }
+   .userscript-config-list-entry.booster[data-qty-nontradable="0"]:before {
+      padding: 0;
+      text-align: center;
+   }
+   .userscript-config-list-entry.card[data-qty]:before {
+      display: block;
+      content: attr(data-qty);
+      padding: 0.25rem;
+      background-color: rgba(0, 0, 0, 0.75);
+      border-radius: inherit;
+      font-size: small;
+      text-align: center;
+      position: absolute;
+      top: 0;
+      right: 0;
+      z-index: 1;
+   }
+   .userscript-config-list-entry.card[data-foil]:before {
+      color: gold;
+   }
+}
+
+.userscript-config-list-entries.tile {
+   height: 100%;
+   padding: 0.25rem;
+   display: flex;
+   gap: 0.25rem;
+   flex-wrap: wrap;
+   align-content: start;
+}
