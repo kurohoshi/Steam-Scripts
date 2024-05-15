@@ -54,14 +54,14 @@ async function gotoMatcherConfigPage() {
     }).join('');
     const generateConfigListTabs = (list) => {
         let HTMLString = '';
-        for (let listGroup in list) {
+        for(let listGroup in list) {
             HTMLString += `<div class="userscript-config-list-tab" data-list-name="${listGroup}">${list[listGroup].label}</div>`;
         }
         return HTMLString;
     };
     const generateConfigListGroups = (list) => {
         let HTMLString = '';
-        for (let listGroup in list) {
+        for(let listGroup in list) {
             HTMLString += `<div class="userscript-config-list-entry-group" data-list-name="${listGroup}"></div>`;
         }
         return HTMLString;
@@ -71,7 +71,7 @@ async function gotoMatcherConfigPage() {
 
     MatcherConfigShortcuts.MAIN_ELEM = document.querySelector('#responsive_page_template_content');
 
-    if (!MatcherConfigShortcuts.MAIN_ELEM) {
+    if(!MatcherConfigShortcuts.MAIN_ELEM) {
         alert('Main element no found, Matcher Configuration will not be set up');
         console.warn('gotoMatcherConfigPage(): Main element no found, Matcher Configuration will not be set up!');
         return;
@@ -84,7 +84,7 @@ async function gotoMatcherConfigPage() {
     document.body.classList.remove('profile_page'); // profile page causes bg color to be black
 
     let config = await SteamToolsDbManager.getToolConfig('matcher');
-    if (config.matcher) {
+    if(config.matcher) {
         globalSettings.matcher = config.matcher;
     } else {
         globalSettings.matcher = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcher);
@@ -93,78 +93,74 @@ async function gotoMatcherConfigPage() {
     addSvgBlock(MatcherConfigShortcuts.MAIN_ELEM);
 
     let matcherConfigHTMLString = '<div class="userscript-config">'
-        + '<div class="userscript-config-title"><span>Matcher Configuration</span></div>'
-        + '<div class="userscript-options">'
-        + generateConfigButtonGroupString()
-        + '<div class="userscript-config-group">'
-        + '<div class="userscript-config-header">'
-        + '<span>Configuration Settings</span>'
-        + '</div>'
-        + '<div class="userscript-config-btn-group">'
-        + '<button id="userscript-config-import" class="blue">Import Settings</button>'
-        + '<button id="userscript-config-export" class="blue">Export Settings</button>'
-        + '</div>'
-        + '<div class="userscript-config-btn-group right">'
-        + '<button id="userscript-config-reset" class="blue">Reload Settings</button>'
-        + '<button id="userscript-config-save" class="green">Save Settings</button>'
-        + '</div>'
-        + '</div>'
-        + '<div class="userscript-config-actions">'
-        + '<div class="userscript-config-action">'
-        + '<button id="userscript-config-match-full" class="purple max">Full Match</button>'
-        + '</div>'
-        + '<div class="h-break">OR</div>'
-        + '<div class="userscript-config-action">'
-        + '<input type="text" name="match-profileid" id="match-single-profile-profileid" placeholder="profileid/customUrlId">'
-        + '<button id="userscript-config-match-one" class="purple">Match</button>'
-        + '</div>'
-        + '</div>'
-        + '</div>'
-        + '<div class="userscript-config-list">'
-        + '<div class="userscript-config-list-header tabs">'
-        + generateConfigListTabs(globalSettings.matcher.lists)
-        + '</div>'
-        + '<div class="conf-list-entry-action add">'
-        + '<div class="conf-list-entry-action-add">'
-        + '<div id="entry-action-add"></div>'
-        + '</div>'
-        + '<div class="conf-list-entry-action-modify">'
-        + '<div id="entry-action-del"></div>'
-        + '<div id="entry-action-edit"></div>'
-        + '</div>'
-        + '<div class="conf-list-entry-action-disabled"></div>'
-        + '</div>'
-        + '<div class="userscript-config-list-list">'
-        + '<div class="conf-list-entry-form-container">'
-        + '<div class="conf-list-entry-form">'
-        + '</div>'
-        + '</div>'
-        + '<div class="conf-list-overlay">'
-        + '<div class="content-loader"></div>'
-        + '<div class="conf-list-dialog">'
-        + '<div>Entry already exists, overwrite?</div>'
-        + '<div id="conf-list-entry-old" class="userscript-config-list-entry"></div>'
-        + '<div class="conf-list-dialog-divider">'
-        + '<div class="dbl-arrows down"></div>'
-        + '</div>'
-        + '<div id="conf-list-entry-new" class="userscript-config-list-entry"></div>'
-        + '<div class="conf-list-dialog-action">'
-        + '<button id="conf-list-dialog-cancel" class="red wide">No</button>'
-        + '<button id="conf-list-dialog-confirm" class="green wide">Yes</button>'
-        + '</div>'
-        + '</div>'
-        + '</div>'
-        + '<div class="userscript-config-list-entries userscript-custom-scroll">'
-        + generateConfigListGroups(globalSettings.matcher.lists)
-        + '</div>'
-        + '</div>'
-        + '</div>'
-        + '<div class="userscript-overlay">'
-        + '<div class="userscript-throbber">'
-        + '<div class="throbber-bar"></div><div class="throbber-bar"></div><div class="throbber-bar"></div>'
-        + '</div>'
-        + '</div>'
-        + '</div>';
+      +    '<div class="userscript-config-title"><span>Matcher Configuration</span></div>'
+      +    '<div class="userscript-options">'
+      +       generateConfigButtonGroupString()
+      +       '<div class="userscript-config-group">'
+      +          '<div class="userscript-config-header">'
+      +             '<span>Configuration Settings</span>'
+      +          '</div>'
+      +          '<div class="userscript-config-btn-group">'
+      +             '<button id="userscript-config-import" class="blue">Import Settings</button>'
+      +             '<button id="userscript-config-export" class="blue">Export Settings</button>'
+      +          '</div>'
+      +          '<div class="userscript-config-btn-group right">'
+      +             '<button id="userscript-config-reset" class="blue">Reload Settings</button>'
+      +             '<button id="userscript-config-save" class="green">Save Settings</button>'
+      +          '</div>'
+      +       '</div>'
+      +       '<div class="userscript-config-actions">'
+      +          '<div class="userscript-config-action">'
+      +             '<button id="userscript-config-match-full" class="purple max">Full Match</button>'
+      +          '</div>'
+      +          '<div class="h-break">OR</div>'
+      +          '<div class="userscript-config-action">'
+      +             '<input type="text" name="match-profileid" id="match-single-profile-profileid" placeholder="profileid/customUrlId">'
+      +             '<button id="userscript-config-match-one" class="purple">Match</button>'
+      +          '</div>'
+      +       '</div>'
+      +    '</div>'
+      +    '<div class="userscript-config-list">'
+      +       '<div class="userscript-config-list-header tabs">'
+      +          generateConfigListTabs(globalSettings.matcher.lists)
+      +       '</div>'
+      +       '<div class="conf-list-entry-action add">'
+      +          '<div class="conf-list-entry-action-add">'
+      +             '<div id="entry-action-add"></div>'
+      +          '</div>'
+      +          '<div class="conf-list-entry-action-modify">'
+      +             '<div id="entry-action-del"></div>'
+      +             '<div id="entry-action-edit"></div>'
+      +          '</div>'
+      +          '<div class="conf-list-entry-action-disabled"></div>'
+      +       '</div>'
+      +       '<div class="userscript-config-list-list">'
+      +          '<div class="conf-list-entry-form-container">'
+      +             '<div class="conf-list-entry-form">'
+      +             '</div>'
+      +          '</div>'
+      +          '<div class="conf-list-overlay">'
+      +             '<div class="content-loader"></div>'
+      +             '<div class="conf-list-dialog">'
+      +                '<div>Entry already exists, overwrite?</div>'
+      +                '<div id="conf-list-entry-old" class="userscript-config-list-entry"></div>'
+      +                '<div class="conf-list-dialog-divider">'
+      +                   '<div class="dbl-arrows down"></div>'
+      +                '</div>'
+      +                '<div id="conf-list-entry-new" class="userscript-config-list-entry"></div>'
+      +                '<div class="conf-list-dialog-action">'
+      +                   '<button id="conf-list-dialog-cancel" class="red wide">No</button>'
+      +                   '<button id="conf-list-dialog-confirm" class="green wide">Yes</button>'
+      +                '</div>'
+      +             '</div>'
+      +          '</div>'
+      +          '<div class="userscript-config-list-entries userscript-custom-scroll">'
+      +             generateConfigListGroups(globalSettings.matcher.lists)
+      +          '</div>'
+      +       '</div>'
+      +    '</div>'
+      +    cssAddOverlay(cssAddThrobber())
+      + '</div>';
 
     MatcherConfigShortcuts.MAIN_ELEM.insertAdjacentHTML("beforeend", matcherConfigHTMLString);
 
@@ -175,11 +171,11 @@ async function gotoMatcherConfigPage() {
     MatcherConfigShortcuts.listOverlayElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-overlay');
     MatcherConfigShortcuts.listDialogElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-dialog');
     MatcherConfigShortcuts.listElems = {};
-    for (let entryGroup in globalSettings.matcher.lists) {
+    for(let entryGroup in globalSettings.matcher.lists) {
         MatcherConfigShortcuts.listElems[entryGroup] = MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.userscript-config-list-entry-group[data-list-name=${entryGroup}]`);
     }
 
-    for (let buttonGroup of MatcherConfigShortcuts.MAIN_ELEM.querySelectorAll('.userscript-config-group')) {
+    for(let buttonGroup of MatcherConfigShortcuts.MAIN_ELEM.querySelectorAll('.userscript-config-group')) {
         buttonGroup.addEventListener('change', matcherConfigUpdateChecklistListener);
     }
     document.getElementById('userscript-config-import').addEventListener('click', matcherConfigImportListener);
@@ -205,55 +201,55 @@ async function matcherConfigLoadUI() {
     MatcherConfigShortcuts.listOverlayElem.classList.add('active');
 
     const configMenuElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config');
-    if (!configMenuElem) {
+    if(!configMenuElem) {
         console.warn('updateMatcherConfigUI(): Config menu not found, UI will not be updated');
         return;
     }
 
-    for (let optionGroup of Object.values(globalSettings.matcher.config)) {
-        for (let option of optionGroup.options) {
+    for(let optionGroup of Object.values(globalSettings.matcher.config)) {
+        for(let option of optionGroup.options) {
             document.getElementById(option.id).checked = option.value;
         }
     }
 
     // generate lists
-    for (let [listName, listGroup] of Object.entries(globalSettings.matcher.lists)) {
+    for(let [listName, listGroup] of Object.entries(globalSettings.matcher.lists)) {
         let entryGroupElem = MatcherConfigShortcuts.listElems[listName];
         let entriesHTMLString = [];
-        for (let data of listGroup.data) {
-            if (listName === 'matchlist' || listName === 'blacklist') {
+        for(let data of listGroup.data) {
+            if(listName==='matchlist' || listName==='blacklist') {
                 let profile = await Profile.findProfile(data.profileid);
-                if (!profile) {
+                if(!profile) {
                     console.warn('matcherConfigLoadUI(): No profile found, skipping this entry...');
                 }
 
                 let tradeTokenWarning = listName === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
                 let entryHTMLString = `<div class="userscript-config-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
-                    + `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar offline">`
-                    + `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
-                    + '</a>'
-                    + `<div class="conf-list-entry-name" title="${profile.name}" >${profile.name}</div>`
-                    + `<div class="conf-list-entry-descript">${data.descript}</div>`
-                    + '</div>';
+                  +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar offline">`
+                  +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
+                  +    '</a>'
+                  +    `<div class="conf-list-entry-name" title="${profile.name}" >${profile.name}</div>`
+                  +    `<div class="conf-list-entry-descript">${data.descript}</div>`
+                  + '</div>';
 
                 entriesHTMLString.push({ key1: profile.id, key2: null, string: entryHTMLString });
-            } else if (listName === 'applist') {
+            } else if(listName === 'applist') {
                 let entryHTMLString;
                 let appdata = await Profile.findAppMetaData(data.appid);
-                if (!appdata) {
+                if(!appdata) {
                     entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${data.appid}" data-name="">`
-                        + '<a class="app-header"></a>'
-                        + `<div class="conf-list-entry-profile">${data.appid}</div>`
-                        + `<div class="conf-list-entry-descript">${data.descript}</div>`
-                        + '</div>';
+                      +    '<a class="app-header"></a>'
+                      +    `<div class="conf-list-entry-profile">${data.appid}</div>`
+                      +    `<div class="conf-list-entry-descript">${data.descript}</div>`
+                      + '</div>';
                 } else {
                     entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${appdata.appid}" data-name="${appdata.name}">`
-                        + `<a href="https://steamcommunity.com/my/gamecards/${appdata.appid}}/" target="_blank" rel="noopener noreferrer" class="app-header">`
-                        + `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
-                        + '</a>'
-                        + `<div class="conf-list-entry-name">${appdata.name}</div>`
-                        + `<div class="conf-list-entry-descript">${data.descript}</div>`
-                        + '</div>';
+                      +    `<a href="https://steamcommunity.com/my/gamecards/${appdata.appid}}/" target="_blank" rel="noopener noreferrer" class="app-header">`
+                      +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
+                      +    '</a>'
+                      +    `<div class="conf-list-entry-name">${appdata.name}</div>`
+                      +    `<div class="conf-list-entry-descript">${data.descript}</div>`
+                      + '</div>';
                 }
 
 
@@ -264,15 +260,15 @@ async function matcherConfigLoadUI() {
             }
         }
 
-        if (listName === 'applist') {
-            entriesHTMLString.sort((a, b) => a.key1 === '' ? a.key2 - b.key2 : a.key1 - b.key1);
+        if(listName === 'applist') {
+            entriesHTMLString.sort((a, b) => a.key1==='' ? a.key2-b.key2 : a.key1-b.key1);
         }
 
-        entryGroupElem.insertAdjacentHTML('afterbegin', entriesHTMLString.reduce((str, entry) => str + entry.string, ''));
+        entryGroupElem.insertAdjacentHTML('afterbegin', entriesHTMLString.reduce((str, entry) => str+entry.string, ''));
     }
 
     // set active tab
-    if (globalSettings.matcher.currentTab) {
+    if(globalSettings.matcher.currentTab) {
         MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.userscript-config-list-tab[data-list-name=${globalSettings.matcher.currentTab}]`).classList.add('active');
         matcherConfigShowActiveList();
     }
@@ -284,10 +280,10 @@ async function matcherConfigLoadUI() {
 
 function matcherConfigSetEntryActionBar(actionBarName) {
     let listActionElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-action');
-    if (actionBarName === 'add') {
+    if(actionBarName === 'add') {
         listActionElem.classList.remove('modify');
         listActionElem.classList.add('add');
-    } else if (actionBarName === 'modify') {
+    } else if(actionBarName === 'modify') {
         listActionElem.classList.remove('add');
         listActionElem.classList.add('modify');
     } else {
@@ -298,7 +294,7 @@ function matcherConfigSetEntryActionBar(actionBarName) {
 // needs testing
 function matcherConfigSelectListTabListener(event) {
     console.log(event.target); // debugging
-    if (!event.target.matches('.userscript-config-list-tab') || event.target.matches('.active')) {
+    if(!event.target.matches('.userscript-config-list-tab') || event.target.matches('.active')) {
         return;
     }
 
@@ -306,7 +302,7 @@ function matcherConfigSelectListTabListener(event) {
     event.target.classList.add('active');
     globalSettings.matcher.currentTab = event.target.dataset.listName;
 
-    if (MatcherConfigShortcuts.selectedListEntryElem) {
+    if(MatcherConfigShortcuts.selectedListEntryElem) {
         MatcherConfigShortcuts.selectedListEntryElem.classList.remove('selected');
         MatcherConfigShortcuts.selectedListEntryElem = undefined;
 
@@ -325,24 +321,24 @@ function matcherConfigResetEntryForm() {
     let entryFormElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-form');
     let currentFormType = entryFormElem.dataset.type;
 
-    if (currentFormType !== currentTab) {
+    if(currentFormType !== currentTab) {
         // set innerHTML to wipe everything and change form
         entryFormElem.innerHTML = '';
-        if (currentTab === 'matchlist' || currentTab === 'blacklist') {
+        if(currentTab==='matchlist' || currentTab==='blacklist') {
             entryFormElem.innerHTML = '<input type="text" id="entry-form-id" placeholder="profileid/customUrlid">'
-                + '<textarea name="" id="entry-form-descript" placeholder="Note (Optional)"></textarea>';
-        } else if (currentTab === 'applist') {
+              + '<textarea name="" id="entry-form-descript" placeholder="Note (Optional)"></textarea>';
+        } else if(currentTab === 'applist') {
             entryFormElem.innerHTML = '<input type="text" id="entry-form-id" placeholder="appid">'
-                + '<textarea name="" id="entry-form-descript" placeholder="Note (Optional)"></textarea>';
+              + '<textarea name="" id="entry-form-descript" placeholder="Note (Optional)"></textarea>';
         } else {
             console.warn('matcherConfigResetEntryForm(): Tab reset not implemented, form will not be generated!');
             return;
         }
 
         let entryFormActionHTMLString = '<div class="entry-form-action">'
-            + '<button id="conf-list-entry-form-cancel" class="red">Cancel</button>'
-            + '<button id="conf-list-entry-form-add" class="green">Add</button>'
-            + '</div>';
+          +    '<button id="conf-list-entry-form-cancel" class="red">Cancel</button>'
+          +    '<button id="conf-list-entry-form-add" class="green">Add</button>'
+          + '</div>';
         entryFormElem.insertAdjacentHTML('beforeend', entryFormActionHTMLString);
         document.getElementById('conf-list-entry-form-cancel').addEventListener('click', matcherConfigEntryFormCancelListener);
         document.getElementById('conf-list-entry-form-add').addEventListener('click', matcherConfigEntryFormAddListener);
@@ -350,10 +346,10 @@ function matcherConfigResetEntryForm() {
         entryFormElem.dataset.type = currentTab;
     } else {
         // reset input values
-        if (currentTab === 'matchlist' || currentTab === 'blacklist') {
+        if(currentTab === 'matchlist' || currentTab === 'blacklist') {
             entryFormElem.querySelector('#entry-form-id').value = '';
             entryFormElem.querySelector('#entry-form-descript').value = '';
-        } else if (currentTab === 'applist') {
+        } else if(currentTab === 'applist') {
             entryFormElem.querySelector('#entry-form-id').value = '';
             entryFormElem.querySelector('#entry-form-descript').value = '';
         } else {
@@ -365,8 +361,8 @@ function matcherConfigResetEntryForm() {
 
 function matcherConfigShowActiveList() {
     let currentTab = globalSettings.matcher.currentTab;
-    for (let listGroup of MatcherConfigShortcuts.MAIN_ELEM.querySelectorAll(`.userscript-config-list-entry-group`)) {
-        if (currentTab !== listGroup.dataset.listName) {
+    for(let listGroup of MatcherConfigShortcuts.MAIN_ELEM.querySelectorAll(`.userscript-config-list-entry-group`)) {
+        if(currentTab !== listGroup.dataset.listName) {
             listGroup.classList.remove('active');
         } else {
             listGroup.classList.add('active');
@@ -378,13 +374,13 @@ function matcherConfigSelectListEntryListener(event) {
     console.log(event.target);
     let entryElem = event.target;
     while (!entryElem.matches('.userscript-config-list-entries')) {
-        if (entryElem.matches('.userscript-config-list-entry')) {
+        if(entryElem.matches('.userscript-config-list-entry')) {
             break;
         } else {
             entryElem = entryElem.parentElement;
         }
     }
-    if (!entryElem.matches('.userscript-config-list-entry')) {
+    if(!entryElem.matches('.userscript-config-list-entry')) {
         return;
     }
 
@@ -392,15 +388,15 @@ function matcherConfigSelectListEntryListener(event) {
 }
 
 function matcherConfigSelectListEntry(entryElem, toggle = true) {
-    if (!entryElem.classList.contains('selected')) {
-        if (MatcherConfigShortcuts.selectedListEntryElem) {
+    if(!entryElem.classList.contains('selected')) {
+        if(MatcherConfigShortcuts.selectedListEntryElem) {
             MatcherConfigShortcuts.selectedListEntryElem.classList.remove('selected');
         }
 
         MatcherConfigShortcuts.selectedListEntryElem = entryElem;
         entryElem.classList.add('selected');
         matcherConfigSetEntryActionBar('modify');
-    } else if (toggle) {
+    } else if(toggle) {
         entryElem.classList.remove('selected');
         MatcherConfigShortcuts.selectedListEntryElem = undefined;
 
@@ -412,14 +408,14 @@ function matcherConfigSelectListEntry(entryElem, toggle = true) {
 // needs testing
 function matcherConfigUpdateChecklistListener(event) {
     console.log(event.currentTarget); // debugging
-    if (!event.target.matches('input')) {
+    if(!event.target.matches('input')) {
         return;
     }
     let groupId = event.currentTarget.dataset.id;
     let optionId = event.target.id;
 
-    for (let group of Object.values(globalSettings.matcher.config)) {
-        if (group.id === groupId) {
+    for(let group of Object.values(globalSettings.matcher.config)) {
+        if(group.id === groupId) {
             group.options.find(x => x.id === optionId).value = event.target.checked;
         }
     }
@@ -434,20 +430,20 @@ function matcherConfigAddListEntryListener(event) {
 function matcherConfigEditListEntryListener(event) {
     /* edit selected entry, prefilled with selected entry info */
     let currentTab = globalSettings.matcher.currentTab;
-    if (MatcherConfigShortcuts.listFormContainerElem.matches('.active')) {
+    if(MatcherConfigShortcuts.listFormContainerElem.matches('.active')) {
         MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
         return;
     }
 
-    if (!MatcherConfigShortcuts.selectedListEntryElem) {
+    if(!MatcherConfigShortcuts.selectedListEntryElem) {
         console.log('matcherConfigEditListEntryListener(): No entry selected, nothing can be edited...');
         return;
     }
 
-    if (currentTab === 'matchlist' || currentTab === 'blacklist') {
+    if(currentTab === 'matchlist' || currentTab === 'blacklist') {
         MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = MatcherConfigShortcuts.selectedListEntryElem.dataset.profileid;
         MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = MatcherConfigShortcuts.selectedListEntryElem.querySelector('.conf-list-entry-descript').textContent;
-    } else if (currentTab === 'applist') {
+    } else if(currentTab === 'applist') {
         MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = MatcherConfigShortcuts.selectedListEntryElem.dataset.appid;
         MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = MatcherConfigShortcuts.selectedListEntryElem.querySelector('.conf-list-entry-descript').textContent;
     } else {
@@ -460,20 +456,20 @@ function matcherConfigEditListEntryListener(event) {
 
 // delete selected HTML elements
 function matcherConfigDeleteListEntryListener(event) {
-    if (!MatcherConfigShortcuts.selectedListEntryElem) {
+    if(!MatcherConfigShortcuts.selectedListEntryElem) {
         console.log('matcherConfigDeleteListEntryListener(): No entry selected, nothing is removed...');
         return;
     }
     let listGroup = MatcherConfigShortcuts.selectedListEntryElem.parentElement.dataset.listName;
-    if (!globalSettings.matcher.lists[listGroup]) {
+    if(!globalSettings.matcher.lists[listGroup]) {
         console.warn('matcherConfigDeleteListEntryListener(): List not found, something is wrong!');
         return;
     }
 
-    if (listGroup === 'matchlist' || listGroup === 'blacklist') {
+    if(listGroup==='matchlist' || listGroup==='blacklist') {
         let profileid = MatcherConfigShortcuts.selectedListEntryElem.dataset.profileid;
         let selectedIndex = globalSettings.matcher.lists[listGroup].data.findIndex(x => x.profileid === profileid);
-        if (selectedIndex === -1) {
+        if(selectedIndex === -1) {
             console.warn('matcherConfigDeleteListEntryListener(): Profileid not found, which means list and data are not synced!');
             return;
         }
@@ -481,10 +477,10 @@ function matcherConfigDeleteListEntryListener(event) {
         MatcherConfigShortcuts.selectedListEntryElem.remove();
         MatcherConfigShortcuts.selectedListEntryElem = undefined;
         matcherConfigSetEntryActionBar('add');
-    } else if (listGroup === 'applist') {
+    } else if(listGroup === 'applist') {
         let appid = MatcherConfigShortcuts.selectedListEntryElem.dataset.appid;
         let selectedIndex = globalSettings.matcher.lists[listGroup].data.findIndex(x => x.appid === appid);
-        if (selectedIndex === -1) {
+        if(selectedIndex === -1) {
             console.warn('matcherConfigDeleteListEntryListener(): Appid not found, which means list and data are not synced!');
             return;
         }
@@ -500,7 +496,7 @@ function matcherConfigDeleteListEntryListener(event) {
 async function matcherConfigEntryFormAddListener(event) {
     let currentTab = globalSettings.matcher.currentTab;
 
-    if (currentTab === 'matchlist' || currentTab === 'blacklist') {
+    if(currentTab==='matchlist' || currentTab==='blacklist') {
         MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
         MatcherConfigShortcuts.listOverlayElem.classList.add('active');
 
@@ -509,11 +505,11 @@ async function matcherConfigEntryFormAddListener(event) {
         let description = formElem.querySelector('#entry-form-descript').value;
         let profileEntry;
 
-        if (steamToolsUtils.isSteamId64Format(profileValue)) {
+        if(steamToolsUtils.isSteamId64Format(profileValue)) {
             profileEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.profileid === profileValue);
         }
 
-        if (profileEntry) {
+        if(profileEntry) {
             // app found: prompt user if they want to overwrite existing data
             let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.userscript-config-list-entry[data-profileid="${profileEntry.profileid}"]`);
             MatcherConfigShortcuts.entryEditOld = profileEntry;
@@ -526,9 +522,9 @@ async function matcherConfigEntryFormAddListener(event) {
             return;
         } else {
             let profile = await Profile.findProfile(profileValue);
-            if (profile) {
+            if(profile) {
                 profileEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.profileid === profile.id);
-                if (profileEntry) {
+                if(profileEntry) {
                     // app found: prompt user if they want to overwrite existing data
                     let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.userscript-config-list-entry[data-profileid="${profileEntry.profileid}"]`);
                     MatcherConfigShortcuts.entryEditOld = profileEntry;
@@ -543,12 +539,12 @@ async function matcherConfigEntryFormAddListener(event) {
                     let entryGroupElem = MatcherConfigShortcuts.listElems[currentTab];
                     let tradeTokenWarning = currentTab === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
                     let entryHTMLString = `<div class="userscript-config-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
-                        + `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar offline">`
-                        + `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
-                        + '</a>'
-                        + `<div class="conf-list-entry-name" title="${profile.name}" >${profile.name}</div>`
-                        + `<div class="conf-list-entry-descript">${description}</div>`
-                        + '</div>';
+                      +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar offline">`
+                      +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
+                      +    '</a>'
+                      +    `<div class="conf-list-entry-name" title="${profile.name}" >${profile.name}</div>`
+                      +    `<div class="conf-list-entry-descript">${description}</div>`
+                      + '</div>';
 
                     entryGroupElem.insertAdjacentHTML('afterbegin', entryHTMLString);
                     globalSettings.matcher.lists[currentTab].data.push({ profileid: profile.id, descript: description });
@@ -561,7 +557,7 @@ async function matcherConfigEntryFormAddListener(event) {
         MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
         MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
         MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
-    } else if (currentTab === 'applist') {
+    } else if(currentTab === 'applist') {
         MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
         MatcherConfigShortcuts.listOverlayElem.classList.add('active');
 
@@ -570,7 +566,7 @@ async function matcherConfigEntryFormAddListener(event) {
         let description = formElem.querySelector('#entry-form-descript').value;
         let appidEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.appid === appid);
 
-        if (appidEntry) {
+        if(appidEntry) {
             // app found: prompt user if they want to overwrite existing data
             let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.userscript-config-list-entry[data-appid="${appidEntry.appid}"]`);
             MatcherConfigShortcuts.entryEditOld = appidEntry;
@@ -583,32 +579,32 @@ async function matcherConfigEntryFormAddListener(event) {
             return;
         } else {
             let appdata = await Profile.findAppMetaData(appid);
-            if (!appdata) {
+            if(!appdata) {
                 // no appdata exists, could possibly mean that community data was nuked (eg 梦中女孩) even if the items still exist
                 // therefore don't reject entry submission and add entry
                 let entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${appid}" data-name="">`
-                    + '<a class="app-header"></a>'
-                    + `<div class="conf-list-entry-profile">${appid}</div>`
-                    + `<div class="conf-list-entry-descript">${description}</div>`
-                    + '</div>';
+                  +    '<a class="app-header"></a>'
+                  +    `<div class="conf-list-entry-profile">${appid}</div>`
+                  +    `<div class="conf-list-entry-descript">${description}</div>`
+                  + '</div>';
 
                 MatcherConfigShortcuts.listElems[currentTab].insertAdjacentHTML('beforeend', entryHTMLString);
                 globalSettings.matcher.lists[currentTab].data.push({ appid: appid, descript: description });
             } else {
                 let insertBeforeThisEntry;
-                for (let entryElem of MatcherConfigShortcuts.listElems[currentTab].querySelectorAll(`.userscript-config-list-entry`)) {
-                    if (entryElem.dataset.name && appdata.name.localeCompare(entryElem.dataset.name) < 0) {
+                for(let entryElem of MatcherConfigShortcuts.listElems[currentTab].querySelectorAll(`.userscript-config-list-entry`)) {
+                    if(entryElem.dataset.name && appdata.name.localeCompare(entryElem.dataset.name) < 0) {
                         insertBeforeThisEntry = entryElem;
                         break;
                     }
                 }
                 let entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${appdata.appid}" data-name="${appdata.name}">`
-                    + `<a href="https://steamcommunity.com/my/gamecards/${appdata.appid}}/" target="_blank" rel="noopener noreferrer" class="app-header">`
-                    + `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
-                    + '</a>'
-                    + `<div class="conf-list-entry-name">${appdata.name}</div>`
-                    + `<div class="conf-list-entry-descript">${description}</div>`
-                    + '</div>';
+                  +    `<a href="https://steamcommunity.com/my/gamecards/${appdata.appid}}/" target="_blank" rel="noopener noreferrer" class="app-header">`
+                  +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
+                  +    '</a>'
+                  +    `<div class="conf-list-entry-name">${appdata.name}</div>`
+                  +    `<div class="conf-list-entry-descript">${description}</div>`
+                  + '</div>';
 
                 insertBeforeThisEntry.insertAdjacentHTML('beforebegin', entryHTMLString);
                 let entryIndex = globalSettings.matcher.lists[currentTab].data.findIndex(x => x.appid === parseInt(insertBeforeThisEntry.dataset.appid));
@@ -626,10 +622,10 @@ async function matcherConfigEntryFormAddListener(event) {
 
 function matcherConfigEntryFormCancelListener(event) {
     let currentTab = globalSettings.matcher.currentTab;
-    if (currentTab === 'matchlist' || currentTab === 'blacklist') {
+    if(currentTab === 'matchlist' || currentTab === 'blacklist') {
         MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = '';
         MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = '';
-    } else if (currentTab === 'applist') {
+    } else if(currentTab === 'applist') {
         MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = '';
         MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = '';
     } else {
@@ -666,25 +662,25 @@ function matcherConfigListDialogConfirmListener(event) {
 
 async function matcherConfigImportListener() {
     const isValidConfigObject = obj => {
-        if (obj.config && !steamToolsUtils.isSimplyObject(obj.config)) {
+        if(obj.config && !steamToolsUtils.isSimplyObject(obj.config)) {
             return false;
         }
-        for (let optionGroup of Object.values(obj.config)) {
-            if (!steamToolsUtils.isSimplyObject(optionGroup) || !Array.isArray(optionGroup.options)) {
+        for(let optionGroup of Object.values(obj.config)) {
+            if(!steamToolsUtils.isSimplyObject(optionGroup) || !Array.isArray(optionGroup.options)) {
                 return false;
             }
-            for (let option of optionGroup.options) {
-                if (typeof option.name !== 'string' || typeof option.id !== 'string' || typeof option.label !== 'string' || typeof option.value !== 'boolean') {
+            for(let option of optionGroup.options) {
+                if(typeof option.name !== 'string' || typeof option.id !== 'string' || typeof option.label !== 'string' || typeof option.value !== 'boolean') {
                     return false;
                 }
             }
         }
 
-        if (obj.lists && !steamToolsUtils.isSimplyObject(obj.lists)) {
+        if(obj.lists && !steamToolsUtils.isSimplyObject(obj.lists)) {
             return false;
         }
-        for (let list of Object.values(obj.lists)) {
-            if (!steamToolsUtils.isSimplyObject(list) || !Array.isArray(list.data)) {
+        for(let list of Object.values(obj.lists)) {
+            if(!steamToolsUtils.isSimplyObject(list) || !Array.isArray(list.data)) {
                 return false;
             }
         }
@@ -693,7 +689,7 @@ async function matcherConfigImportListener() {
     }
 
     let importedConfig = await importConfig('matcher');
-    if (!isValidConfigObject(importedConfig)) {
+    if(!isValidConfigObject(importedConfig)) {
         throw 'matcherConfigImportListener(): Invalid imported config!';
     }
 
@@ -711,7 +707,7 @@ async function matcherConfigSaveListener() {
 
 async function matcherConfigLoadListener() {
     let config = await SteamToolsDbManager.getToolConfig('matcher');
-    if (config.matcher) {
+    if(config.matcher) {
         globalSettings.matcher = config.matcher;
         matcherConfigLoadUI();
     }
@@ -740,21 +736,21 @@ async function matcherConfigSingleMatchListener() {
     MatcherConfigShortcuts.configMenu.classList.add('overlay');
     MatcherConfigShortcuts.matchSingleProfileProfileid.value = MatcherConfigShortcuts.matchSingleProfileProfileid.value.trim();
     let profile = await Profile.findProfile(MatcherConfigShortcuts.matchSingleProfileProfileid.value);
-    if (!profile || (await profile.isMe())) {
+    if(!profile || (await profile.isMe())) {
         alert('Invalid profile!');
         MatcherConfigShortcuts.configMenu.classList.remove('overlay');
         return;
     }
 
     let savedConfig = await SteamToolsDbManager.getToolConfig('matcher');
-    if (JSON.stringify(globalSettings.matcher) !== JSON.stringify(savedConfig.matcher)) {
+    if(JSON.stringify(globalSettings.matcher) !== JSON.stringify(savedConfig.matcher)) {
         let userPrompt = prompt('WARNING: Settings have not been saved! Save now? (y/n/cancel)');
-        if (!userPrompt[0].localeCompare('y', 'en', { sensitivity: 'base' })) {
+        if(!userPrompt[0].localeCompare('y', 'en', { sensitivity: 'base' })) {
             await SteamToolsDbManager.setToolConfig('matcher');
             console.log('matcherConfigSingleMatchListener(): Saved Settings. Continuing to matching process...');
-        } else if (!userPrompt[0].localeCompare('n', 'en', { sensitivity: 'base' })) {
+        } else if(!userPrompt[0].localeCompare('n', 'en', { sensitivity: 'base' })) {
             console.log('matcherConfigSingleMatchListener(): Settings will not be saved. Continuing to matching process...');
-        } else if (!userPrompt[0].localeCompare('c', 'en', { sensitivity: 'base' })) {
+        } else if(!userPrompt[0].localeCompare('c', 'en', { sensitivity: 'base' })) {
             console.log('matcherConfigSingleMatchListener(): Cancelled. Matching will not continue...');
             MatcherConfigShortcuts.configMenu.classList.remove('overlay');
             return;
@@ -772,27 +768,23 @@ async function matcherStartMatching(profile) {
     const generateMatchGroupString = (groupName) => `<div class="match-group" data-group="${groupName}"></div>`;
     const generateMatchNameHeaderString = (profile, reverseDirection = false) => {
         return `<div class="match-name${reverseDirection ? ' align-right' : ''}">`
-            + `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}/` : `profiles/${profile.id}/`}" class="avatar ${profile.getStateString()}">`
-            + `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
-            + '</a>'
-            + profile.name
-            + '</div>'
+          +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}/` : `profiles/${profile.id}/`}" class="avatar ${profile.getStateString()}">`
+          +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
+          +    '</a>'
+          +    profile.name
+          + '</div>'
     };
     const generateMatchContainerString = (profile1, profile2) => {
         return '<div class="match-container-outer loading">'
-            + `<div class="match-container grid" data-profileid1="${profile1.id}" data-profileid2="${profile2.id}">`
-            + '<div class="match-header">'
-            + generateMatchNameHeaderString(profile1, true)
-            + '<div class="match-item-action trade"></div>'
-            + generateMatchNameHeaderString(profile2)
-            + '</div>'
-            + '</div>'
-            + '<div class="userscript-overlay">'
-            + '<div class="userscript-throbber">'
-            + '<div class="throbber-bar"></div><div class="throbber-bar"></div><div class="throbber-bar"></div>'
-            + '</div>'
-            + '</div>'
-            + '</div>'
+          +    `<div class="match-container grid" data-profileid1="${profile1.id}" data-profileid2="${profile2.id}">`
+          +       '<div class="match-header">'
+          +          generateMatchNameHeaderString(profile1, true)
+          +          '<div class="match-item-action trade"></div>'
+          +          generateMatchNameHeaderString(profile2)
+          +       '</div>'
+          +    '</div>'
+          +    cssAddOverlay(cssAddThrobber())
+          + '</div>'
     };
 
     GM_addStyle(cssMatcher);
@@ -801,18 +793,18 @@ async function matcherStartMatching(profile) {
     // UI setup (remove tool supernav)
     Object.keys(MatcherConfigShortcuts).forEach(key => (key === 'MAIN_ELEM') || delete MatcherConfigShortcuts[key]);
     MatcherConfigShortcuts.MAIN_ELEM.innerHTML = '<div class="match-results">'
-        + '</div>';
+      + '</div>';
 
     addSvgBlock(MatcherConfigShortcuts.MAIN_ELEM);
 
     MatcherConfigShortcuts.results = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.match-results');
     MatcherConfigShortcuts.resultGroups = {};
 
-    if (!Profile.me) {
+    if(!Profile.me) {
         await Profile.addNewProfile(steamToolsUtils.getMySteamId());
     }
 
-    if (profile) {
+    if(profile) {
         MatcherConfigShortcuts.results.insertAdjacentHTML('beforeend', generateMatchGroupString('single'));
         MatcherConfigShortcuts.resultGroups.single = MatcherConfigShortcuts.results.querySelector('[data-group="single"]');
         MatcherConfigShortcuts.resultGroups.single.insertAdjacentHTML('beforeend', generateMatchContainerString(Profile.me, profile));
@@ -820,7 +812,7 @@ async function matcherStartMatching(profile) {
         await matcherMatchProfile();
 
         let emptyContainer = MatcherConfigShortcuts.resultGroups.single.querySelector('.match-container-outer.loading');
-        if (emptyContainer) {
+        if(emptyContainer) {
             emptyContainer.remove();
         }
     }
@@ -850,12 +842,12 @@ async function matcherMatchProfile() {
     const generateAppContainerString = (appid) => `<div class="match-item-app" data-appid="${appid}"></div>`;
     const generateItemListContainerString = (itemType, rarity, appid, swapList) => {
         return '<div class="match-item-list left">'
-            + generateAppItemsString(itemType, rarity, appid, swapList, true)
-            + '</div>'
-            + '<div class="match-item-action trade"></div>'
-            + '<div class="match-item-list right">'
-            + generateAppItemsString(itemType, rarity, appid, swapList, false)
-            + '</div>';
+          +    generateAppItemsString(itemType, rarity, appid, swapList, true)
+          + '</div>'
+          + '<div class="match-item-action trade"></div>'
+          + '<div class="match-item-list right">'
+          +    generateAppItemsString(itemType, rarity, appid, swapList, false)
+          + '</div>';
     };
     const generateAppItemsString = (itemType, rarity, appid, swapList, leftSide = true) => {
         const getClassid = (index) => matchResult.inventory1.data[itemType][rarity][appid][index].classid;
@@ -863,9 +855,9 @@ async function matcherMatchProfile() {
             let itemClassid = getClassid(i);
             let itemDescription = Profile.itemDescriptions[itemClassid];
             return `<div class="match-item" data-classid="${itemClassid}" data-qty="${Math.abs(qty)}" title="${itemDescription.name}">`
-                + `<img src="${'https://community.cloudflare.steamstatic.com/economy/image/' + itemDescription.icon_url + '/96fx96f?allow_animated=1'}" alt="${itemDescription.name}">`
-                + `<div class="match-item-name">${itemDescription.name}</div>`
-                + '</div>';
+              +    `<img src="${'https://community.cloudflare.steamstatic.com/economy/image/' + itemDescription.icon_url + '/96fx96f?allow_animated=1'}" alt="${itemDescription.name}">`
+              +    `<div class="match-item-name">${itemDescription.name}</div>`
+              + '</div>';
         };
 
         return swapList.map((swapAmount, index) =>
@@ -875,32 +867,32 @@ async function matcherMatchProfile() {
 
     let shortcuts = {};
     let loadingContainer = MatcherConfigShortcuts.results.querySelector('.match-container-outer.loading > .match-container');
-    if (!loadingContainer) {
+    if(!loadingContainer) {
         console.warn('matcherMatchProfile(): No loading container found!');
         return;
     }
 
     let matchResult = await Matcher.matchInv(loadingContainer.dataset.profileid1, loadingContainer.dataset.profileid2);
-    if (!matchResult || steamToolsUtils.isEmptyObject(matchResult.results)) {
+    if(!matchResult || steamToolsUtils.isEmptyObject(matchResult.results)) {
         console.warn('matcherMatchProfile(): No results to be rendered');
         return;
     }
 
-    for (let result in matchResult.results) {
+    for(let result in matchResult.results) {
         let [itemType, rarity, appid] = result.split('_');
 
         shortcuts[itemType] ??= { elem: null, rarities: {} };
-        if (!shortcuts[itemType].elem) {
+        if(!shortcuts[itemType].elem) {
             loadingContainer.insertAdjacentHTML('beforeend', generateItemTypeContainerString(itemType));
             shortcuts[itemType].elem = loadingContainer.querySelector(`[data-type="${itemType}"]`);
         }
         shortcuts[itemType].rarities[rarity] ??= { elem: null, appids: {} };
-        if (!shortcuts[itemType].rarities[rarity].elem) {
+        if(!shortcuts[itemType].rarities[rarity].elem) {
             shortcuts[itemType].elem.insertAdjacentHTML('beforeend', generateRarityContainerString(rarity));
             shortcuts[itemType].rarities[rarity].elem = shortcuts[itemType].elem.querySelector(`[data-rarity="${rarity}"]`);
         }
         shortcuts[itemType].rarities[rarity].appids[appid] ??= { elem: null };
-        if (!shortcuts[itemType].rarities[rarity].appids[appid].elem) {
+        if(!shortcuts[itemType].rarities[rarity].appids[appid].elem) {
             shortcuts[itemType].rarities[rarity].elem.insertAdjacentHTML('beforeend', generateAppContainerString(appid));
             shortcuts[itemType].rarities[rarity].appids[appid].elem = shortcuts[itemType].rarities[rarity].elem.querySelector(`[data-appid="${appid}"]`);
         }
