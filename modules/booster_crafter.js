@@ -370,9 +370,9 @@ async function boosterCrafterLoadConfig() {
     let craftListEntriesElem = craftListElem.querySelector('.userscript-config-list-entries');
 
     favoritesActionElem.classList.add('disabled');
-    boosterCrafterSetOverlay(favoritesListElem, true, 'loading');
+    boosterCrafterSetOverlay(favoritesListElem, true, '');
     craftActionElem.classList.add('disabled');
-    boosterCrafterSetOverlay(craftListElem, true, 'loading');
+    boosterCrafterSetOverlay(craftListElem, true, '');
 
     // populate favorites list
     favoritesListEntriesElem.innerHTML = '';
@@ -448,8 +448,7 @@ async function boosterCrafterLoadData() {
     boosterCrafterSetOverlay(inventoryListElem, true, 'loading');
     // disable add button?
     openerActionElem.classList.add('disabled');
-    boosterCrafterSetOverlay(openerListElem, false);
-    openerListElem.querySelector('.userscript-dialog-container').style.display = 'none';
+    boosterCrafterSetOverlay(openerListElem, true, '');
 
     let inventoryEntriesElem = inventoryListElem.querySelector('.userscript-config-list-entries');
 
@@ -508,7 +507,7 @@ async function boosterCrafterLoadData() {
     boosterCrafterSetOverlay(inventoryListElem, false);
     // enable add button?
     openerActionElem.classList.remove('disabled');
-    openerListElem.querySelector('.userscript-dialog-container').style.display = '';
+    boosterCrafterSetOverlay(openerActionElem, false);
 }
 function boosterCrafterUpdateBoosterCost() {
     let allTotal = 0;
