@@ -1271,13 +1271,16 @@ function boosterCrafterOpenerListAddListener() {
     }
 }
 function boosterCrafterOpenerListIncrementListener() {
-    boosterCrafterOpenerListChangeValue(1, false);
+    boosterCrafterOpenerListChangeValue(1);
 }
 function boosterCrafterOpenerListDecrementListener() {
-    boosterCrafterOpenerListChangeValue(1, true);
+    boosterCrafterOpenerListChangeValue(-1);
 }
-function boosterCrafterOpenerListChangeValue(value, negative) {
-    let changeVal = negative ? -value : value;
+function boosterCrafterOpenerListChangeValue(value) {
+    if(typeof value !== 'number') {
+        return;
+    }
+
     for(let selectedElem of boosterCrafterShortcuts.lists.opener.list.querySelectorAll('.selected')) {
         let appid = selectedElem.dataset.appid;
         if(!boosterCrafterData.openerList[appid]) {
@@ -1288,7 +1291,7 @@ function boosterCrafterOpenerListChangeValue(value, negative) {
         let dataEntry = boosterCrafterData.openerList[appid];
 
         if(dataEntry.qtyTradable === dataEntry.maxTradable) {
-            let newQty = dataEntry.qtyNontradable + changeVal;
+            let newQty = dataEntry.qtyNontradable + value;
             if(newQty > dataEntry.maxNontradable) {
                 dataEntry.qtyTradable = Math.min(newQty - dataEntry.maxNontradable, dataEntry.maxTradable);
                 dataEntry.qtyNontradable = 0;
@@ -1299,7 +1302,7 @@ function boosterCrafterOpenerListChangeValue(value, negative) {
                 dataEntry.qtyNontradable = newQty;
             }
         } else {
-            let newQty = dataEntry.qtyTradable + changeVal;
+            let newQty = dataEntry.qtyTradable + value;
             if(newQty > dataEntry.maxTradable) {
                 dataEntry.qtyTradable = dataEntry.maxTradable;
                 dataEntry.qtyNontradable = Math.min(newQty - dataEntry.maxTradable, dataEntry.maxNontradable);
