@@ -915,7 +915,7 @@ class Profile {
             if(img_full) {
                 img_full = img_full.outerHTML.match(/onclick="[^"]+"/g)[0]
                   ?.replaceAll('&quot;', '"')
-                  ?.match(/[^/]+\.jpg/g)[0]
+                  ?.match(/[^/]+\.jpg/gi)[0]
                   ?.replace('.jpg', '');
                 metadata.cards[i][`img_full${rarity}`] = img_full;
             }
