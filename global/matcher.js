@@ -146,7 +146,7 @@ let Matcher = {
                 let flip = i%2;
                 let swapset1 = set1.map((x, i) => x.count + swap[i]);
                 let swapset2 = set2.map((x, i) => x.count - swap[i]);
-                let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), helper);
+                let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), helper && !flip;
                 if(!balanceResult.history.length) {
                     break;
                 }
