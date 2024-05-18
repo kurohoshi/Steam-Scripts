@@ -1,3 +1,5 @@
+const badgepageFilterShortcuts = {};
+
 function getCardStock(pageElem) {
     if(!pageElem.querySelector('.badge_card_set_cards')) {
         return null;
@@ -53,15 +55,22 @@ async function setupBadgepageFilter() {
     GM_addStyle(cssMatcher);
 
     let friendFilterHTMLString = '<div class="enhanced-options right userscript-vars">'
-    +    '<button id="friend-filter" class="userscript-btn purple wide">Filter Friends</button>'
-    +    '<button id="good-swaps" class="userscript-btn purple wide">Display Good Swaps</button>'
-    +    '<button id="balance-cards" class="userscript-btn purple wide">Balance Cards</button>'
-    + '</div>';
+      +    '<button id="friend-filter" class="userscript-btn purple wide">Filter Friends</button>'
+      +    '<button id="good-swaps" class="userscript-btn purple wide">Display Good Swaps</button>'
+      +    '<button id="balance-cards" class="userscript-btn purple wide">Balance Cards</button>'
+      +    '<button id="help-others" class="userscript-btn purple wide">Help Friends!</button>'
+      + '</div>';
     let headerLinkElem = document.querySelector('.badge_cards_to_collect');
     headerLinkElem.insertAdjacentHTML('beforebegin', friendFilterHTMLString);
+
+    badgepageFilterShortcuts.main = document.querySelector('.badge_row_inner');
+    badgepageFilterShortcuts.main.insertAdjacentHTML('beforeend', cssAddThrobber());
+    badgepageFilterShortcuts.throbber = document.querySelector('.userscript-throbber');
+
     document.getElementById('friend-filter').addEventListener('click', badgepageFilterFilterFriendsWithCardsListener);
     document.getElementById('good-swaps').addEventListener('click', badgepageFilterShowGoodSwapsListener);
-    document.getElementById('balance-cards').addEventListener('click', badgepageFilterBalanceCardsListener);
+    document.getElementById('balance-cards').addEventListener('click', badgepageFilterNeutralOrGoodMatchingListener);
+    document.getElementById('help-others').addEventListener('click', badgepageFilterHelpOthersListener);
 }
 
 async function badgepageFilterFetchFriend(profileContainerElem) {
@@ -192,9 +201,9 @@ async function badgepageFilterShowGoodSwapsListener() {
     + '<div id="good-swaps-results" class="enhanced-section">'
     +    '<div class="enhanced-header">Good Matches</div>'
     +    '<div class="enhanced-body"></div>'
-    + '</div>'
-    + cssAddThrobber();
-    document.querySelector('.badge_row_inner').insertAdjacentHTML('beforeend', HTMLString);
+    + '</div>';
+    badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
+    badgepageFilterShortcuts.main.classList.add('loading');
 
     let { friendsCardStock } = globalSettings.badgepageFilter;
     let processedFriends = new Set();
@@ -233,41 +242,29 @@ async function badgepageFilterShowGoodSwapsListener() {
         processedFriends.add(profileUrl);
     }
 
-    document.querySelector('.userscript-throbber').remove();
+    badgepageFilterShortcuts.main.classList.remove('loading');
 }
 
-async function badgepageFilterBalanceCardsListener() {
-    const generateMatchItemsHTMLString = (matchResult, leftSide = true) => {
-        const generateMatchItemHTMLString = (qty, i) => {
-            return `<div class="match-item" data-qty="${Math.abs(qty)}" title="${cardInfoList[i].name}"><img src="${cardInfoList[i].img + '/96fx96f?allow_animated=1'}" alt="${cardInfoList[i].name}"></div>`
-        };
-        let { cardInfoList } = globalSettings.badgepageFilter;
-        return matchResult.map((swapAmount, index) =>
-            leftSide ? (swapAmount<0 ? generateMatchItemHTMLString(swapAmount, index) : '') : (swapAmount>0 ? generateMatchItemHTMLString(swapAmount, index) : '')
-        ).join('');
-    };
-    const generateMatchRowHTMLString = (matchResult) => {
-        return '<div class="match-item-row align-right">'
-        + '<div class="match-item-list left">'
-        +    generateMatchItemsHTMLString(matchResult, true)
-        + '</div>'
-        + `<div class="match-item-action trade"></div>`
-        + '<div class="match-item-list right">'
-        +    generateMatchItemsHTMLString(matchResult, false)
-        + '</div>';
-    };
+function badgepageFilterNeutralOrGoodMatchingListener() {
+    badgepageFilterBalanceCards('balance-match', 'Balance Cards', false);
+}
 
+function badgepageFilterHelpOthersListener() {
+    badgepageFilterBalanceCards('helper-match', 'Helping Friends', true);
+}
+
+async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
     let HTMLString = '<div class="badge_detail_tasks footer"></div>'
-    + '<div id="balance-results" class="enhanced-section">'
-    +    '<div class="enhanced-header">Balanced Matches</div>'
+    + `<div id="${elemId}" class="enhanced-section">`
+    +    `<div class="enhanced-header">${headerTitle}</div>`
     +    '<div class="enhanced-body"></div>'
-    + '</div>'
-    + cssAddThrobber();
-    document.querySelector('.badge_row_inner').insertAdjacentHTML('beforeend', HTMLString);
+    + '</div>';
+    badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
+    badgepageFilterShortcuts.main.classList.add('loading');
 
     let { myCardStock, friendsCardStock } = globalSettings.badgepageFilter;
     let processedFriends = new Set();
-    let balanceMatchingListElem = document.querySelector('#balance-results > .enhanced-body');
+    let balanceMatchingListElem = document.querySelector(`#${elemId} > .enhanced-body`);
 
     for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
         let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
@@ -282,28 +279,60 @@ async function badgepageFilterBalanceCardsListener() {
             continue;
         }
 
-        let balanceResult = Matcher.balanceVariance(myCardStock, profile.stock);
+        let balanceResult = Matcher.balanceVariance(myCardStock, profile.stock, false, helperMode);
         if(!balanceResult.swap.some(x => x)) {
             continue;
         }
 
-        let profileBalancedMatchingHTMLString = '<div class="match-container-outer">'
-        +    '<div class="match-container">'
-        +       '<div class="match-header">'
-        +          '<div class="match-name">'
-        +             `<a href="${profile.profileLink}" class="avatar ${profile.state ?? 'offline'}">`
-        +                `<img src="${profile.pfp}">`
-        +             '</a>'
-        +             profile.name
-        +          '</div>'
-        +       '</div>'
-        +       generateMatchRowHTMLString(balanceResult.swap)
-        +    '</div>'
-        + '</div>';
+        let profileBalancedMatchingHTMLString = badgepageFilterGenerateMatchResultHTML(profile, balanceResult);
         balanceMatchingListElem.insertAdjacentHTML('beforeend', profileBalancedMatchingHTMLString);
 
         processedFriends.add(profileUrl);
     }
 
-    document.querySelector('.userscript-throbber').remove();
+    badgepageFilterShortcuts.main.classList.remove('loading');
+}
+
+function badgepageFilterGenerateMatchResultHTML(profileData, balanceResult) {
+    let { cardInfoList } = globalSettings.badgepageFilter;
+
+    const generateMatchItemHTMLString = (qty, i) => {
+        return `<div class="match-item" data-qty="${Math.abs(qty)}" title="${cardInfoList[i].name}">`
+          +    `<img src="${cardInfoList[i].img + '/96fx96f?allow_animated=1'}" alt="${cardInfoList[i].name}">`
+          + '</div>';
+    };
+
+    const generateMatchItemsHTMLString = (matchResult, leftSide = true) => {
+        return matchResult.map((swapAmount, index) =>
+            leftSide
+              ? (swapAmount<0 ? generateMatchItemHTMLString(swapAmount, index) : '')
+              : (swapAmount>0 ? generateMatchItemHTMLString(swapAmount, index) : '')
+        ).join('');
+    };
+
+    const generateMatchRowHTMLString = (matchResult) => {
+        return '<div class="match-item-row align-right">'
+          +    '<div class="match-item-list left">'
+          +       generateMatchItemsHTMLString(matchResult, true)
+          +    '</div>'
+          +    `<div class="match-item-action trade"></div>`
+          +    '<div class="match-item-list right">'
+          +       generateMatchItemsHTMLString(matchResult, false)
+          +    '</div>'
+          + '</div>';
+    };
+
+    return '<div class="match-container-outer">'
+      +    '<div class="match-container">'
+      +       '<div class="match-header">'
+      +          '<div class="match-name">'
+      +             `<a href="${profileData.profileLink}" class="avatar ${profileData.state ?? 'offline'}">`
+      +                `<img src="${profileData.pfp}">`
+      +             '</a>'
+      +             profileData.name
+      +          '</div>'
+      +       '</div>'
+      +       generateMatchRowHTMLString(balanceResult.swap)
+      +    '</div>'
+      + '</div>';
 }
