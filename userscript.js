@@ -1600,7 +1600,7 @@ let Matcher = {
                 let flip = i%2;
                 let swapset1 = set1.map((x, i) => x.count + swap[i]);
                 let swapset2 = set2.map((x, i) => x.count - swap[i]);
-                let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), helper);
+                let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), false, helper && !flip);
                 if(!balanceResult.history.length) {
                     break;
                 }
@@ -1625,26 +1625,30 @@ let Matcher = {
 
         return this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid];
     },
-    balanceVariance(set1, set2, helper=false) {
-        function binSwap(bin, index, higher=true, lutIndex) {
-            let offset = higher ? 1 : -1;
+    balanceVariance(set1, set2, lowToHigh=false, helper=false) {
+        function binReorder(bin, index, isSortedLowToHigh, incremented, binLUT, lutIndex) {
+            const cmp = (val1, val2) => incremented ? val1>=val2 : val1<=val2;
+            const shiftIndex = (next, offset) => {
+                binLUT[bin[next][0]][lutIndex] -= offset;
+                bin[next-offset] = bin[next];
+            }
+            let shiftRight = isSortedLowToHigh===incremented;
+            let offset = shiftRight ? 1 : -1;
             let tmp = bin[index];
             let next = index + offset;
-            if(higher) {
-                while(next<bin.length && tmp[1]>=bin[next][1]) {
-                    binIndices[bin[next][0]][lutIndex] -= offset;
-                    bin[next-offset] = bin[next];
+            if(shiftRight) {
+                while(next<bin.length && cmp(tmp[1], bin[next][1])) {
+                    shiftIndex(next, offset);
                     next += offset;
                 }
             } else {
-                while(next>=0 && tmp[1]<=bin[next][1]) {
-                    binIndices[bin[next][0]][lutIndex] -= offset;
-                    bin[next-offset] = bin[next];
+                while(next>=0 && cmp(tmp[1], bin[next][1])) {
+                    shiftIndex(next, offset);
                     next += offset;
                 }
             }
-            if(next-offset-index) {
-                binIndices[tmp[0]][lutIndex] = next-offset;
+            if(next !== index+offset) {
+                binLUT[tmp[0]][lutIndex] = next-offset;
                 bin[next-offset] = tmp;
             }
         }
@@ -1655,15 +1659,14 @@ let Matcher = {
         }
 
         let setlen = set1.length;
-        let bin1 = set1.map((x, i) => [i, x]).sort((a, b) => a[1]-b[1]);
-        let bin2 = set2.map((x, i) => [i, x]).sort((a, b) => a[1]-b[1]);
-        if(bin1[0][1] === bin1[bin1.length-1][1]) {
-            return { swap: Array(setlen).fill(0),  history: [] };
+        let bin1 = set1.map((x, i) => [i, x]).sort((a, b) => lowToHigh ? b[1]-a[1] : a[1]-b[1]);
+        let bin2 = set2.map((x, i) => [i, x]).sort((a, b) => lowToHigh ? b[1]-a[1] : a[1]-b[1]);
+        if(bin1[0][1] === bin1[bin1.length-1][1] || bin2[0][1] === bin2[bin2.length-1][1]) {
+            return { swap: Array(setlen).fill(0), history: [] };
         }
         let history = [];
 
-        // LUT for bin indices
-        var binIndices = new Array(setlen);
+        let binIndices = new Array(setlen); // LUT for bin indices
         for(let i=0; i<binIndices.length; i++) {
             binIndices[i] = new Array(2);
         }
@@ -1671,12 +1674,11 @@ let Matcher = {
             binIndices[bin1[i][0]][0] = i;
             binIndices[bin2[i][0]][1] = i;
         }
-
-        // prioritize lowest dupe gains for both sides as early as possible
+ 
         for(let max=1, maxlen=setlen*2; max<maxlen; max++) {
-            let i     = max<=setlen ? 0 : max-setlen;
-            let start = i;
+            let start = max<=setlen ? 0 : max-setlen;
             let end   = max<=setlen ? max : setlen;
+            let i     = start;
             while(i<end) {
                 let j = end-1-i+start;
                 if(bin1[i][0] === bin2[j][0]) { // don't swap same item
@@ -1702,17 +1704,19 @@ let Matcher = {
                 // simplified from (x1-1)**2+(x2+1)**2 ?? x1**2 + x2**2  --> -x1+x2+1 ?? 0
                 let bin2vardiff = -bin2_i_elem[1]     +bin2[j][1] +1;
 
-                // accept the swap if variances for either parties is lowered, but not if both variances doesn't change, otherwise continue to next item pair to be compared
-                if(((helper || bin1vardiff<=0) && bin2vardiff<=0) && !(bin1vardiff===0 && bin2vardiff===0)) {
+                let isNeutralOrGood = (bin1vardiff<=0 && bin2vardiff<=0) && !(bin1vardiff===0 && bin2vardiff===0);
+                let isHelpful = helper && bin2vardiff<0;
+                if(isNeutralOrGood || isHelpful) {
                     bin1[i][1]++;
-                    binSwap(bin1, i, true, 0);
+                    binReorder(bin1, i, lowToHigh, true, binIndices, 0);
                     bin1_j_elem[1]--;
-                    binSwap(bin1, binIndices[bin1_j_elem[0]][0], false, 0);
+                    binReorder(bin1, bin1_j_elem[0], lowToHigh, false, binIndices, 0);
 
                     bin2[j][1]++;
-                    binSwap(bin2, j, true, 1);
+                    binReorder(bin2, j, lowToHigh, true, binIndices, 1);
                     bin2_i_elem[1]--;
-                    binSwap(bin2, binIndices[bin2_i_elem[0]][1], false, 1);
+                    binReorder(bin2, bin2_i_elem[0], lowToHigh, false, binIndices, 1);
+
                     history.push([bin2[j][0], bin1[i][0]]);
                 } else {
                     i++;
@@ -1725,7 +1729,7 @@ let Matcher = {
             history
         };
     },
-    validate: function(profile1, profile2) {
+    validate(profile1, profile2) {
         let roundZero = (num) => {
             return num<1e-10 && num>-1e-10 ? 0.0 : num;
         }
@@ -1781,7 +1785,7 @@ let Matcher = {
 
         this.matchResultsList[profile1][profile2].validated = true;
     },
-    generateRequestPayload: async function(profile1, profile2, message="", reverse=true) {
+    async generateRequestPayload(profile1, profile2, message="", reverse=true) {
         // https://steamcommunity.com/tradeoffer/new/?partner=[STEAM3_ID]&forum_owner=[forum_owner]&forum_topic=[gidtopic]
         // steamid_owner = "10358279"+(forum_owner+1429521408)
 
@@ -1953,7 +1957,7 @@ let Matcher = {
         }
     },
     // -1: not nplus, 0: set1 nplus only, 1: set2 nplus only, 2: both nplus
-    isASFNeutralPlus: function(profile1, profile2) {
+    isASFNeutralPlus(profile1, profile2) {
         function calcNeutrality(invSet, matchSet, primary=true) {
             let neutrality = 0;
             let setbefore = invSet.map(x => x.count);
@@ -4756,6 +4760,8 @@ function boosterCrafterParseCooldownDate(dateString) {
     return new Date(dateNow.getFullYear() + (nextYear ? 1 : 0), MONTHS_ARRAY.indexOf(monthStr), parseInt(dayStr), newTime[0], newTime[1]);
 }
 
+const badgepageFilterShortcuts = {};
+
 function getCardStock(pageElem) {
     if(!pageElem.querySelector('.badge_card_set_cards')) {
         return null;
@@ -4811,15 +4817,22 @@ async function setupBadgepageFilter() {
     GM_addStyle(cssMatcher);
 
     let friendFilterHTMLString = '<div class="enhanced-options right userscript-vars">'
-    +    '<button id="friend-filter" class="userscript-btn purple wide">Filter Friends</button>'
-    +    '<button id="good-swaps" class="userscript-btn purple wide">Display Good Swaps</button>'
-    +    '<button id="balance-cards" class="userscript-btn purple wide">Balance Cards</button>'
-    + '</div>';
+      +    '<button id="friend-filter" class="userscript-btn purple wide">Filter Friends</button>'
+      +    '<button id="good-swaps" class="userscript-btn purple wide">Display Good Swaps</button>'
+      +    '<button id="balance-cards" class="userscript-btn purple wide">Balance Cards</button>'
+      +    '<button id="help-others" class="userscript-btn purple wide">Help Friends!</button>'
+      + '</div>';
     let headerLinkElem = document.querySelector('.badge_cards_to_collect');
     headerLinkElem.insertAdjacentHTML('beforebegin', friendFilterHTMLString);
+
+    badgepageFilterShortcuts.main = document.querySelector('.badge_row_inner');
+    badgepageFilterShortcuts.main.insertAdjacentHTML('beforeend', cssAddThrobber());
+    badgepageFilterShortcuts.throbber = document.querySelector('.userscript-throbber');
+
     document.getElementById('friend-filter').addEventListener('click', badgepageFilterFilterFriendsWithCardsListener);
     document.getElementById('good-swaps').addEventListener('click', badgepageFilterShowGoodSwapsListener);
-    document.getElementById('balance-cards').addEventListener('click', badgepageFilterBalanceCardsListener);
+    document.getElementById('balance-cards').addEventListener('click', badgepageFilterNeutralOrGoodMatchingListener);
+    document.getElementById('help-others').addEventListener('click', badgepageFilterHelpOthersListener);
 }
 
 async function badgepageFilterFetchFriend(profileContainerElem) {
@@ -4950,9 +4963,9 @@ async function badgepageFilterShowGoodSwapsListener() {
     + '<div id="good-swaps-results" class="enhanced-section">'
     +    '<div class="enhanced-header">Good Matches</div>'
     +    '<div class="enhanced-body"></div>'
-    + '</div>'
-    + cssAddThrobber();
-    document.querySelector('.badge_row_inner').insertAdjacentHTML('beforeend', HTMLString);
+    + '</div>';
+    badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
+    badgepageFilterShortcuts.main.classList.add('loading');
 
     let { friendsCardStock } = globalSettings.badgepageFilter;
     let processedFriends = new Set();
@@ -4991,41 +5004,29 @@ async function badgepageFilterShowGoodSwapsListener() {
         processedFriends.add(profileUrl);
     }
 
-    document.querySelector('.userscript-throbber').remove();
+    badgepageFilterShortcuts.main.classList.remove('loading');
 }
 
-async function badgepageFilterBalanceCardsListener() {
-    const generateMatchItemsHTMLString = (matchResult, leftSide = true) => {
-        const generateMatchItemHTMLString = (qty, i) => {
-            return `<div class="match-item" data-qty="${Math.abs(qty)}" title="${cardInfoList[i].name}"><img src="${cardInfoList[i].img + '/96fx96f?allow_animated=1'}" alt="${cardInfoList[i].name}"></div>`
-        };
-        let { cardInfoList } = globalSettings.badgepageFilter;
-        return matchResult.map((swapAmount, index) =>
-            leftSide ? (swapAmount<0 ? generateMatchItemHTMLString(swapAmount, index) : '') : (swapAmount>0 ? generateMatchItemHTMLString(swapAmount, index) : '')
-        ).join('');
-    };
-    const generateMatchRowHTMLString = (matchResult) => {
-        return '<div class="match-item-row align-right">'
-        + '<div class="match-item-list left">'
-        +    generateMatchItemsHTMLString(matchResult, true)
-        + '</div>'
-        + `<div class="match-item-action trade"></div>`
-        + '<div class="match-item-list right">'
-        +    generateMatchItemsHTMLString(matchResult, false)
-        + '</div>';
-    };
+function badgepageFilterNeutralOrGoodMatchingListener() {
+    badgepageFilterBalanceCards('balance-match', 'Balance Cards', false);
+}
 
+function badgepageFilterHelpOthersListener() {
+    badgepageFilterBalanceCards('helper-match', 'Helping Friends', true);
+}
+
+async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
     let HTMLString = '<div class="badge_detail_tasks footer"></div>'
-    + '<div id="balance-results" class="enhanced-section">'
-    +    '<div class="enhanced-header">Balanced Matches</div>'
+    + `<div id="${elemId}" class="enhanced-section">`
+    +    `<div class="enhanced-header">${headerTitle}</div>`
     +    '<div class="enhanced-body"></div>'
-    + '</div>'
-    + cssAddThrobber();
-    document.querySelector('.badge_row_inner').insertAdjacentHTML('beforeend', HTMLString);
+    + '</div>';
+    badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
+    badgepageFilterShortcuts.main.classList.add('loading');
 
     let { myCardStock, friendsCardStock } = globalSettings.badgepageFilter;
     let processedFriends = new Set();
-    let balanceMatchingListElem = document.querySelector('#balance-results > .enhanced-body');
+    let balanceMatchingListElem = document.querySelector(`#${elemId} > .enhanced-body`);
 
     for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
         let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
@@ -5040,30 +5041,62 @@ async function badgepageFilterBalanceCardsListener() {
             continue;
         }
 
-        let balanceResult = Matcher.balanceVariance(myCardStock, profile.stock);
+        let balanceResult = Matcher.balanceVariance(myCardStock, profile.stock, false, helperMode);
         if(!balanceResult.swap.some(x => x)) {
             continue;
         }
 
-        let profileBalancedMatchingHTMLString = '<div class="match-container-outer">'
-        +    '<div class="match-container">'
-        +       '<div class="match-header">'
-        +          '<div class="match-name">'
-        +             `<a href="${profile.profileLink}" class="avatar ${profile.state ?? 'offline'}">`
-        +                `<img src="${profile.pfp}">`
-        +             '</a>'
-        +             profile.name
-        +          '</div>'
-        +       '</div>'
-        +       generateMatchRowHTMLString(balanceResult.swap)
-        +    '</div>'
-        + '</div>';
+        let profileBalancedMatchingHTMLString = badgepageFilterGenerateMatchResultHTML(profile, balanceResult);
         balanceMatchingListElem.insertAdjacentHTML('beforeend', profileBalancedMatchingHTMLString);
 
         processedFriends.add(profileUrl);
     }
 
-    document.querySelector('.userscript-throbber').remove();
+    badgepageFilterShortcuts.main.classList.remove('loading');
+}
+
+function badgepageFilterGenerateMatchResultHTML(profileData, balanceResult) {
+    let { cardInfoList } = globalSettings.badgepageFilter;
+
+    const generateMatchItemHTMLString = (qty, i) => {
+        return `<div class="match-item" data-qty="${Math.abs(qty)}" title="${cardInfoList[i].name}">`
+          +    `<img src="${cardInfoList[i].img + '/96fx96f?allow_animated=1'}" alt="${cardInfoList[i].name}">`
+          + '</div>';
+    };
+
+    const generateMatchItemsHTMLString = (matchResult, leftSide = true) => {
+        return matchResult.map((swapAmount, index) =>
+            leftSide
+              ? (swapAmount<0 ? generateMatchItemHTMLString(swapAmount, index) : '')
+              : (swapAmount>0 ? generateMatchItemHTMLString(swapAmount, index) : '')
+        ).join('');
+    };
+
+    const generateMatchRowHTMLString = (matchResult) => {
+        return '<div class="match-item-row align-right">'
+          +    '<div class="match-item-list left">'
+          +       generateMatchItemsHTMLString(matchResult, true)
+          +    '</div>'
+          +    `<div class="match-item-action trade"></div>`
+          +    '<div class="match-item-list right">'
+          +       generateMatchItemsHTMLString(matchResult, false)
+          +    '</div>'
+          + '</div>';
+    };
+
+    return '<div class="match-container-outer">'
+      +    '<div class="match-container">'
+      +       '<div class="match-header">'
+      +          '<div class="match-name">'
+      +             `<a href="${profileData.profileLink}" class="avatar ${profileData.state ?? 'offline'}">`
+      +                `<img src="${profileData.pfp}">`
+      +             '</a>'
+      +             profileData.name
+      +          '</div>'
+      +       '</div>'
+      +       generateMatchRowHTMLString(balanceResult.swap)
+      +    '</div>'
+      + '</div>';
 }
 
 function generateSuperNav() {
