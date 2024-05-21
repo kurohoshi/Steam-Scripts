@@ -92,7 +92,7 @@ async function gotoMatcherConfigPage() {
 
     addSvgBlock(MatcherConfigShortcuts.MAIN_ELEM);
 
-    let matcherConfigHTMLString = '<div class="userscript-config">'
+    let matcherConfigHTMLString = '<div class="userscript-config userscript-vars">'
       +    '<div class="userscript-config-title"><span>Matcher Configuration</span></div>'
       +    '<div class="userscript-options">'
       +       generateConfigButtonGroupString()
@@ -101,22 +101,22 @@ async function gotoMatcherConfigPage() {
       +             '<span>Configuration Settings</span>'
       +          '</div>'
       +          '<div class="userscript-config-btn-group">'
-      +             '<button id="userscript-config-import" class="blue">Import Settings</button>'
-      +             '<button id="userscript-config-export" class="blue">Export Settings</button>'
+      +             '<button id="userscript-config-import" class="userscript-btn blue">Import</button>'
+      +             '<button id="userscript-config-export" class="userscript-btn blue">Export</button>'
       +          '</div>'
       +          '<div class="userscript-config-btn-group right">'
-      +             '<button id="userscript-config-reset" class="blue">Reload Settings</button>'
-      +             '<button id="userscript-config-save" class="green">Save Settings</button>'
+      +             '<button id="userscript-config-reset" class="userscript-btn blue">Reload</button>'
+      +             '<button id="userscript-config-save" class="userscript-btn green">Save</button>'
       +          '</div>'
       +       '</div>'
       +       '<div class="userscript-config-actions">'
       +          '<div class="userscript-config-action">'
-      +             '<button id="userscript-config-match-full" class="purple max">Full Match</button>'
+      +             '<button id="userscript-config-match-full" class="userscript-btn purple max">Full Match</button>'
       +          '</div>'
       +          '<div class="h-break">OR</div>'
       +          '<div class="userscript-config-action">'
       +             '<input type="text" name="match-profileid" id="match-single-profile-profileid" placeholder="profileid/customUrlId">'
-      +             '<button id="userscript-config-match-one" class="purple">Match</button>'
+      +             '<button id="userscript-config-match-one" class="userscript-btn purple">Match</button>'
       +          '</div>'
       +       '</div>'
       +    '</div>'
@@ -126,31 +126,40 @@ async function gotoMatcherConfigPage() {
       +       '</div>'
       +       '<div class="conf-list-entry-action add">'
       +          '<div class="conf-list-entry-action-add">'
-      +             '<div id="entry-action-add"></div>'
+      +             '<div id="entry-action-add" class="entry-action add"></div>'
       +          '</div>'
       +          '<div class="conf-list-entry-action-modify">'
-      +             '<div id="entry-action-del"></div>'
-      +             '<div id="entry-action-edit"></div>'
+      +             '<div id="entry-action-del" class="userscript-bg-filtered delete"></div>'
+      +             '<div id="entry-action-edit" class="userscript-bg-filtered edit"></div>'
       +          '</div>'
-      +          '<div class="conf-list-entry-action-disabled"></div>'
+      +          '<div class="userscript-overlay"></div>'
       +       '</div>'
       +       '<div class="userscript-config-list-list">'
-      +          '<div class="conf-list-entry-form-container">'
-      +             '<div class="conf-list-entry-form">'
-      +             '</div>'
+      +          '<div class="dialog-form-container">'
+      +             '<div class="dialog-form"></div>'
       +          '</div>'
-      +          '<div class="conf-list-overlay">'
-      +             '<div class="content-loader"></div>'
-      +             '<div class="conf-list-dialog">'
-      +                '<div>Entry already exists, overwrite?</div>'
+      +          '<div class="userscript-overlay">'
+      +             '<div class="animated-bar-loader top"></div>'
+      +             '<div class="userscript-dialog">'
+      +                '<div class="userscript-dialog-container">'
+      +                   'Entry already exists, overwrite?'
+      +                '</div>'
       +                '<div id="conf-list-entry-old" class="userscript-config-list-entry"></div>'
-      +                '<div class="conf-list-dialog-divider">'
+      +                '<div class="userscript-dialog-container">'
       +                   '<div class="dbl-arrows down"></div>'
       +                '</div>'
       +                '<div id="conf-list-entry-new" class="userscript-config-list-entry"></div>'
-      +                '<div class="conf-list-dialog-action">'
-      +                   '<button id="conf-list-dialog-cancel" class="red wide">No</button>'
-      +                   '<button id="conf-list-dialog-confirm" class="green wide">Yes</button>'
+      +                '<div class="userscript-dialog-container">'
+      +                   '<button id="userscript-dialog-cancel" class="userscript-btn red wide">No</button>'
+      +                   '<button id="userscript-dialog-confirm" class="userscript-btn green wide">Yes</button>'
+      +                '</div>'
+      +             '</div>'
+      +             '<div class="userscript-dialog-form">'
+      +                '<input type="text" id="entry-form-id" class="userscript-input" placeholder="profileid/customUrlid">'
+      +                '<textarea name="" id="entry-form-descript" class="userscript-input" placeholder="Note (Optional)" rows="5"></textarea>'
+      +                '<div class="userscript-dialog-container">'
+      +                   '<button id="dialog-form-cancel" class="userscript-btn red">Cancel</button>'
+      +                   '<button id="dialog-form-add" class="userscript-btn green">Add</button>'
       +                '</div>'
       +             '</div>'
       +          '</div>'
@@ -159,7 +168,7 @@ async function gotoMatcherConfigPage() {
       +          '</div>'
       +       '</div>'
       +    '</div>'
-      +    cssAddOverlay(cssAddThrobber())
+      +    cssAddOverlay(cssAddThrobber(), {initialState: 'loading'})
       + '</div>';
 
     MatcherConfigShortcuts.MAIN_ELEM.insertAdjacentHTML("beforeend", matcherConfigHTMLString);
@@ -187,8 +196,8 @@ async function gotoMatcherConfigPage() {
     document.getElementById('entry-action-edit').addEventListener('click', matcherConfigEditListEntryListener);
     document.getElementById('entry-action-del').addEventListener('click', matcherConfigDeleteListEntryListener);
     MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-entries').addEventListener('click', matcherConfigSelectListEntryListener);
-    document.getElementById('conf-list-dialog-cancel').addEventListener('click', matcherConfigListDialogCancelListener);
-    document.getElementById('conf-list-dialog-confirm').addEventListener('click', matcherConfigListDialogConfirmListener);
+    document.getElementById('userscript-dialog-cancel').addEventListener('click', matcherConfigListDialogCancelListener);
+    document.getElementById('userscript-dialog-confirm').addEventListener('click', matcherConfigListDialogConfirmListener);
     document.getElementById('userscript-config-match-full').addEventListener('click', matcherConfigFullMatchListener);
     document.getElementById('userscript-config-match-one').addEventListener('click', matcherConfigSingleMatchListener);
 
@@ -325,23 +334,23 @@ function matcherConfigResetEntryForm() {
         // set innerHTML to wipe everything and change form
         entryFormElem.innerHTML = '';
         if(currentTab==='matchlist' || currentTab==='blacklist') {
-            entryFormElem.innerHTML = '<input type="text" id="entry-form-id" placeholder="profileid/customUrlid">'
-              + '<textarea name="" id="entry-form-descript" placeholder="Note (Optional)"></textarea>';
+            entryFormElem.innerHTML = '<input type="text" id="entry-form-id" class="userscript-input" placeholder="profileid/customUrlid">'
+              + '<textarea name="" id="entry-form-descript" class="userscript-input" placeholder="Note (Optional)" rows="5"></textarea>';
         } else if(currentTab === 'applist') {
-            entryFormElem.innerHTML = '<input type="text" id="entry-form-id" placeholder="appid">'
-              + '<textarea name="" id="entry-form-descript" placeholder="Note (Optional)"></textarea>';
+            entryFormElem.innerHTML = '<input type="text" id="entry-form-id" class="userscript-input" placeholder="appid">'
+              + '<textarea name="" id="entry-form-descript" class="userscript-input" placeholder="Note (Optional)" rows="5"></textarea>';
         } else {
             console.warn('matcherConfigResetEntryForm(): Tab reset not implemented, form will not be generated!');
             return;
         }
 
-        let entryFormActionHTMLString = '<div class="entry-form-action">'
-          +    '<button id="conf-list-entry-form-cancel" class="red">Cancel</button>'
-          +    '<button id="conf-list-entry-form-add" class="green">Add</button>'
+        let entryFormActionHTMLString = '<div class="userscript-dialog-container">'
+          +    '<button id="dialog-form-cancel" class="userscript-btn red">Cancel</button>'
+          +    '<button id="dialog-form-add" class="userscript-btn green">Add</button>'
           + '</div>';
         entryFormElem.insertAdjacentHTML('beforeend', entryFormActionHTMLString);
-        document.getElementById('conf-list-entry-form-cancel').addEventListener('click', matcherConfigEntryFormCancelListener);
-        document.getElementById('conf-list-entry-form-add').addEventListener('click', matcherConfigEntryFormAddListener);
+        document.getElementById('dialog-form-cancel').addEventListener('click', matcherConfigEntryFormCancelListener);
+        document.getElementById('dialog-form-add').addEventListener('click', matcherConfigEntryFormAddListener);
 
         entryFormElem.dataset.type = currentTab;
     } else {
