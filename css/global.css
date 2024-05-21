@@ -156,7 +156,7 @@ input.userscript-input[type="text"] {
 }
 
 textarea.userscript-input {
-   /* width: 85%; */
+   width: 85%;
    padding: 3px;
    color: white;
    background-color: rgba(0, 0, 0, 1);
@@ -477,32 +477,32 @@ input.userscript-input[type="range"] {
    }
 }
 .conf-list-entry-action {
-   height: 2rem;
+   --entry-action-h: 2rem;
+   height: var(--entry-action-h);
    line-height: 2rem;
    text-align: center;
    background-color: black;
    box-shadow: 1px 0px 0px #1b1b1b;
    position: relative;
 }
-.conf-list-entry-action.add > .conf-list-entry-action-add {
-   display: block;
-}
+.conf-list-entry-action.add > .conf-list-entry-action-add,
 .conf-list-entry-action.modify > .conf-list-entry-action-modify {
    display: flex;
 }
-.conf-list-entry-action-add {
-   --psign-size: 1.5rem;
-   --psign-clr-purple: #4f1a98;
-   --psign-clr-hvr-purple: #9467d7;
+.conf-list-entry-action > * {
    display: none;
-   height: 100%;
+   height: var(--entry-action-h);
    width: 100%;
-   position: relative;
-
+   justify-content: space-evenly;
+}
+.conf-list-entry-action-add {
    .entry-action.add {
-      height: inherit;
+      --psign-size: 1.5rem;
+      --psign-clr-purple: #4f1a98;
+      --psign-clr-hvr-purple: #9467d7;
+      height: var(--entry-action-h);
       width: 64px;
-      margin-inline: auto;
+      position: relative;
    }
    .entry-action.add::before {
       display: block;
@@ -534,11 +534,6 @@ input.userscript-input[type="range"] {
    }
 }
 .conf-list-entry-action-modify {
-   display: none;
-   height: 100%;
-   width: 100%;
-   justify-content: space-evenly;
-
    > * {
       height: inherit;
       width: 64px;
@@ -609,11 +604,13 @@ input.userscript-input[type="range"] {
 }
 
 .loading > .userscript-loader,
-.dialog > .userscript-dialog {
+.dialog > .userscript-dialog,
+.form > .userscript-dialog-form {
       display: flex;
 }
 .userscript-loader,
-.userscript-dialog {
+.userscript-dialog,
+.userscript-dialog-form {
    padding: 5%;
    width: 90%;
    max-height: 90%;
@@ -625,6 +622,9 @@ input.userscript-input[type="range"] {
    align-items: center;
    text-align: center;
    font-size: large;
+}
+.userscript-dialog-form {
+   align-items: start;
 }
 
 .userscript-dialog-container {
