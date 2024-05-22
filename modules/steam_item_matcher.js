@@ -288,15 +288,12 @@ async function matcherConfigLoadUI() {
 }
 
 function matcherConfigSetEntryActionBar(actionBarName) {
-    let listActionElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-action');
-    if(actionBarName === 'add') {
-        listActionElem.classList.remove('modify');
-        listActionElem.classList.add('add');
-    } else if(actionBarName === 'modify') {
-        listActionElem.classList.remove('add');
-        listActionElem.classList.add('modify');
+    const validActions = ['add', 'modify'];
+    let listActionElem = MatcherConfigShortcuts.listActionBarElem;
+    if(validActions.includes(actionBarName)) {
+        listActionElem.className = 'conf-list-entry-action ' + actionBarName;
     } else {
-        console.warn('matcherConfigSetEntryActionBar(): Action bar name not implemented, nothing will change!');
+        console.warn('matcherConfigSetEntryActionBar(): Action bar name not valid, nothing will change!');
     }
 }
 
