@@ -297,24 +297,28 @@ function matcherConfigSetEntryActionBar(actionBarName) {
     }
 }
 
-// needs testing
 function matcherConfigSelectListTabListener(event) {
     console.log(event.target); // debugging
     if(!event.target.matches('.userscript-config-list-tab') || event.target.matches('.active')) {
         return;
     }
+    matcherConfigSetListTab(event.target.dataset.listName);
+}
 
-    event.currentTarget.querySelector(`.userscript-config-list-tab.active`)?.classList.remove('active');
-    event.target.classList.add('active');
-    globalSettings.matcher.currentTab = event.target.dataset.listName;
+function matcherConfigSetListTab(tabName) {
+    if(!Object.keys(globalSettings.matcher.lists).includes(tabName)) {
+        console.error('matcherConfigSetListTab(): invalid tab name!');
+        return;
+    }
+
+    MatcherConfigShortcuts.listTabListElem.querySelector(`.userscript-config-list-tab.active`)?.classList.remove('active');
+    const target = MatcherConfigShortcuts.listTabListElem.querySelector(`.userscript-config-list-tab[data-list-name=${tabName}]`);
+    target.classList.add('active');
+    globalSettings.matcher.currentTab = target.dataset.listName;
 
     if(MatcherConfigShortcuts.selectedListEntryElem) {
-        MatcherConfigShortcuts.selectedListEntryElem.classList.remove('selected');
-        MatcherConfigShortcuts.selectedListEntryElem = undefined;
-
-        MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
-        matcherConfigResetEntryForm();
-        matcherConfigSetEntryActionBar('add');
+        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
+        matcherConfigSelectListEntry(MatcherConfigShortcuts.selectedListEntryElem, true);
     }
 
     matcherConfigResetEntryForm();
