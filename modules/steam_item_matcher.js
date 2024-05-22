@@ -914,3 +914,30 @@ async function matcherMatchProfile() {
 
     loadingContainer.parentElement.classList.remove('loading');
 }
+
+function matcherSetOverlay(overlayParentElem, overlayEnable, overlayState) {
+    if(overlayEnable) {
+        overlayParentElem.classList.add('overlay');
+    } else {
+        overlayParentElem.classList.remove('overlay');
+    }
+
+    if(typeof overlayState === 'string') {
+        let overlayElem;
+        for(let childElem of overlayParentElem.children) {
+            if(childElem.matches('.userscript-overlay')) {
+                if(overlayElem) {
+                    console.warn('matcherSetOverlay(): Multiple overlay elements detected on same parent!');
+                }
+                overlayElem = childElem;
+            }
+        }
+
+        if(!overlayElem) {
+            console.warn('matcherSetOverlay(): No overlay element found in immediate children!');
+            return;
+        }
+
+        overlayElem.className = 'userscript-overlay ' + overlayState;
+    }
+}
