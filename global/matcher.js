@@ -251,8 +251,8 @@ let Matcher = {
                 let bin2vardiff = -bin2_i_elem[1]     +bin2[j][1] +1;
 
                 let isNeutralOrGood = (bin1vardiff<=0 && bin2vardiff<=0) && !(bin1vardiff===0 && bin2vardiff===0);
-                let isHelpful = helper && bin2vardiff<0;
-                if(isNeutralOrGood || isHelpful) {
+                let isHelpful = bin2vardiff<0;
+                if(helper ? isHelpful : isNeutralOrGood) {
                     bin1[i][1]++;
                     binReorder(bin1, i, lowToHigh, true, binIndices, 0);
                     bin1_j_elem[1]--;
