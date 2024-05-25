@@ -942,3 +942,69 @@ function matcherSetOverlay(overlayParentElem, overlayEnable, overlayState) {
         overlayElem.className = 'userscript-overlay ' + overlayState;
     }
 }
+
+async function getASFProfiles() {
+    const REQUEST_URL = 'https://asf.justarchi.net/Api/Listing/Bots';
+    const MATCHABLE_TYPES = {
+        "2": 'emoticon',
+        "3": 'card',
+        "4": 'background',
+        "5": 'card'
+    }
+
+    let result = await new Promise((resolve, reject) => {
+        const resolveError = (mssg) => {
+            console.error(mssg);
+            resolve();
+        };
+
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: REQUEST_URL,
+            onload(response) {
+                if(response.status !== 200) {
+                    resolveError('getASFProfiles(): Status code ' + response.status);
+                }
+
+                // NOTE: avoid using 'SteamID' property (always exceeds MAX_SAFE_INTEGER, therefore incorrect value)
+                let datalist = JSON.parse(response.response);
+                if(!datalist.Success) {
+                    resolveError('getASFProfiles(): Response object not successful!');
+                }
+                datalist = datalist.Result;
+                for(let i=0; i<datalist.length; ++i) {
+                    let profileData = datalist[i];
+                    let cardTypes = (profileData.MatchableTypes.includes(5) ? 1 : 0)
+                      + (profileData.MatchableTypes.includes(3) ? 2 : 0)
+
+                    datalist[i] = {
+                        id: profileData.SteamIDText,
+                        name: profileData.Nickname,
+                        pfp: profileData.AvatarHash,
+                        tradeToken: profileData.TradeToken,
+                        matchTypes: profileData.MatchableTypes.map(x => MATCHABLE_TYPES[x]),
+                        matchAny: profileData.MatchEverything,
+                        matchTradeholdMax: profileData.MaxTradeHoldDuration,
+                        matchCardTypes: cardTypes,
+                        countGame: profileData.TotalGamesCount,
+                        countInventory: profileData.TotalInventoryCount,
+                        countTradables: profileData.TotalItemsCount
+                    }
+                }
+
+                resolve(datalist);
+            },
+            onerror(response) {
+                resolveError('getASFProfiles(): Error requesting ASF profiles!');
+            },
+            onabort(response) {
+                resolveError('getASFProfiles(): Aborted!');
+            },
+            ontimeout(response) {
+                resolveError('getASFProfiles(): Request timeout!');
+            }
+        });
+    });
+
+    return result;
+}

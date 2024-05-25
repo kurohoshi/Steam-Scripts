@@ -8,7 +8,8 @@
 // @exclude      https://steamcommunity.com/chat/
 // @exclude      https://steamcommunity.com/tradeoffer/
 // @icon         https://avatars.akamai.steamstatic.com/5d8f69062e0e8f51e500cecc6009547675ebc93c_full.jpg
-// @grant        GM.xmlHttpRequest
+// @connect      asf.justarchi.net
+// @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        GM_log
 // ==/UserScript==
