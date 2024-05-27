@@ -740,19 +740,28 @@ function matcherConfigFullMatchListener() {
 }
 
 async function matcherConfigSingleMatchListener() {
-    // verify that the provided profileid/customurl is valid, cancel if invalid
-    // check if settings are the same in db, prompt user to save if they want
-    // generate matcher page with a loading animation
-    // defer to an in-progress matching function
-    MatcherConfigShortcuts.configMenu.classList.add('overlay');
+    MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
+
     MatcherConfigShortcuts.matchSingleProfileProfileid.value = MatcherConfigShortcuts.matchSingleProfileProfileid.value.trim();
     let profile = await Profile.findProfile(MatcherConfigShortcuts.matchSingleProfileProfileid.value);
     if(!profile || (await profile.isMe())) {
         alert('Invalid profile!');
-        MatcherConfigShortcuts.configMenu.classList.remove('overlay');
+        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
+        MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
         return;
     }
 
+    if( !(await matcherVerifyConfigSave()) ) {
+        return;
+    }
+
+    MatcherConfigShortcuts.matchProfileGroups = { single: [profile.id] };
+
+    await matcherStartMatching(['single']);
+}
+
+async function matcherVerifyConfigSave() {
     let savedConfig = await SteamToolsDbManager.getToolConfig('matcher');
     if(JSON.stringify(globalSettings.matcher) !== JSON.stringify(savedConfig.matcher)) {
         let userPrompt = prompt('WARNING: Settings have not been saved! Save now? (y/n/cancel)');
@@ -761,18 +770,19 @@ async function matcherConfigSingleMatchListener() {
             console.log('matcherConfigSingleMatchListener(): Saved Settings. Continuing to matching process...');
         } else if(!userPrompt[0].localeCompare('n', 'en', { sensitivity: 'base' })) {
             console.log('matcherConfigSingleMatchListener(): Settings will not be saved. Continuing to matching process...');
-        } else if(!userPrompt[0].localeCompare('c', 'en', { sensitivity: 'base' })) {
-            console.log('matcherConfigSingleMatchListener(): Cancelled. Matching will not continue...');
-            MatcherConfigShortcuts.configMenu.classList.remove('overlay');
-            return;
         } else {
-            console.log('matcherConfigSingleMatchListener(): Invalid input. Matching will not continue...');
-            MatcherConfigShortcuts.configMenu.classList.remove('overlay');
-            return;
+            if(!userPrompt[0].localeCompare('c', 'en', { sensitivity: 'base' })) {
+                console.log('matcherConfigSingleMatchListener(): Cancelled. Matching will not continue...');
+            } else {
+                console.log('matcherconfigsinglematchlistener(): invalid input. matching will not continue...');
+            }
+            matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
+            MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
+            return false;
         }
     }
 
-    await matcherStartMatching(profile);
+    return true;
 }
 
 async function matcherStartMatching(profile) {
