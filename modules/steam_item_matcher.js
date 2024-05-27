@@ -175,10 +175,12 @@ async function gotoMatcherConfigPage() {
 
     // element shortcuts
     MatcherConfigShortcuts.configMenu = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config');
-    MatcherConfigShortcuts.listActionBarElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-action');
-    MatcherConfigShortcuts.listFormContainerElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-form-container');
-    MatcherConfigShortcuts.listOverlayElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-overlay');
-    MatcherConfigShortcuts.listDialogElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-dialog');
+    MatcherConfigShortcuts.listContainer = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list');
+    MatcherConfigShortcuts.listTabListElem = MatcherConfigShortcuts.listContainer.querySelector('.userscript-config-list-header.tabs');
+    MatcherConfigShortcuts.listActionBarElem = MatcherConfigShortcuts.listContainer.querySelector('.conf-list-entry-action');
+    MatcherConfigShortcuts.listContentsElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-list');
+    MatcherConfigShortcuts.listDialogElem = MatcherConfigShortcuts.listContentsElem.querySelector('.userscript-dialog');
+    MatcherConfigShortcuts.listFormElem = MatcherConfigShortcuts.listContentsElem.querySelector('.userscript-dialog-form');
     MatcherConfigShortcuts.listElems = {};
     for(let entryGroup in globalSettings.matcher.lists) {
         MatcherConfigShortcuts.listElems[entryGroup] = MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.userscript-config-list-entry-group[data-list-name=${entryGroup}]`);
