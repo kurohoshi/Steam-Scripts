@@ -235,7 +235,7 @@ async function matcherConfigLoadUI() {
 
                 let tradeTokenWarning = listName === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
                 let entryHTMLString = `<div class="userscript-config-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
-                  +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar offline">`
+                  +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar ${profile.getStateString()}">`
                   +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
                   +    '</a>'
                   +    `<div class="conf-list-entry-name" title="${profile.name}" >${profile.name}</div>`
@@ -248,8 +248,10 @@ async function matcherConfigLoadUI() {
                 let appdata = await Profile.findAppMetaData(data.appid);
                 if(!appdata) {
                     entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${data.appid}" data-name="">`
-                      +    '<a class="app-header"></a>'
-                      +    `<div class="conf-list-entry-profile">${data.appid}</div>`
+                      +    '<a class="app-header">'
+                      +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
+                      +    '</a>'
+                      +    `<div class="conf-list-entry-profile">appid-${data.appid}</div>`
                       +    `<div class="conf-list-entry-descript">${data.descript}</div>`
                       + '</div>';
                 } else {
@@ -550,7 +552,7 @@ async function matcherConfigEntryFormAddListener(event) {
                     let entryGroupElem = MatcherConfigShortcuts.listElems[currentTab];
                     let tradeTokenWarning = currentTab === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
                     let entryHTMLString = `<div class="userscript-config-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
-                      +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar offline">`
+                      +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar ${profile.getStateString()}">`
                       +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
                       +    '</a>'
                       +    `<div class="conf-list-entry-name" title="${profile.name}" >${profile.name}</div>`
@@ -593,7 +595,9 @@ async function matcherConfigEntryFormAddListener(event) {
                 // no appdata exists, could possibly mean that community data was nuked (eg 梦中女孩) even if the items still exist
                 // therefore don't reject entry submission and add entry
                 let entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${appid}" data-name="">`
-                  +    '<a class="app-header"></a>'
+                  +    `<a class="app-header">`
+                  +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
+                  +    '</a>'
                   +    `<div class="conf-list-entry-profile">${appid}</div>`
                   +    `<div class="conf-list-entry-descript">${description}</div>`
                   + '</div>';
