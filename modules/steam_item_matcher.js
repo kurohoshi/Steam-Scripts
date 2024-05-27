@@ -194,7 +194,7 @@ async function gotoMatcherConfigPage() {
     document.getElementById('userscript-config-reset').addEventListener('click', matcherConfigLoadListener);
     document.getElementById('userscript-config-save').addEventListener('click', matcherConfigSaveListener);
     MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-header').addEventListener('click', matcherConfigSelectListTabListener);
-    document.getElementById('entry-action-add').addEventListener('click', matcherConfigAddListEntryListener);
+    document.getElementById('entry-action-add').addEventListener('click', matcherConfigToggleEntryFormListener);
     document.getElementById('entry-action-edit').addEventListener('click', matcherConfigEditListEntryListener);
     document.getElementById('entry-action-del').addEventListener('click', matcherConfigDeleteListEntryListener);
     MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-entries').addEventListener('click', matcherConfigSelectListEntryListener);
@@ -231,6 +231,7 @@ async function matcherConfigLoadUI() {
                 let profile = await Profile.findProfile(data.profileid);
                 if(!profile) {
                     console.warn('matcherConfigLoadUI(): No profile found, skipping this entry...');
+                    continue;
                 }
 
                 let tradeTokenWarning = listName === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
@@ -265,7 +266,7 @@ async function matcherConfigLoadUI() {
                 }
 
 
-                entriesHTMLString.push({ key1: appdata?.name ?? '', key2: data.appid, string: entryHTMLString });
+                entriesHTMLString.push({ key1: appdata?.name, key2: data.appid, string: entryHTMLString });
             } else {
                 console.warn('matcherConfigLoadUI(): HTML generation for a list not implemented, that list will be empty!');
                 break;
@@ -273,7 +274,7 @@ async function matcherConfigLoadUI() {
         }
 
         if(listName === 'applist') {
-            entriesHTMLString.sort((a, b) => a.key1==='' ? a.key2-b.key2 : a.key1-b.key1);
+            entriesHTMLString.sort((a, b) => !a.key1 ? a.key2-b.key2 : a.key1-b.key1);
         }
 
         entryGroupElem.insertAdjacentHTML('afterbegin', entriesHTMLString.reduce((str, entry) => str+entry.string, ''));
@@ -281,8 +282,7 @@ async function matcherConfigLoadUI() {
 
     // set active tab
     if(globalSettings.matcher.currentTab) {
-        MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.userscript-config-list-tab[data-list-name=${globalSettings.matcher.currentTab}]`).classList.add('active');
-        matcherConfigShowActiveList();
+        matcherConfigSetListTab(globalSettings.matcher.currentTab);
     }
 
     matcherConfigResetEntryForm();
@@ -386,7 +386,7 @@ function matcherConfigShowActiveList() {
 function matcherConfigSelectListEntryListener(event) {
     console.log(event.target);
     let entryElem = event.target;
-    while (!entryElem.matches('.userscript-config-list-entries')) {
+    while(!entryElem.matches('.userscript-config-list-entries')) {
         if(entryElem.matches('.userscript-config-list-entry')) {
             break;
         } else {
@@ -418,7 +418,6 @@ function matcherConfigSelectListEntry(entryElem, toggle = true) {
     }
 }
 
-// needs testing
 function matcherConfigUpdateChecklistListener(event) {
     console.log(event.currentTarget); // debugging
     if(!event.target.matches('input')) {
@@ -430,18 +429,18 @@ function matcherConfigUpdateChecklistListener(event) {
     for(let group of Object.values(globalSettings.matcher.config)) {
         if(group.id === groupId) {
             group.options.find(x => x.id === optionId).value = event.target.checked;
+            break;
         }
     }
 }
 
 // add new config list entry, populated input values persist when form is minimized
-function matcherConfigAddListEntryListener(event) {
+function matcherConfigToggleEntryFormListener(event) {
     matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, !MatcherConfigShortcuts.listContentsElem.matches('.overlay'), 'form');
 }
 
-// modify selected HTML that is selected
+// edit selected entry, prefilled with selected entry info
 function matcherConfigEditListEntryListener(event) {
-    /* edit selected entry, prefilled with selected entry info */
     let currentTab = globalSettings.matcher.currentTab;
     if(MatcherConfigShortcuts.listContentsElem.matches('.overlay') && MatcherConfigShortcuts.listContentsElem.querySelector('> .userscript-overlay')?.matches('.form')) {
         matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
@@ -467,10 +466,10 @@ function matcherConfigEditListEntryListener(event) {
     matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'form');
 }
 
-// delete selected HTML elements
+// remove selected entry
 function matcherConfigDeleteListEntryListener(event) {
     if(!MatcherConfigShortcuts.selectedListEntryElem) {
-        console.log('matcherConfigDeleteListEntryListener(): No entry selected, nothing is removed...');
+        console.log('matcherConfigDeleteListEntryListener(): No entry selected, nothing will be removed...');
         return;
     }
     let listGroup = MatcherConfigShortcuts.selectedListEntryElem.parentElement.dataset.listName;
@@ -524,7 +523,7 @@ async function matcherConfigEntryFormAddListener(event) {
 
         if(profileEntry) {
             // app found: prompt user if they want to overwrite existing data
-            let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.userscript-config-list-entry[data-profileid="${profileEntry.profileid}"]`);
+            let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`[data-profileid="${profileEntry.profileid}"]`);
             MatcherConfigShortcuts.entryEditOld = profileEntry;
             MatcherConfigShortcuts.entryEditNew = { descript: description };
             matcherConfigSelectListEntry(selectedEntryElem, false);
@@ -539,7 +538,7 @@ async function matcherConfigEntryFormAddListener(event) {
                 profileEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.profileid === profile.id);
                 if(profileEntry) {
                     // app found: prompt user if they want to overwrite existing data
-                    let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.userscript-config-list-entry[data-profileid="${profileEntry.profileid}"]`);
+                    let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`[data-profileid="${profileEntry.profileid}"]`);
                     MatcherConfigShortcuts.entryEditOld = profileEntry;
                     MatcherConfigShortcuts.entryEditNew = { descript: description };
                     matcherConfigSelectListEntry(selectedEntryElem, false);
