@@ -209,13 +209,12 @@ async function gotoMatcherConfigPage() {
 }
 
 async function matcherConfigLoadUI() {
-    MatcherConfigShortcuts.listOverlayElem.classList.add('active');
-
-    const configMenuElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config');
-    if(!configMenuElem) {
+    if(!MatcherConfigShortcuts.configMenu) {
         console.warn('updateMatcherConfigUI(): Config menu not found, UI will not be updated');
         return;
     }
+
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
 
     for(let optionGroup of Object.values(globalSettings.matcher.config)) {
         for(let option of optionGroup.options) {
@@ -286,7 +285,7 @@ async function matcherConfigLoadUI() {
 
     matcherConfigResetEntryForm();
 
-    MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
 }
 
 function matcherConfigSetEntryActionBar(actionBarName) {
@@ -330,7 +329,7 @@ function matcherConfigSetListTab(tabName) {
 function matcherConfigResetEntryForm() {
     let currentTab = globalSettings.matcher.currentTab;
 
-    let entryFormElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-form');
+    let entryFormElem = MatcherConfigShortcuts.listFormElem;
     let currentFormType = entryFormElem.dataset.type;
 
     if(currentFormType !== currentTab) {
@@ -373,7 +372,7 @@ function matcherConfigResetEntryForm() {
 
 function matcherConfigShowActiveList() {
     let currentTab = globalSettings.matcher.currentTab;
-    for(let listGroup of MatcherConfigShortcuts.MAIN_ELEM.querySelectorAll(`.userscript-config-list-entry-group`)) {
+    for(let listGroup of Object.values(MatcherConfigShortcuts.listElems)) {
         if(currentTab !== listGroup.dataset.listName) {
             listGroup.classList.remove('active');
         } else {
@@ -435,15 +434,15 @@ function matcherConfigUpdateChecklistListener(event) {
 
 // add new config list entry, populated input values persist when form is minimized
 function matcherConfigAddListEntryListener(event) {
-    MatcherConfigShortcuts.listFormContainerElem.classList.toggle('active');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, !MatcherConfigShortcuts.listContentsElem.matches('.overlay'), 'form');
 }
 
 // modify selected HTML that is selected
 function matcherConfigEditListEntryListener(event) {
     /* edit selected entry, prefilled with selected entry info */
     let currentTab = globalSettings.matcher.currentTab;
-    if(MatcherConfigShortcuts.listFormContainerElem.matches('.active')) {
-        MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
+    if(MatcherConfigShortcuts.listContentsElem.matches('.overlay') && MatcherConfigShortcuts.listContentsElem.querySelector('> .userscript-overlay')?.matches('.form')) {
+        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
         return;
     }
 
@@ -463,7 +462,7 @@ function matcherConfigEditListEntryListener(event) {
         return;
     }
 
-    MatcherConfigShortcuts.listFormContainerElem.classList.add('active');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'form');
 }
 
 // delete selected HTML elements
@@ -510,9 +509,9 @@ async function matcherConfigEntryFormAddListener(event) {
 
     if(currentTab==='matchlist' || currentTab==='blacklist') {
         MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
-        MatcherConfigShortcuts.listOverlayElem.classList.add('active');
+        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
 
-        const formElem = MatcherConfigShortcuts.listFormContainerElem.querySelector('.conf-list-entry-form');
+        const formElem = MatcherConfigShortcuts.listFormElem;
         let profileValue = formElem.querySelector('#entry-form-id').value;
         let description = formElem.querySelector('#entry-form-descript').value;
         let profileEntry;
@@ -530,7 +529,7 @@ async function matcherConfigEntryFormAddListener(event) {
             document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
             document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
             document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
-            MatcherConfigShortcuts.listDialogElem.classList.add('active');
+            matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading dialog');
             return;
         } else {
             let profile = await Profile.findProfile(profileValue);
@@ -545,7 +544,7 @@ async function matcherConfigEntryFormAddListener(event) {
                     document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
                     document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
                     document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
-                    MatcherConfigShortcuts.listDialogElem.classList.add('active');
+                    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading dialog');
                     return;
                 } else {
                     let entryGroupElem = MatcherConfigShortcuts.listElems[currentTab];
@@ -566,14 +565,13 @@ async function matcherConfigEntryFormAddListener(event) {
             }
         }
 
-        MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
-        MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
+        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
         MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
     } else if(currentTab === 'applist') {
         MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
-        MatcherConfigShortcuts.listOverlayElem.classList.add('active');
+        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
 
-        const formElem = MatcherConfigShortcuts.listFormContainerElem.querySelector('.conf-list-entry-form');
+        const formElem = MatcherConfigShortcuts.listFormElem;
         let appid = parseInt(formElem.querySelector('#entry-form-id').value);
         let description = formElem.querySelector('#entry-form-descript').value;
         let appidEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.appid === appid);
@@ -587,7 +585,7 @@ async function matcherConfigEntryFormAddListener(event) {
             document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
             document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
             document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
-            MatcherConfigShortcuts.listDialogElem.classList.add('active');
+            matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading dialog');
             return;
         } else {
             let appdata = await Profile.findAppMetaData(appid);
@@ -623,8 +621,7 @@ async function matcherConfigEntryFormAddListener(event) {
                 globalSettings.matcher.lists[currentTab].data.splice(entryIndex - 1, 0, { appid: appdata.appid, descript: description });
             }
 
-            MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
-            MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
+            matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
             MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
         }
     } else {
@@ -635,25 +632,23 @@ async function matcherConfigEntryFormAddListener(event) {
 function matcherConfigEntryFormCancelListener(event) {
     let currentTab = globalSettings.matcher.currentTab;
     if(currentTab === 'matchlist' || currentTab === 'blacklist') {
-        MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = '';
-        MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = '';
+        MatcherConfigShortcuts.listContainer.querySelector('#entry-form-id').value = '';
+        MatcherConfigShortcuts.listContainer.querySelector('#entry-form-descript').value = '';
     } else if(currentTab === 'applist') {
-        MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = '';
-        MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = '';
+        MatcherConfigShortcuts.listContainer.querySelector('#entry-form-id').value = '';
+        MatcherConfigShortcuts.listContainer.querySelector('#entry-form-descript').value = '';
     } else {
         console.warn('matcherConfigEntryFormCancelListener(): Entry form cancel not implemented, form will not be cleared!');
     }
 
-    MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
 }
 
 function matcherConfigListDialogCancelListener(event) {
-    MatcherConfigShortcuts.listDialogElem.classList.remove('active');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'form');
     document.getElementById('conf-list-entry-old').innerHTML = '';
     document.getElementById('conf-list-entry-new').innerHTML = '';
-    MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
     MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
-    //MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
     MatcherConfigShortcuts.entryEditOld = undefined;
     MatcherConfigShortcuts.entryEditNew = undefined;
 }
@@ -661,12 +656,10 @@ function matcherConfigListDialogCancelListener(event) {
 function matcherConfigListDialogConfirmListener(event) {
     Object.assign(MatcherConfigShortcuts.entryEditOld, MatcherConfigShortcuts.entryEditNew);
     MatcherConfigShortcuts.selectedListEntryElem.innerHTML = document.getElementById('conf-list-entry-new').innerHTML;
-    MatcherConfigShortcuts.listDialogElem.classList.remove('active');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
     document.getElementById('conf-list-entry-old').innerHTML = '';
     document.getElementById('conf-list-entry-new').innerHTML = '';
-    MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
     MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
-    MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
     matcherConfigResetEntryForm();
     MatcherConfigShortcuts.entryEditOld = undefined;
     MatcherConfigShortcuts.entryEditNew = undefined;
