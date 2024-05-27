@@ -724,10 +724,11 @@ async function matcherConfigLoadListener() {
 }
 
 function matcherConfigResetDefaultListener() {
-    // prompt user to confirm action
-
-    globalSettings.matcher = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcher);
-    matcherConfigLoadUI();
+    let promptInput = prompt('WARNING: This will reset all config options back to default and all the lists will be earased. Proceed? (y/n)');
+    if(promptInput.toLowerCase().startsWith('y')) {
+        globalSettings.matcher = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcher);
+        matcherConfigLoadUI();
+    }
 }
 
 function matcherConfigFullMatchListener() {
