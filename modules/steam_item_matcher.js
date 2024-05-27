@@ -318,9 +318,9 @@ function matcherConfigSetListTab(tabName) {
     const target = MatcherConfigShortcuts.listTabListElem.querySelector(`.userscript-config-list-tab[data-list-name=${tabName}]`);
     target.classList.add('active');
     globalSettings.matcher.currentTab = target.dataset.listName;
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
 
     if(MatcherConfigShortcuts.selectedListEntryElem) {
-        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
         matcherConfigSelectListEntry(MatcherConfigShortcuts.selectedListEntryElem, true);
     }
 
