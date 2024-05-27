@@ -731,12 +731,66 @@ function matcherConfigResetDefaultListener() {
     }
 }
 
-function matcherConfigFullMatchListener() {
-    console.warn('matcherConfigFullMatchListener(): Not Implemented Yet!');
+async function matcherConfigFullMatchListener() {
+    MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
 
-    // check if settings are the same in db, prompt user to save if they want
-    // generate matcher page with a loading animation
-    // defer to an in-progress matching function
+    let settings = globalSettings.matcher.config;
+    let blacklist = settings.ignoreGroup.options.find(x => x.name==='blacklist').value
+      ? globalSettings.matcher.lists.blacklist.data
+      : [];
+    let profileGroups = {};
+    let asfBots; // save in iDB, include match priority ranking
+
+    for(let matchGroup of settings.matchGroup.options) {
+        if(!matchGroup.value) {
+            continue;
+        }
+
+        let groupProfiles = profileGroups[matchGroup.name] = [];
+
+        if(matchGroup.name === 'friends') {
+            if(!Profile.me) {
+                await Profile.findProfile(steamToolsUtils.getMySteamId());
+            }
+            if(!Profile.me.friends || !Profile.me.friends.length) {
+                await Profile.me.getTradeFriends();
+            }
+            for(let profile of Profile.me.friends) {
+                groupProfiles.push(profile);
+            }
+        } else if(matchGroup.name === 'asfAny') {
+            asfBots ??= await getASFProfiles();
+            for(let botEntry of asfBots) {
+                if(!botEntry.matchAny) {
+                    continue;
+                }
+
+                Profile.addTradeURL({ partner: botEntry.id, token: botEntry.tradeToken });
+                groupProfiles.push(botEntry.id);
+            }
+        } else if(matchGroup.name === 'asfFair') {
+            asfBots ??= await getASFProfiles();
+            for(let botEntry of asfBots) {
+                if(botEntry.matchAny) {
+                    continue;
+                }
+
+                Profile.addTradeURL({ partner: botEntry.id, token: botEntry.tradeToken });
+                groupProfiles.push(botEntry.id);
+            }
+        } else if(matchGroup.name === 'custom') {
+            for(let profileEntry of globalSettings.matcher.lists.matchlist.data) {
+                groupProfiles.push(profileEntry.profileid);
+            }
+        } else {
+            console.warn(`matcherConfigFullMatchListener(): Match Group '${matchGroup.name}' profile list processing not implemented, skipped!`);
+        }
+    }
+
+    MatcherConfigShortcuts.matchProfileGroups = profileGroups;
+
+    await matcherStartMatching(Object.keys(profileGroups));
 }
 
 async function matcherConfigSingleMatchListener() {
@@ -785,7 +839,7 @@ async function matcherVerifyConfigSave() {
     return true;
 }
 
-async function matcherStartMatching(profile) {
+async function matcherStartMatching(profileGroups) {
     const generateMatchGroupString = (groupName) => `<div class="match-group" data-group="${groupName}"></div>`;
     const generateMatchNameHeaderString = (profile, reverseDirection = false) => {
         return `<div class="match-name${reverseDirection ? ' align-right' : ''}">`
