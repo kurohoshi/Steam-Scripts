@@ -619,7 +619,11 @@ async function matcherConfigEntryFormAddListener(event) {
                   +    `<div class="conf-list-entry-descript">${description}</div>`
                   + '</div>';
 
-                insertBeforeThisEntry.insertAdjacentHTML('beforebegin', entryHTMLString);
+                if(insertBeforeThisEntry) {
+                    insertBeforeThisEntry.insertAdjacentHTML('beforebegin', entryHTMLString);
+                } else {
+                    MatcherConfigShortcuts.listElems[currentTab].insertAdjacentHTML('afterbegin', entryHTMLString);
+                }
                 let entryIndex = globalSettings.matcher.lists[currentTab].data.findIndex(x => x.appid === parseInt(insertBeforeThisEntry.dataset.appid));
                 globalSettings.matcher.lists[currentTab].data.splice(entryIndex - 1, 0, { appid: appdata.appid, descript: description });
             }
