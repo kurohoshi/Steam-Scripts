@@ -1,4 +1,5 @@
 const badgepageFilterShortcuts = {};
+const badgepageFilterPageData = {};
 
 function getCardStock(pageElem) {
     if(!pageElem.querySelector('.badge_card_set_cards')) {
@@ -15,7 +16,7 @@ function getCardStock(pageElem) {
 }
 
 async function setupBadgepageFilter() {
-    globalSettings.badgepageFilter = {
+    Object.assign(badgepageFilterPageData, {
         itemIds: {},
         cardInfoList: [],
         appid: document.querySelector('a.whiteLink:nth-child(5)').href.match(/\d+(?=\/$)/g)[0],
@@ -24,9 +25,9 @@ async function setupBadgepageFilter() {
         myCardStock: getCardStock(document),
         myMissingCards: new Set(),
         myPossibleCards: new Set()
-    };
+    });
 
-    let { myCardStock, myMissingCards, myPossibleCards } = globalSettings.badgepageFilter;
+    let { myCardStock, myMissingCards, myPossibleCards } = badgepageFilterPageData;
     for(let i=0; i<myCardStock.length; i++) {
         if(myCardStock[i]>=2) {
             myPossibleCards.add(i);
@@ -37,7 +38,7 @@ async function setupBadgepageFilter() {
 
     for(let cardEntry of document.querySelectorAll('.badge_card_set_card')) {
         let textNodes = cardEntry.querySelector('.badge_card_set_text').childNodes;
-        globalSettings.badgepageFilter.cardInfoList.push({
+        badgepageFilterPageData.cardInfoList.push({
             name: textNodes[textNodes.length-3].textContent.trim(),
             img: cardEntry.querySelector('img').src
         });
@@ -46,7 +47,7 @@ async function setupBadgepageFilter() {
     for(let missingCardElem of document.querySelectorAll('.badge_card_to_collect')) {
         let itemId = parseInt(missingCardElem.querySelector('img').id.slice(9));
         let index = parseInt(missingCardElem.querySelector('.badge_card_collect_text > :last-child').textContent.match(/\d+/)) - 1;
-        globalSettings.badgepageFilter.itemIds[index] = itemId;
+        badgepageFilterPageData.itemIds[index] = itemId;
     }
 
     addSvgBlock(document.getElementById('responsive_page_template_content'));
@@ -105,7 +106,7 @@ async function badgepageFilterFetchFriend(profileContainerElem) {
         return { lowestCards, possibleCards };
     };
 
-    let { friendsCardStock, isFoilPage, myMissingCards, myPossibleCards } = globalSettings.badgepageFilter;
+    let { friendsCardStock, isFoilPage, myMissingCards, myPossibleCards } = badgepageFilterPageData;
     let profileElem = profileContainerElem.querySelector('.persona');
     let profileUrl = profileElem.href.match(/(id|profiles)\/[^/]+$/g);
 
@@ -154,7 +155,7 @@ async function badgepageFilterFetchFriend(profileContainerElem) {
 async function badgepageFilterFilterFriendsWithCardsListener() {
     document.getElementById('friend-filter').disabled = true;
 
-    let { friendsCardStock } = globalSettings.badgepageFilter;
+    let { friendsCardStock } = badgepageFilterPageData;
 
     for(let missingCardElem of document.querySelectorAll('.badge_card_to_collect')) {
         let index = missingCardElem.querySelector('.badge_card_collect_text').lastElementChild.textContent.match(/^\d+/g)[0];
@@ -178,11 +179,11 @@ async function badgepageFilterFilterFriendsWithCardsListener() {
 // provides only mutually beneficial matches with any duplicates cards being fair game
 async function badgepageFilterShowGoodSwapsListener() {
     const generateMatchItemsHTMLString = (indices, priority) => {
-        let { cardInfoList } = globalSettings.badgepageFilter;
+        let { cardInfoList } = badgepageFilterPageData;
         return indices.map(x => `<div class="match-item${priority.has(x) ? ' good' : ''}" title="${cardInfoList[x].name}"><img src="${cardInfoList[x].img + '/96fx96f?allow_animated=1'}" alt="${cardInfoList[x].name}"></div>`).join('');
     };
     const generateMatchRowHTMLString = (profileid3, index, goodMatches, priority) => {
-        let { appid, itemIds } = globalSettings.badgepageFilter;
+        let { appid, itemIds } = badgepageFilterPageData;
         return '<div class="match-item-row align-right">'
         +    '<div class="match-item-list left">'
         +       generateMatchItemsHTMLString(goodMatches, priority)
@@ -205,7 +206,7 @@ async function badgepageFilterShowGoodSwapsListener() {
     badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
     badgepageFilterShortcuts.main.classList.add('loading');
 
-    let { friendsCardStock } = globalSettings.badgepageFilter;
+    let { friendsCardStock } = badgepageFilterPageData;
     let processedFriends = new Set();
     let goodSwapListElem = document.querySelector('#good-swaps-results > .enhanced-body');
 
@@ -268,7 +269,7 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
     badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
     badgepageFilterShortcuts.main.classList.add('loading');
 
-    let { myCardStock, friendsCardStock } = globalSettings.badgepageFilter;
+    let { myCardStock, friendsCardStock } = badgepageFilterPageData;
     let processedFriends = new Set();
     let balanceMatchingListElem = document.querySelector(`#${elemId} > .enhanced-body`);
 
@@ -300,7 +301,7 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
 }
 
 function badgepageFilterGenerateMatchResultHTML(profileData, balanceResult) {
-    let { cardInfoList } = globalSettings.badgepageFilter;
+    let { cardInfoList } = badgepageFilterPageData;
 
     const generateMatchItemHTMLString = (qty, i) => {
         return `<div class="match-item" data-qty="${Math.abs(qty)}" title="${cardInfoList[i].name}">`
