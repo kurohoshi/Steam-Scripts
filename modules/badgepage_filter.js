@@ -74,7 +74,7 @@ async function setupBadgepageFilter() {
     document.getElementById('help-others').addEventListener('click', badgepageFilterHelpOthersListener);
 }
 
-async function badgepageFilterFetchFriend(profileContainerElem) {
+async function badgepageFilterFetchFriend(target) {
     const getPossibleMatches = (stock, partnerMissingCards, partnerPossibleCards) => {
         let minVal = Math.min(...stock);
         let lowestCards = new Set(stock.reduce((arr, x, i) => {
@@ -106,13 +106,14 @@ async function badgepageFilterFetchFriend(profileContainerElem) {
         return { lowestCards, possibleCards };
     };
 
-    let { friendsCardStock, isFoilPage, myMissingCards, myPossibleCards } = badgepageFilterPageData;
-    let profileElem = profileContainerElem.querySelector('.persona');
-    let profileUrl = profileElem.href.match(/(id|profiles)\/[^/]+$/g);
+    let { friendsCardStock, isFoilPage, myMissingCards, myPossibleCards, appid } = badgepageFilterPageData;
+    let profileUrl = target === 'string'
+      ? target
+      : target.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g);
 
     if(!Object.hasOwn(friendsCardStock, profileUrl)) {
-        let [steamId3, appid, itemId] = profileContainerElem.querySelector('.btn_grey_grey ').onclick.toString().match(/\d+/g);
-        let profileBadgepageLink = profileElem.href + '/gamecards/' + appid + '/' + (isFoilPage ? '?border=1' : '');
+        // let [steamId3, appid, itemId] = profileContainerElem.querySelector('.btn_grey_grey ').onclick.toString().match(/\d+/g);
+        let profileBadgepageLink = 'https://steamcommunity.com/' + profileUrl + '/gamecards/' + appid + '/' + (isFoilPage ? '?border=1' : '');
         let response = await fetch(profileBadgepageLink);
 
         let parser = new DOMParser();
@@ -139,7 +140,7 @@ async function badgepageFilterFetchFriend(profileContainerElem) {
         friendsCardStock[profileUrl] = {
             id3: steamId3,
             name: profileName,
-            profileLink: profileElem.href,
+            profileLink: 'https://steamcommunity.com/' + profileUrl,
             pfp: profileImgLink,
             state: profileState,
             stock: profileCardStock,
