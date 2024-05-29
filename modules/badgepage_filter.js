@@ -215,14 +215,14 @@ async function badgepageFilterShowGoodSwapsListener() {
     const generateMatchRowHTMLString = (profileid3, index, goodMatches, priority) => {
         let { appid, itemIds } = badgepageFilterPageData;
         return '<div class="match-item-row align-right">'
-        +    '<div class="match-item-list left">'
-        +       generateMatchItemsHTMLString(goodMatches, priority)
-        +    '</div>'
-        +    `<div class="match-item-action trade" title="Offer a Trade..." onclick="StartTradeOffer( ${profileid3}, {for_tradingcard: '${appid + '_' + itemIds[index]}'} );"></div>`
-        +    '<div class="match-item-list right">'
-        +       generateMatchItemsHTMLString([index], priority)
-        +    '</div>'
-        + '</div>';
+          +    '<div class="match-item-list left">'
+          +       generateMatchItemsHTMLString(goodMatches, priority)
+          +    '</div>'
+          +    `<div class="match-item-action trade" title="Offer a Trade..." onclick="StartTradeOffer( ${profileid3}, {for_tradingcard: '${appid + '_' + itemIds[index]}'} );"></div>`
+          +    '<div class="match-item-list right">'
+          +       generateMatchItemsHTMLString([index], priority)
+          +    '</div>'
+          + '</div>';
     };
     const generateMatchRowsHTMLString = (profileid3, matches, priority) => matches.map((x, i) => x.length ? generateMatchRowHTMLString(profileid3, i, x, priority) : '').join('');
     async function checkAndDisplayPossibleSingleSwaps(profileUrlString) {
@@ -239,18 +239,18 @@ async function badgepageFilterShowGoodSwapsListener() {
         }
 
         let profileGoodSwapHTMLString = '<div class="match-container-outer">'
-        +    '<div class="match-container max3">'
-        +       '<div class="match-header">'
-        +          '<div class="match-name">'
-        +             `<a href="${profile.profileLink}" class="avatar ${profile.state ?? 'offline'}">`
-        +                `<img src="${profile.pfp}">`
-        +             '</a>'
-        +             profile.name
-        +          '</div>'
-        +       '</div>'
-        +       generateMatchRowsHTMLString(profile.id3, profile.possibleCards, profile.lowestCards)
-        +    '</div>'
-        + '</div>';
+          +    '<div class="match-container max3">'
+          +       '<div class="match-header">'
+          +          '<div class="match-name">'
+          +             `<a href="${profile.profileLink}" class="avatar ${profile.state ?? 'offline'}">`
+          +                `<img src="${profile.pfp}">`
+          +             '</a>'
+          +             profile.name
+          +          '</div>'
+          +       '</div>'
+          +       generateMatchRowsHTMLString(profile.id3, profile.possibleCards, profile.lowestCards)
+          +    '</div>'
+          + '</div>';
         goodSwapListElem.insertAdjacentHTML('beforeend', profileGoodSwapHTMLString);
 
         processedFriends.add(profileUrlString);
@@ -259,10 +259,10 @@ async function badgepageFilterShowGoodSwapsListener() {
     document.getElementById('good-swaps').disabled = true;
 
     let HTMLString = '<div class="badge_detail_tasks footer"></div>'
-    + '<div id="good-swaps-results" class="enhanced-section">'
-    +    '<div class="enhanced-header">Good Matches</div>'
-    +    '<div class="enhanced-body"></div>'
-    + '</div>';
+      + '<div id="good-swaps-results" class="enhanced-section">'
+      +    '<div class="enhanced-header">Good Matches</div>'
+      +    '<div class="enhanced-body"></div>'
+      + '</div>';
     badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
     badgepageFilterShortcuts.main.classList.add('loading');
 
@@ -321,10 +321,10 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
     }
 
     let HTMLString = '<div class="badge_detail_tasks footer"></div>'
-    + `<div id="${elemId}" class="enhanced-section">`
-    +    `<div class="enhanced-header">${headerTitle}</div>`
-    +    '<div class="enhanced-body"></div>'
-    + '</div>';
+      + `<div id="${elemId}" class="enhanced-section">`
+      +    `<div class="enhanced-header">${headerTitle}</div>`
+      +    '<div class="enhanced-body"></div>'
+      + '</div>';
     badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
     badgepageFilterShortcuts.main.classList.add('loading');
 
