@@ -1,3 +1,9 @@
+GLOBALSETTINGSDEFAULTS.badgepageFilter = {
+    applist: {
+        // object of appids, array/set of profileids
+    },
+    includeCacheMatching: false
+};
 const badgepageFilterShortcuts = {};
 const badgepageFilterPageData = {};
 
@@ -35,6 +41,12 @@ async function setupBadgepageFilter() {
             myMissingCards.add(i);
         }
     }
+
+    let config = await SteamToolsDbManager.getToolConfig('badgepageFilter');
+
+    globalSettings.badgepageFilter = config.badgepageFilter ?? steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.badgepageFilter);
+    globalSettings.badgepageFilter.applist[badgepageFilterPageData.appid] ??= [];
+    badgepageFilterPageData.cachedProfiles = steamToolsUtils.deepClone(globalSettings.badgepageFilter.applist[badgepageFilterPageData.appid]);
 
     for(let cardEntry of document.querySelectorAll('.badge_card_set_card')) {
         let textNodes = cardEntry.querySelector('.badge_card_set_text').childNodes;
@@ -343,4 +355,15 @@ function badgepageFilterGenerateMatchResultHTML(profileData, balanceResult) {
       +       generateMatchRowHTMLString(balanceResult.swap)
       +    '</div>'
       + '</div>';
+}
+
+async function badgepageFilterSaveConfig() {
+    await SteamToolsDbManager.setToolConfig('badgepageFilter');
+}
+
+async function badgepageFilterLoadConfig() {
+    let config = await SteamToolsDbManager.getToolConfig('badgepageFilter');
+    if(config.badgepageFilter) {
+        globalSettings.badgepageFilter = config.badgepageFilter;
+    }
 }
