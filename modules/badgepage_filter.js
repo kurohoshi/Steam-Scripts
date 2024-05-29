@@ -124,7 +124,7 @@ async function badgepageFilterFetchFriend(target) {
     };
 
     let { friendsCardStock, isFoilPage, myMissingCards, myPossibleCards, appid } = badgepageFilterPageData;
-    let profileUrl = target === 'string'
+    let profileUrl = typeof target === 'string'
       ? target
       : target.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g);
 
@@ -155,14 +155,14 @@ async function badgepageFilterFetchFriend(target) {
           ? getPossibleMatches(profileCardStock, myMissingCards, myPossibleCards)
           : { lowestCards: null, possibleCards: null };
 
-        if(!profileCardStock.some(x => x)) {
+        if(!profileCardStock?.some(x => x)) {
             await badgepageFilterProfileCacheRemove(profileUrl);
         } else {
             await badgepageFilterProfileCacheAdd(profileUrl);
         }
 
         friendsCardStock[profileUrl] = {
-            id3: steamId3,
+            // id3: steamId3,
             name: profileName,
             profileLink: 'https://steamcommunity.com/' + profileUrl,
             pfp: profileImgLink,
@@ -272,12 +272,12 @@ async function badgepageFilterShowGoodSwapsListener() {
 
     for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
         let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
-        checkAndDisplayPossibleSingleSwaps(profileUrl);
+        await checkAndDisplayPossibleSingleSwaps(profileUrl);
     }
 
     if(globalSettings.includeCacheMatching) {
         for(let profileUrl of badgepageFilterPageData.cachedProfiles) {
-            checkAndDisplayPossibleSingleSwaps(profileUrl);
+            await checkAndDisplayPossibleSingleSwaps(profileUrl);
         }
     }
 
@@ -334,12 +334,12 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
 
     for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
         let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
-        checkAndDisplayPossibleMatches(profileUrl);
+        await checkAndDisplayPossibleMatches(profileUrl);
     }
 
     if(globalSettings.includeCacheMatching) {
         for(let profileUrl of badgepageFilterPageData.cachedProfiles) {
-            checkAndDisplayPossibleMatches(profileUrl);
+            await checkAndDisplayPossibleMatches(profileUrl);
         }
     }
 
