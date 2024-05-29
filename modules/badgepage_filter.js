@@ -68,6 +68,10 @@ async function setupBadgepageFilter() {
     GM_addStyle(cssMatcher);
 
     let friendFilterHTMLString = '<div class="enhanced-options right userscript-vars">'
+      +    '<div>'
+      +       `<input type="checkbox" id="include-cached-profiles" ${globalSettings.badgepageFilter.includeCacheMatching ? 'checked' : ''}>`
+      +       '<label for="include-cached-profiles">Include Past Matches</label>'
+      +    '</div>'
       +    '<button id="friend-filter" class="userscript-btn purple wide">Filter Friends</button>'
       +    '<button id="good-swaps" class="userscript-btn purple wide">Display Good Swaps</button>'
       +    '<button id="balance-cards" class="userscript-btn purple wide">Balance Cards</button>'
@@ -80,6 +84,7 @@ async function setupBadgepageFilter() {
     badgepageFilterShortcuts.main.insertAdjacentHTML('beforeend', cssAddThrobber());
     badgepageFilterShortcuts.throbber = document.querySelector('.userscript-throbber');
 
+    document.getElementById('include-cached-profiles').addEventListener('click', badgepageFilterUpdateCacheFlagListener);
     document.getElementById('friend-filter').addEventListener('click', badgepageFilterFilterFriendsWithCardsListener);
     document.getElementById('good-swaps').addEventListener('click', badgepageFilterShowGoodSwapsListener);
     document.getElementById('balance-cards').addEventListener('click', badgepageFilterNeutralOrGoodMatchingListener);
@@ -133,6 +138,7 @@ async function badgepageFilterFetchFriend(target) {
 
         if(!doc.querySelector('.badge_gamecard_page')) {
             friendsCardStock[profileUrl] = null;
+            await badgepageFilterProfileCacheRemove(profileUrl);
             return;
         }
 
@@ -149,6 +155,12 @@ async function badgepageFilterFetchFriend(target) {
           ? getPossibleMatches(profileCardStock, myMissingCards, myPossibleCards)
           : { lowestCards: null, possibleCards: null };
 
+        if(!profileCardStock.some(x => x)) {
+            await badgepageFilterProfileCacheRemove(profileUrl);
+        } else {
+            await badgepageFilterProfileCacheAdd(profileUrl);
+        }
+
         friendsCardStock[profileUrl] = {
             id3: steamId3,
             name: profileName,
@@ -162,6 +174,11 @@ async function badgepageFilterFetchFriend(target) {
     }
 
     return friendsCardStock[profileUrl];
+}
+
+async function badgepageFilterUpdateCacheFlagListener(event) {
+    globalSettings.badgepageFilter.includeCacheMatching = event.target.checked;
+    await badgepageFilterSaveConfig();
 }
 
 // provides only mutually beneficial matches with any duplicates cards being fair game
@@ -258,6 +275,12 @@ async function badgepageFilterShowGoodSwapsListener() {
         checkAndDisplayPossibleSingleSwaps(profileUrl);
     }
 
+    if(globalSettings.includeCacheMatching) {
+        for(let profileUrl of badgepageFilterPageData.cachedProfiles) {
+            checkAndDisplayPossibleSingleSwaps(profileUrl);
+        }
+    }
+
     badgepageFilterShortcuts.main.classList.remove('loading');
 }
 
@@ -311,8 +334,13 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
 
     for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
         let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
-
         checkAndDisplayPossibleMatches(profileUrl);
+    }
+
+    if(globalSettings.includeCacheMatching) {
+        for(let profileUrl of badgepageFilterPageData.cachedProfiles) {
+            checkAndDisplayPossibleMatches(profileUrl);
+        }
     }
 
     badgepageFilterShortcuts.main.classList.remove('loading');
@@ -360,6 +388,19 @@ function badgepageFilterGenerateMatchResultHTML(profileData, balanceResult) {
       +       generateMatchRowHTMLString(balanceResult.swap)
       +    '</div>'
       + '</div>';
+}
+
+async function badgepageFilterProfileCacheAdd(profileUrl) {
+    let { appid } = badgepageFilterPageData;
+    globalSettings.badgepageFilter.applist[appid].push(profileUrl);
+    await badgepageFilterSaveConfig();
+}
+
+async function badgepageFilterProfileCacheRemove(profileUrl) {
+    let { appid } = badgepageFilterPageData;
+    let cachedProfiles = globalSettings.badgepageFilter.applist[appid];
+    cachedProfiles.splice(cachedProfiles.indexOf(profileUrl), 1);
+    await badgepageFilterSaveConfig();
 }
 
 async function badgepageFilterSaveConfig() {
