@@ -208,34 +208,17 @@ async function badgepageFilterShowGoodSwapsListener() {
         + '</div>';
     };
     const generateMatchRowsHTMLString = (profileid3, matches, priority) => matches.map((x, i) => x.length ? generateMatchRowHTMLString(profileid3, i, x, priority) : '').join('');
-
-    document.getElementById('good-swaps').disabled = true;
-
-    let HTMLString = '<div class="badge_detail_tasks footer"></div>'
-    + '<div id="good-swaps-results" class="enhanced-section">'
-    +    '<div class="enhanced-header">Good Matches</div>'
-    +    '<div class="enhanced-body"></div>'
-    + '</div>';
-    badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
-    badgepageFilterShortcuts.main.classList.add('loading');
-
-    let { friendsCardStock } = badgepageFilterPageData;
-    let processedFriends = new Set();
-    let goodSwapListElem = document.querySelector('#good-swaps-results > .enhanced-body');
-
-    for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
-        let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
-        if(processedFriends.has(profileUrl)) {
-            continue;
+    async function checkAndDisplayPossibleSingleSwaps(profileUrlString) {
+        if(processedFriends.has(profileUrlString)) {
+            return;
         }
 
-        await badgepageFilterFetchFriend(profileElem);
-        let profile = friendsCardStock[profileUrl];
+        let profile = await badgepageFilterFetchFriend(profileUrlString);
 
         if(!profile?.stock) {
-            continue;
+            return;
         } else if(!profile?.possibleCards?.some(x => x.length)) {
-            continue;
+            return;
         }
 
         let profileGoodSwapHTMLString = '<div class="match-container-outer">'
@@ -253,7 +236,26 @@ async function badgepageFilterShowGoodSwapsListener() {
         + '</div>';
         goodSwapListElem.insertAdjacentHTML('beforeend', profileGoodSwapHTMLString);
 
-        processedFriends.add(profileUrl);
+        processedFriends.add(profileUrlString);
+    }
+
+    document.getElementById('good-swaps').disabled = true;
+
+    let HTMLString = '<div class="badge_detail_tasks footer"></div>'
+    + '<div id="good-swaps-results" class="enhanced-section">'
+    +    '<div class="enhanced-header">Good Matches</div>'
+    +    '<div class="enhanced-body"></div>'
+    + '</div>';
+    badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
+    badgepageFilterShortcuts.main.classList.add('loading');
+
+    let { friendsCardStock } = badgepageFilterPageData;
+    let processedFriends = new Set();
+    let goodSwapListElem = document.querySelector('#good-swaps-results > .enhanced-body');
+
+    for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
+        let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
+        checkAndDisplayPossibleSingleSwaps(profileUrl);
     }
 
     badgepageFilterShortcuts.main.classList.remove('loading');
@@ -268,6 +270,27 @@ function badgepageFilterHelpOthersListener() {
 }
 
 async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
+    async function checkAndDisplayPossibleMatches(profileUrlString) {
+        if(processedFriends.has(profileUrlString)) {
+            return;
+        }
+
+        let profile = await badgepageFilterFetchFriend(profileUrlString);
+
+        if(!profile?.stock) {
+            return;
+        }
+
+        let balanceResult = Matcher.balanceVariance(myCardStock, profile.stock, false, helperMode);
+        if(!balanceResult.swap.some(x => x)) {
+            return;
+        }
+
+        let profileBalancedMatchingHTMLString = badgepageFilterGenerateMatchResultHTML(profile, balanceResult);
+        balanceMatchingListElem.insertAdjacentHTML('beforeend', profileBalancedMatchingHTMLString);
+
+        processedFriends.add(profileUrlString);
+    }
     if(helperMode) {
         document.getElementById('help-others').disabled = true;
     } else {
@@ -288,26 +311,8 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
 
     for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
         let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
-        if(processedFriends.has(profileUrl)) {
-            continue;
-        }
 
-        await badgepageFilterFetchFriend(profileElem);
-        let profile = friendsCardStock[profileUrl];
-
-        if(!profile?.stock) {
-            continue;
-        }
-
-        let balanceResult = Matcher.balanceVariance(myCardStock, profile.stock, false, helperMode);
-        if(!balanceResult.swap.some(x => x)) {
-            continue;
-        }
-
-        let profileBalancedMatchingHTMLString = badgepageFilterGenerateMatchResultHTML(profile, balanceResult);
-        balanceMatchingListElem.insertAdjacentHTML('beforeend', profileBalancedMatchingHTMLString);
-
-        processedFriends.add(profileUrl);
+        checkAndDisplayPossibleMatches(profileUrl);
     }
 
     badgepageFilterShortcuts.main.classList.remove('loading');
