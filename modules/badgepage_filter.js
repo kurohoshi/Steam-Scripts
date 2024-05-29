@@ -183,7 +183,7 @@ async function badgepageFilterUpdateCacheFlagListener(event) {
 
 // provides only mutually beneficial matches with any duplicates cards being fair game
 async function badgepageFilterFilterFriendsWithCardsListener() {
-    document.getElementById('friend-filter').disabled = true;
+    document.getElementById('friend-filter').setAttribute('disabled', '');
 
     let { friendsCardStock } = badgepageFilterPageData;
 
@@ -256,7 +256,7 @@ async function badgepageFilterShowGoodSwapsListener() {
         processedFriends.add(profileUrlString);
     }
 
-    document.getElementById('good-swaps').disabled = true;
+    document.getElementById('good-swaps').setAttribute('disabled', '');
 
     let HTMLString = '<div class="badge_detail_tasks footer"></div>'
       + '<div id="good-swaps-results" class="enhanced-section">'
@@ -315,9 +315,9 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
         processedFriends.add(profileUrlString);
     }
     if(helperMode) {
-        document.getElementById('help-others').disabled = true;
+        document.getElementById('help-others').setAttribute('disabled', '');
     } else {
-        document.getElementById('balance-cards').disabled = true;
+        document.getElementById('balance-cards').setAttribute('disabled', '');
     }
 
     let HTMLString = '<div class="badge_detail_tasks footer"></div>'
