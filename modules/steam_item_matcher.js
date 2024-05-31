@@ -1,4 +1,4 @@
-GLOBALSETTINGSDEFAULTS.matcher = {
+GLOBALSETTINGSDEFAULTS.matcherConfig = {
     config: {
         matchGroup: {
             label: 'Match With',
@@ -49,7 +49,7 @@ async function gotoMatcherConfigPage() {
     const generateConfigHeaderString = (title) => `<div class="userscript-config-header"><span>${title}</span></div>`;
     const generateConfigButtonString = (id, label) => `<div class="userscript-config-option"><input type="checkbox" class="button" id="${id}"><label for="${id}">${label}</label></div>`;
     const generateConfigButtonsString = (checkList) => checkList.map(x => generateConfigButtonString(x.id, x.label)).join('');
-    const generateConfigButtonGroupString = () => Object.values(globalSettings.matcher.config).map(x => {
+    const generateConfigButtonGroupString = () => Object.values(globalSettings.matcherConfig.config).map(x => {
         return `<div class="userscript-config-group" data-id="${x.id}">${generateConfigHeaderString(x.label)}${generateConfigButtonsString(x.options)}</div>`
     }).join('');
     const generateConfigListTabs = (list) => {
@@ -83,11 +83,11 @@ async function gotoMatcherConfigPage() {
     MatcherConfigShortcuts.MAIN_ELEM.innerHTML = '';
     document.body.classList.remove('profile_page'); // profile page causes bg color to be black
 
-    let config = await SteamToolsDbManager.getToolConfig('matcher');
-    if(config.matcher) {
-        globalSettings.matcher = config.matcher;
+    let config = await SteamToolsDbManager.getToolConfig('matcherConfig');
+    if(config.matcherConfig) {
+        globalSettings.matcherConfig = config.matcherConfig;
     } else {
-        globalSettings.matcher = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcher);
+        globalSettings.matcherConfig = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcherConfig);
     }
 
     addSvgBlock(MatcherConfigShortcuts.MAIN_ELEM);
@@ -122,7 +122,7 @@ async function gotoMatcherConfigPage() {
       +    '</div>'
       +    '<div class="userscript-config-list">'
       +       '<div class="userscript-config-list-header tabs">'
-      +          generateConfigListTabs(globalSettings.matcher.lists)
+      +          generateConfigListTabs(globalSettings.matcherConfig.lists)
       +       '</div>'
       +       '<div class="conf-list-entry-action add">'
       +          '<div class="conf-list-entry-action-add">'
@@ -164,7 +164,7 @@ async function gotoMatcherConfigPage() {
       +             '</div>'
       +          '</div>'
       +          '<div class="userscript-config-list-entries userscript-custom-scroll">'
-      +             generateConfigListGroups(globalSettings.matcher.lists)
+      +             generateConfigListGroups(globalSettings.matcherConfig.lists)
       +          '</div>'
       +       '</div>'
       +    '</div>'
@@ -182,7 +182,7 @@ async function gotoMatcherConfigPage() {
     MatcherConfigShortcuts.listDialogElem = MatcherConfigShortcuts.listContentsElem.querySelector('.userscript-dialog');
     MatcherConfigShortcuts.listFormElem = MatcherConfigShortcuts.listContentsElem.querySelector('.userscript-dialog-form');
     MatcherConfigShortcuts.listElems = {};
-    for(let entryGroup in globalSettings.matcher.lists) {
+    for(let entryGroup in globalSettings.matcherConfig.lists) {
         MatcherConfigShortcuts.listElems[entryGroup] = MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.userscript-config-list-entry-group[data-list-name=${entryGroup}]`);
     }
 
@@ -216,14 +216,14 @@ async function matcherConfigLoadUI() {
 
     matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
 
-    for(let optionGroup of Object.values(globalSettings.matcher.config)) {
+    for(let optionGroup of Object.values(globalSettings.matcherConfig.config)) {
         for(let option of optionGroup.options) {
             document.getElementById(option.id).checked = option.value;
         }
     }
 
     // generate lists
-    for(let [listName, listGroup] of Object.entries(globalSettings.matcher.lists)) {
+    for(let [listName, listGroup] of Object.entries(globalSettings.matcherConfig.lists)) {
         let entryGroupElem = MatcherConfigShortcuts.listElems[listName];
         let entriesHTMLString = [];
         for(let data of listGroup.data) {
@@ -281,8 +281,8 @@ async function matcherConfigLoadUI() {
     }
 
     // set active tab
-    if(globalSettings.matcher.currentTab) {
-        matcherConfigSetListTab(globalSettings.matcher.currentTab);
+    if(globalSettings.matcherConfig.currentTab) {
+        matcherConfigSetListTab(globalSettings.matcherConfig.currentTab);
     }
 
     matcherConfigResetEntryForm();
@@ -309,7 +309,7 @@ function matcherConfigSelectListTabListener(event) {
 }
 
 function matcherConfigSetListTab(tabName) {
-    if(!Object.keys(globalSettings.matcher.lists).includes(tabName)) {
+    if(!Object.keys(globalSettings.matcherConfig.lists).includes(tabName)) {
         console.error('matcherConfigSetListTab(): invalid tab name!');
         return;
     }
@@ -317,7 +317,7 @@ function matcherConfigSetListTab(tabName) {
     MatcherConfigShortcuts.listTabListElem.querySelector(`.userscript-config-list-tab.active`)?.classList.remove('active');
     const target = MatcherConfigShortcuts.listTabListElem.querySelector(`.userscript-config-list-tab[data-list-name=${tabName}]`);
     target.classList.add('active');
-    globalSettings.matcher.currentTab = target.dataset.listName;
+    globalSettings.matcherConfig.currentTab = target.dataset.listName;
     matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
 
     if(MatcherConfigShortcuts.selectedListEntryElem) {
@@ -329,7 +329,7 @@ function matcherConfigSetListTab(tabName) {
 }
 
 function matcherConfigResetEntryForm() {
-    let currentTab = globalSettings.matcher.currentTab;
+    let currentTab = globalSettings.matcherConfig.currentTab;
 
     let entryFormElem = MatcherConfigShortcuts.listFormElem;
     let currentFormType = entryFormElem.dataset.type;
@@ -373,7 +373,7 @@ function matcherConfigResetEntryForm() {
 }
 
 function matcherConfigShowActiveList() {
-    let currentTab = globalSettings.matcher.currentTab;
+    let currentTab = globalSettings.matcherConfig.currentTab;
     for(let listGroup of Object.values(MatcherConfigShortcuts.listElems)) {
         if(currentTab !== listGroup.dataset.listName) {
             listGroup.classList.remove('active');
@@ -426,7 +426,7 @@ function matcherConfigUpdateChecklistListener(event) {
     let groupId = event.currentTarget.dataset.id;
     let optionId = event.target.id;
 
-    for(let group of Object.values(globalSettings.matcher.config)) {
+    for(let group of Object.values(globalSettings.matcherConfig.config)) {
         if(group.id === groupId) {
             group.options.find(x => x.id === optionId).value = event.target.checked;
             break;
@@ -441,7 +441,7 @@ function matcherConfigToggleEntryFormListener(event) {
 
 // edit selected entry, prefilled with selected entry info
 function matcherConfigEditListEntryListener(event) {
-    let currentTab = globalSettings.matcher.currentTab;
+    let currentTab = globalSettings.matcherConfig.currentTab;
     if(MatcherConfigShortcuts.listContentsElem.matches('.overlay') && MatcherConfigShortcuts.listContentsElem.querySelector('> .userscript-overlay')?.matches('.form')) {
         matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
         return;
@@ -473,30 +473,30 @@ function matcherConfigDeleteListEntryListener(event) {
         return;
     }
     let listGroup = MatcherConfigShortcuts.selectedListEntryElem.parentElement.dataset.listName;
-    if(!globalSettings.matcher.lists[listGroup]) {
+    if(!globalSettings.matcherConfig.lists[listGroup]) {
         console.warn('matcherConfigDeleteListEntryListener(): List not found, something is wrong!');
         return;
     }
 
     if(listGroup==='matchlist' || listGroup==='blacklist') {
         let profileid = MatcherConfigShortcuts.selectedListEntryElem.dataset.profileid;
-        let selectedIndex = globalSettings.matcher.lists[listGroup].data.findIndex(x => x.profileid === profileid);
+        let selectedIndex = globalSettings.matcherConfig.lists[listGroup].data.findIndex(x => x.profileid === profileid);
         if(selectedIndex === -1) {
             console.warn('matcherConfigDeleteListEntryListener(): Profileid not found, which means list and data are not synced!');
             return;
         }
-        globalSettings.matcher.lists[listGroup].data.splice(selectedIndex, 1);
+        globalSettings.matcherConfig.lists[listGroup].data.splice(selectedIndex, 1);
         MatcherConfigShortcuts.selectedListEntryElem.remove();
         MatcherConfigShortcuts.selectedListEntryElem = undefined;
         matcherConfigSetEntryActionBar('add');
     } else if(listGroup === 'applist') {
         let appid = MatcherConfigShortcuts.selectedListEntryElem.dataset.appid;
-        let selectedIndex = globalSettings.matcher.lists[listGroup].data.findIndex(x => x.appid === appid);
+        let selectedIndex = globalSettings.matcherConfig.lists[listGroup].data.findIndex(x => x.appid === appid);
         if(selectedIndex === -1) {
             console.warn('matcherConfigDeleteListEntryListener(): Appid not found, which means list and data are not synced!');
             return;
         }
-        globalSettings.matcher.lists[listGroup].data.splice(selectedIndex, 1);
+        globalSettings.matcherConfig.lists[listGroup].data.splice(selectedIndex, 1);
         MatcherConfigShortcuts.selectedListEntryElem.remove();
         MatcherConfigShortcuts.selectedListEntryElem = undefined;
         matcherConfigSetEntryActionBar('add');
@@ -506,7 +506,7 @@ function matcherConfigDeleteListEntryListener(event) {
 }
 
 async function matcherConfigEntryFormAddListener(event) {
-    let currentTab = globalSettings.matcher.currentTab;
+    let currentTab = globalSettings.matcherConfig.currentTab;
 
     if(currentTab==='matchlist' || currentTab==='blacklist') {
         MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
@@ -518,7 +518,7 @@ async function matcherConfigEntryFormAddListener(event) {
         let profileEntry;
 
         if(steamToolsUtils.isSteamId64Format(profileValue)) {
-            profileEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.profileid === profileValue);
+            profileEntry = globalSettings.matcherConfig.lists[currentTab].data.find(x => x.profileid === profileValue);
         }
 
         if(profileEntry) {
@@ -535,7 +535,7 @@ async function matcherConfigEntryFormAddListener(event) {
         } else {
             let profile = await Profile.findProfile(profileValue);
             if(profile) {
-                profileEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.profileid === profile.id);
+                profileEntry = globalSettings.matcherConfig.lists[currentTab].data.find(x => x.profileid === profile.id);
                 if(profileEntry) {
                     // app found: prompt user if they want to overwrite existing data
                     let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`[data-profileid="${profileEntry.profileid}"]`);
@@ -559,7 +559,7 @@ async function matcherConfigEntryFormAddListener(event) {
                       + '</div>';
 
                     entryGroupElem.insertAdjacentHTML('afterbegin', entryHTMLString);
-                    globalSettings.matcher.lists[currentTab].data.push({ profileid: profile.id, descript: description });
+                    globalSettings.matcherConfig.lists[currentTab].data.push({ profileid: profile.id, descript: description });
                 }
             } else {
                 alert('No valid profile found. Data will not be added!');
@@ -575,7 +575,7 @@ async function matcherConfigEntryFormAddListener(event) {
         const formElem = MatcherConfigShortcuts.listFormElem;
         let appid = parseInt(formElem.querySelector('#entry-form-id').value);
         let description = formElem.querySelector('#entry-form-descript').value;
-        let appidEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.appid === appid);
+        let appidEntry = globalSettings.matcherConfig.lists[currentTab].data.find(x => x.appid === appid);
 
         if(appidEntry) {
             // app found: prompt user if they want to overwrite existing data
@@ -602,7 +602,7 @@ async function matcherConfigEntryFormAddListener(event) {
                   + '</div>';
 
                 MatcherConfigShortcuts.listElems[currentTab].insertAdjacentHTML('beforeend', entryHTMLString);
-                globalSettings.matcher.lists[currentTab].data.push({ appid: appid, descript: description });
+                globalSettings.matcherConfig.lists[currentTab].data.push({ appid: appid, descript: description });
             } else {
                 let insertBeforeThisEntry;
                 for(let entryElem of MatcherConfigShortcuts.listElems[currentTab].querySelectorAll(`.userscript-config-list-entry`)) {
@@ -624,8 +624,8 @@ async function matcherConfigEntryFormAddListener(event) {
                 } else {
                     MatcherConfigShortcuts.listElems[currentTab].insertAdjacentHTML('afterbegin', entryHTMLString);
                 }
-                let entryIndex = globalSettings.matcher.lists[currentTab].data.findIndex(x => x.appid === parseInt(insertBeforeThisEntry.dataset.appid));
-                globalSettings.matcher.lists[currentTab].data.splice(entryIndex - 1, 0, { appid: appdata.appid, descript: description });
+                let entryIndex = globalSettings.matcherConfig.lists[currentTab].data.findIndex(x => x.appid === parseInt(insertBeforeThisEntry.dataset.appid));
+                globalSettings.matcherConfig.lists[currentTab].data.splice(entryIndex - 1, 0, { appid: appdata.appid, descript: description });
             }
 
             matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
@@ -637,7 +637,7 @@ async function matcherConfigEntryFormAddListener(event) {
 }
 
 function matcherConfigEntryFormCancelListener(event) {
-    let currentTab = globalSettings.matcher.currentTab;
+    let currentTab = globalSettings.matcherConfig.currentTab;
     if(currentTab === 'matchlist' || currentTab === 'blacklist') {
         MatcherConfigShortcuts.listContainer.querySelector('#entry-form-id').value = '';
         MatcherConfigShortcuts.listContainer.querySelector('#entry-form-descript').value = '';
@@ -705,7 +705,7 @@ async function matcherConfigImportListener() {
         throw 'matcherConfigImportListener(): Invalid imported config!';
     }
 
-    globalSettings.matcher = importedConfig;
+    globalSettings.matcherConfig = importedConfig;
     matcherConfigLoadUI();
 }
 
@@ -714,13 +714,13 @@ async function matcherConfigExportListener() {
 }
 
 async function matcherConfigSaveListener() {
-    await SteamToolsDbManager.setToolConfig('matcher');
+    await SteamToolsDbManager.setToolConfig('matcherConfig');
 }
 
 async function matcherConfigLoadListener() {
-    let config = await SteamToolsDbManager.getToolConfig('matcher');
-    if(config.matcher) {
-        globalSettings.matcher = config.matcher;
+    let config = await SteamToolsDbManager.getToolConfig('matcherConfig');
+    if(config.matcherConfig) {
+        globalSettings.matcherConfig = config.matcherConfig;
         matcherConfigLoadUI();
     }
 }
@@ -728,7 +728,7 @@ async function matcherConfigLoadListener() {
 function matcherConfigResetDefaultListener() {
     let promptInput = prompt('WARNING: This will reset all config options back to default and all the lists will be earased. Proceed? (y/n)');
     if(promptInput.toLowerCase().startsWith('y')) {
-        globalSettings.matcher = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcher);
+        globalSettings.matcherConfig = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcherConfig);
         matcherConfigLoadUI();
     }
 }
@@ -737,9 +737,9 @@ async function matcherConfigFullMatchListener() {
     MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
     matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
 
-    let settings = globalSettings.matcher.config;
+    let settings = globalSettings.matcherConfig.config;
     let blacklist = settings.ignoreGroup.options.find(x => x.name==='blacklist').value
-      ? globalSettings.matcher.lists.blacklist.data
+      ? globalSettings.matcherConfig.lists.blacklist.data
       : [];
     let profileGroups = {};
     let asfBots; // save in iDB, include match priority ranking
@@ -782,7 +782,7 @@ async function matcherConfigFullMatchListener() {
                 groupProfiles.push(botEntry.id);
             }
         } else if(matchGroup.name === 'custom') {
-            for(let profileEntry of globalSettings.matcher.lists.matchlist.data) {
+            for(let profileEntry of globalSettings.matcherConfig.lists.matchlist.data) {
                 groupProfiles.push(profileEntry.profileid);
             }
         } else {
@@ -818,11 +818,11 @@ async function matcherConfigSingleMatchListener() {
 }
 
 async function matcherVerifyConfigSave() {
-    let savedConfig = await SteamToolsDbManager.getToolConfig('matcher');
-    if(JSON.stringify(globalSettings.matcher) !== JSON.stringify(savedConfig.matcher)) {
+    let savedConfig = await SteamToolsDbManager.getToolConfig('matcherConfig');
+    if(JSON.stringify(globalSettings.matcherConfig) !== JSON.stringify(savedConfig.matcherConfig)) {
         let userPrompt = prompt('WARNING: Settings have not been saved! Save now? (y/n/cancel)');
         if(!userPrompt[0].localeCompare('y', 'en', { sensitivity: 'base' })) {
-            await SteamToolsDbManager.setToolConfig('matcher');
+            await SteamToolsDbManager.setToolConfig('matcherConfig');
             console.log('matcherConfigSingleMatchListener(): Saved Settings. Continuing to matching process...');
         } else if(!userPrompt[0].localeCompare('n', 'en', { sensitivity: 'base' })) {
             console.log('matcherConfigSingleMatchListener(): Settings will not be saved. Continuing to matching process...');
