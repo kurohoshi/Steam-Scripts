@@ -44,6 +44,7 @@ GLOBALSETTINGSDEFAULTS.matcherConfig = {
     currentTab: 'matchlist'
 };
 const MatcherConfigShortcuts = {};
+const MatcherShortcuts = {};
 
 async function gotoMatcherConfigPage() {
     const generateConfigHeaderString = (title) => `<div class="userscript-config-header"><span>${title}</span></div>`;
@@ -741,7 +742,7 @@ async function matcherConfigFullMatchListener() {
     let blacklist = settings.ignoreGroup.options.find(x => x.name==='blacklist').value
       ? globalSettings.matcherConfig.lists.blacklist.data
       : [];
-    let profileGroups = {};
+    let profileGroups = [];
     let asfBots; // save in iDB, include match priority ranking
 
     for(let matchGroup of settings.matchGroup.options) {
@@ -749,7 +750,8 @@ async function matcherConfigFullMatchListener() {
             continue;
         }
 
-        let groupProfiles = profileGroups[matchGroup.name] = [];
+        let groupProfiles = { name: matchGroup.name, list: [] };
+        profileGroups.push(groupProfiles);
 
         if(matchGroup.name === 'friends') {
             if(!Profile.me) {
@@ -759,7 +761,7 @@ async function matcherConfigFullMatchListener() {
                 await Profile.me.getTradeFriends();
             }
             for(let profile of Profile.me.friends) {
-                groupProfiles.push(profile);
+                groupProfiles.list.push(profile);
             }
         } else if(matchGroup.name === 'asfAny') {
             asfBots ??= await getASFProfiles();
@@ -769,7 +771,7 @@ async function matcherConfigFullMatchListener() {
                 }
 
                 Profile.addTradeURL({ partner: botEntry.id, token: botEntry.tradeToken });
-                groupProfiles.push(botEntry.id);
+                groupProfiles.list.push(botEntry.id);
             }
         } else if(matchGroup.name === 'asfFair') {
             asfBots ??= await getASFProfiles();
@@ -779,20 +781,20 @@ async function matcherConfigFullMatchListener() {
                 }
 
                 Profile.addTradeURL({ partner: botEntry.id, token: botEntry.tradeToken });
-                groupProfiles.push(botEntry.id);
+                groupProfiles.list.push(botEntry.id);
             }
         } else if(matchGroup.name === 'custom') {
             for(let profileEntry of globalSettings.matcherConfig.lists.matchlist.data) {
-                groupProfiles.push(profileEntry.profileid);
+                groupProfiles.list.push(profileEntry.profileid);
             }
         } else {
             console.warn(`matcherConfigFullMatchListener(): Match Group '${matchGroup.name}' profile list processing not implemented, skipped!`);
         }
     }
 
-    MatcherConfigShortcuts.matchProfileGroups = profileGroups;
+    MatcherShortcuts.data.matchProfileGroups = profileGroups;
 
-    await matcherStartMatching(Object.keys(profileGroups));
+    await matcherStartMatching();
 }
 
 async function matcherConfigSingleMatchListener() {
@@ -812,9 +814,9 @@ async function matcherConfigSingleMatchListener() {
         return;
     }
 
-    MatcherConfigShortcuts.matchProfileGroups = { single: [profile.id] };
+    MatcherShortcuts.data.matchProfileGroups = [{ name: 'single', list: [profile.id] }];
 
-    await matcherStartMatching(['single']);
+    await matcherStartMatching();
 }
 
 async function matcherVerifyConfigSave() {
@@ -841,7 +843,7 @@ async function matcherVerifyConfigSave() {
     return true;
 }
 
-async function matcherStartMatching(profileGroups) {
+async function matcherStartMatching() {
     const generateMatchGroupString = (groupName) => `<div class="match-group" data-group="${groupName}"></div>`;
     const generateMatchNameHeaderString = (profile, reverseDirection = false) => {
         return `<div class="match-name${reverseDirection ? ' align-right' : ''}">`
@@ -872,25 +874,30 @@ async function matcherStartMatching(profileGroups) {
     MatcherConfigShortcuts.MAIN_ELEM.innerHTML = '<div class="match-results">'
       + '</div>';
 
-    addSvgBlock(MatcherConfigShortcuts.MAIN_ELEM);
-
-    MatcherConfigShortcuts.results = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.match-results');
-    MatcherConfigShortcuts.resultGroups = {};
+    MatcherShortcuts.results = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.match-results');
+    MatcherShortcuts.resultGroups = {};
 
     if(!Profile.me) {
         await Profile.addNewProfile(steamToolsUtils.getMySteamId());
     }
 
-    if(profile) {
-        MatcherConfigShortcuts.results.insertAdjacentHTML('beforeend', generateMatchGroupString('single'));
-        MatcherConfigShortcuts.resultGroups.single = MatcherConfigShortcuts.results.querySelector('[data-group="single"]');
-        MatcherConfigShortcuts.resultGroups.single.insertAdjacentHTML('beforeend', generateMatchContainerString(Profile.me, profile));
+    for(let group of MatcherShortcuts.data.matchProfileGroups) {
+        MatcherShortcuts.results.insertAdjacentHTML('beforeend', generateMatchGroupString(group.name));
+        MatcherShortcuts.resultGroups[group.name] = MatcherConfigShortcuts.results.querySelector(`[data-group="${group.name}"]`);
 
-        await matcherMatchProfile();
+        for(let profile of group.list) {
+            if( !(profile instanceof Profile) ) {
+                profile = await Profile.findProfile(profile);
+            }
 
-        let emptyContainer = MatcherConfigShortcuts.resultGroups.single.querySelector('.match-container-outer.loading');
-        if(emptyContainer) {
-            emptyContainer.remove();
+            MatcherShortcuts.resultGroups[group.name].insertAdjacentHTML('beforeend', generateMatchContainerString(Profile.me, profile));
+
+            await matcherMatchProfile();
+
+            let emptyContainer = MatcherShortcuts.resultGroups[group.name].querySelector('.match-container-outer.loading');
+            if(emptyContainer) {
+                emptyContainer.remove();
+            }
         }
     }
 
@@ -943,7 +950,7 @@ async function matcherMatchProfile() {
     }
 
     let shortcuts = {};
-    let loadingContainer = MatcherConfigShortcuts.results.querySelector('.match-container-outer.loading > .match-container');
+    let loadingContainer = MatcherShortcuts.results.querySelector('.match-container-outer.loading > .match-container');
     if(!loadingContainer) {
         console.warn('matcherMatchProfile(): No loading container found!');
         return;
