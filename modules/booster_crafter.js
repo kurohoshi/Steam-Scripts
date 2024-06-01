@@ -507,7 +507,7 @@ async function boosterCrafterLoadData() {
     boosterCrafterSetOverlay(inventoryListElem, false);
     // enable add button?
     openerActionElem.classList.remove('disabled');
-    boosterCrafterSetOverlay(openerActionElem, false);
+    boosterCrafterSetOverlay(openerListElem, false);
 }
 function boosterCrafterUpdateBoosterCost() {
     let allTotal = 0;
@@ -1014,6 +1014,8 @@ function boosterCrafterCraftListCraftListener(event) {
     let stopFlag = true;
     let tableBodyElem = document.getElementById('craft-dialog-table-body');
     tableBodyElem.innerHTML = '';
+    boosterCrafterData.craftQueue = [];
+
     for(let entryElem of selectedEntries) {
         if(Object.hasOwn(entryElem.dataset, 'cooldownTimer')) {
             continue;
@@ -1351,6 +1353,7 @@ function boosterCrafterOpenerListOpenCancelListener() {
     let openerActionElem = boosterCrafterShortcuts.lists.opener.action;
     let openerListElem = boosterCrafterShortcuts.lists.opener.list;
 
+    boosterCrafterShortcuts.addOpenerButton.disabled = false;
     openerActionElem.classList.remove('disabled');
     boosterCrafterSetOverlay(openerListElem, false);
 }
@@ -1626,7 +1629,7 @@ async function boosterCrafterConfigLoad() {
     let config = await SteamToolsDbManager.getToolConfig('boosterCrafter');
     if(config.boosterCrafter) {
         globalSettings.boosterCrafter = config.boosterCrafter;
-        boosterCrafterLoadData();
+        boosterCrafterLoadConfig();
     }
 }
 

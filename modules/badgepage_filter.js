@@ -266,7 +266,6 @@ async function badgepageFilterShowGoodSwapsListener() {
     badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
     badgepageFilterShortcuts.main.classList.add('loading');
 
-    let { friendsCardStock } = badgepageFilterPageData;
     let processedFriends = new Set();
     let goodSwapListElem = document.querySelector('#good-swaps-results > .enhanced-body');
 
@@ -328,7 +327,7 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
     badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
     badgepageFilterShortcuts.main.classList.add('loading');
 
-    let { myCardStock, friendsCardStock } = badgepageFilterPageData;
+    let { myCardStock } = badgepageFilterPageData;
     let processedFriends = new Set();
     let balanceMatchingListElem = document.querySelector(`#${elemId} > .enhanced-body`);
 
