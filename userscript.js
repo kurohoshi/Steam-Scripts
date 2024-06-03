@@ -8,7 +8,8 @@
 // @exclude      https://steamcommunity.com/chat/
 // @exclude      https://steamcommunity.com/tradeoffer/
 // @icon         https://avatars.akamai.steamstatic.com/5d8f69062e0e8f51e500cecc6009547675ebc93c_full.jpg
-// @grant        GM.xmlHttpRequest
+// @connect      asf.justarchi.net
+// @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        GM_log
 // ==/UserScript==
@@ -1705,8 +1706,8 @@ let Matcher = {
                 let bin2vardiff = -bin2_i_elem[1]     +bin2[j][1] +1;
 
                 let isNeutralOrGood = (bin1vardiff<=0 && bin2vardiff<=0) && !(bin1vardiff===0 && bin2vardiff===0);
-                let isHelpful = helper && bin2vardiff<0;
-                if(isNeutralOrGood || isHelpful) {
+                let isHelpful = bin2vardiff<0;
+                if(helper ? isHelpful : isNeutralOrGood) {
                     bin1[i][1]++;
                     binReorder(bin1, i, lowToHigh, true, binIndices, 0);
                     bin1_j_elem[1]--;
@@ -2103,7 +2104,7 @@ async function gotoMatcherConfigPage() {
 
     addSvgBlock(MatcherConfigShortcuts.MAIN_ELEM);
 
-    let matcherConfigHTMLString = '<div class="userscript-config">'
+    let matcherConfigHTMLString = '<div class="userscript-config userscript-vars">'
       +    '<div class="userscript-config-title"><span>Matcher Configuration</span></div>'
       +    '<div class="userscript-options">'
       +       generateConfigButtonGroupString()
@@ -2112,22 +2113,22 @@ async function gotoMatcherConfigPage() {
       +             '<span>Configuration Settings</span>'
       +          '</div>'
       +          '<div class="userscript-config-btn-group">'
-      +             '<button id="userscript-config-import" class="blue">Import Settings</button>'
-      +             '<button id="userscript-config-export" class="blue">Export Settings</button>'
+      +             '<button id="userscript-config-import" class="userscript-btn blue">Import</button>'
+      +             '<button id="userscript-config-export" class="userscript-btn blue">Export</button>'
       +          '</div>'
       +          '<div class="userscript-config-btn-group right">'
-      +             '<button id="userscript-config-reset" class="blue">Reload Settings</button>'
-      +             '<button id="userscript-config-save" class="green">Save Settings</button>'
+      +             '<button id="userscript-config-reset" class="userscript-btn blue">Reload</button>'
+      +             '<button id="userscript-config-save" class="userscript-btn green">Save</button>'
       +          '</div>'
       +       '</div>'
       +       '<div class="userscript-config-actions">'
       +          '<div class="userscript-config-action">'
-      +             '<button id="userscript-config-match-full" class="purple max">Full Match</button>'
+      +             '<button id="userscript-config-match-full" class="userscript-btn purple max">Full Match</button>'
       +          '</div>'
       +          '<div class="h-break">OR</div>'
       +          '<div class="userscript-config-action">'
       +             '<input type="text" name="match-profileid" id="match-single-profile-profileid" placeholder="profileid/customUrlId">'
-      +             '<button id="userscript-config-match-one" class="purple">Match</button>'
+      +             '<button id="userscript-config-match-one" class="userscript-btn purple">Match</button>'
       +          '</div>'
       +       '</div>'
       +    '</div>'
@@ -2137,31 +2138,40 @@ async function gotoMatcherConfigPage() {
       +       '</div>'
       +       '<div class="conf-list-entry-action add">'
       +          '<div class="conf-list-entry-action-add">'
-      +             '<div id="entry-action-add"></div>'
+      +             '<div id="entry-action-add" class="entry-action add"></div>'
       +          '</div>'
       +          '<div class="conf-list-entry-action-modify">'
-      +             '<div id="entry-action-del"></div>'
-      +             '<div id="entry-action-edit"></div>'
+      +             '<div id="entry-action-del" class="userscript-bg-filtered delete"></div>'
+      +             '<div id="entry-action-edit" class="userscript-bg-filtered edit"></div>'
       +          '</div>'
-      +          '<div class="conf-list-entry-action-disabled"></div>'
+      +          '<div class="userscript-overlay"></div>'
       +       '</div>'
       +       '<div class="userscript-config-list-list">'
-      +          '<div class="conf-list-entry-form-container">'
-      +             '<div class="conf-list-entry-form">'
-      +             '</div>'
+      +          '<div class="dialog-form-container">'
+      +             '<div class="dialog-form"></div>'
       +          '</div>'
-      +          '<div class="conf-list-overlay">'
-      +             '<div class="content-loader"></div>'
-      +             '<div class="conf-list-dialog">'
-      +                '<div>Entry already exists, overwrite?</div>'
+      +          '<div class="userscript-overlay">'
+      +             '<div class="animated-bar-loader top"></div>'
+      +             '<div class="userscript-dialog">'
+      +                '<div class="userscript-dialog-container">'
+      +                   'Entry already exists, overwrite?'
+      +                '</div>'
       +                '<div id="conf-list-entry-old" class="userscript-config-list-entry"></div>'
-      +                '<div class="conf-list-dialog-divider">'
+      +                '<div class="userscript-dialog-container">'
       +                   '<div class="dbl-arrows down"></div>'
       +                '</div>'
       +                '<div id="conf-list-entry-new" class="userscript-config-list-entry"></div>'
-      +                '<div class="conf-list-dialog-action">'
-      +                   '<button id="conf-list-dialog-cancel" class="red wide">No</button>'
-      +                   '<button id="conf-list-dialog-confirm" class="green wide">Yes</button>'
+      +                '<div class="userscript-dialog-container">'
+      +                   '<button id="userscript-dialog-cancel" class="userscript-btn red wide">No</button>'
+      +                   '<button id="userscript-dialog-confirm" class="userscript-btn green wide">Yes</button>'
+      +                '</div>'
+      +             '</div>'
+      +             '<div class="userscript-dialog-form">'
+      +                '<input type="text" id="entry-form-id" class="userscript-input" placeholder="profileid/customUrlid">'
+      +                '<textarea name="" id="entry-form-descript" class="userscript-input" placeholder="Note (Optional)" rows="5"></textarea>'
+      +                '<div class="userscript-dialog-container">'
+      +                   '<button id="dialog-form-cancel" class="userscript-btn red">Cancel</button>'
+      +                   '<button id="dialog-form-add" class="userscript-btn green">Add</button>'
       +                '</div>'
       +             '</div>'
       +          '</div>'
@@ -2170,17 +2180,19 @@ async function gotoMatcherConfigPage() {
       +          '</div>'
       +       '</div>'
       +    '</div>'
-      +    cssAddOverlay(cssAddThrobber())
+      +    cssAddOverlay(cssAddThrobber(), {initialState: 'loading'})
       + '</div>';
 
     MatcherConfigShortcuts.MAIN_ELEM.insertAdjacentHTML("beforeend", matcherConfigHTMLString);
 
     // element shortcuts
     MatcherConfigShortcuts.configMenu = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config');
-    MatcherConfigShortcuts.listActionBarElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-action');
-    MatcherConfigShortcuts.listFormContainerElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-form-container');
-    MatcherConfigShortcuts.listOverlayElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-overlay');
-    MatcherConfigShortcuts.listDialogElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-dialog');
+    MatcherConfigShortcuts.listContainer = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list');
+    MatcherConfigShortcuts.listTabListElem = MatcherConfigShortcuts.listContainer.querySelector('.userscript-config-list-header.tabs');
+    MatcherConfigShortcuts.listActionBarElem = MatcherConfigShortcuts.listContainer.querySelector('.conf-list-entry-action');
+    MatcherConfigShortcuts.listContentsElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-list');
+    MatcherConfigShortcuts.listDialogElem = MatcherConfigShortcuts.listContentsElem.querySelector('.userscript-dialog');
+    MatcherConfigShortcuts.listFormElem = MatcherConfigShortcuts.listContentsElem.querySelector('.userscript-dialog-form');
     MatcherConfigShortcuts.listElems = {};
     for(let entryGroup in globalSettings.matcher.lists) {
         MatcherConfigShortcuts.listElems[entryGroup] = MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.userscript-config-list-entry-group[data-list-name=${entryGroup}]`);
@@ -2194,12 +2206,12 @@ async function gotoMatcherConfigPage() {
     document.getElementById('userscript-config-reset').addEventListener('click', matcherConfigLoadListener);
     document.getElementById('userscript-config-save').addEventListener('click', matcherConfigSaveListener);
     MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-header').addEventListener('click', matcherConfigSelectListTabListener);
-    document.getElementById('entry-action-add').addEventListener('click', matcherConfigAddListEntryListener);
+    document.getElementById('entry-action-add').addEventListener('click', matcherConfigToggleEntryFormListener);
     document.getElementById('entry-action-edit').addEventListener('click', matcherConfigEditListEntryListener);
     document.getElementById('entry-action-del').addEventListener('click', matcherConfigDeleteListEntryListener);
     MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-entries').addEventListener('click', matcherConfigSelectListEntryListener);
-    document.getElementById('conf-list-dialog-cancel').addEventListener('click', matcherConfigListDialogCancelListener);
-    document.getElementById('conf-list-dialog-confirm').addEventListener('click', matcherConfigListDialogConfirmListener);
+    document.getElementById('userscript-dialog-cancel').addEventListener('click', matcherConfigListDialogCancelListener);
+    document.getElementById('userscript-dialog-confirm').addEventListener('click', matcherConfigListDialogConfirmListener);
     document.getElementById('userscript-config-match-full').addEventListener('click', matcherConfigFullMatchListener);
     document.getElementById('userscript-config-match-one').addEventListener('click', matcherConfigSingleMatchListener);
 
@@ -2209,13 +2221,12 @@ async function gotoMatcherConfigPage() {
 }
 
 async function matcherConfigLoadUI() {
-    MatcherConfigShortcuts.listOverlayElem.classList.add('active');
-
-    const configMenuElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config');
-    if(!configMenuElem) {
+    if(!MatcherConfigShortcuts.configMenu) {
         console.warn('updateMatcherConfigUI(): Config menu not found, UI will not be updated');
         return;
     }
+
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
 
     for(let optionGroup of Object.values(globalSettings.matcher.config)) {
         for(let option of optionGroup.options) {
@@ -2232,11 +2243,12 @@ async function matcherConfigLoadUI() {
                 let profile = await Profile.findProfile(data.profileid);
                 if(!profile) {
                     console.warn('matcherConfigLoadUI(): No profile found, skipping this entry...');
+                    continue;
                 }
 
                 let tradeTokenWarning = listName === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
                 let entryHTMLString = `<div class="userscript-config-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
-                  +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar offline">`
+                  +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar ${profile.getStateString()}">`
                   +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
                   +    '</a>'
                   +    `<div class="conf-list-entry-name" title="${profile.name}" >${profile.name}</div>`
@@ -2249,8 +2261,10 @@ async function matcherConfigLoadUI() {
                 let appdata = await Profile.findAppMetaData(data.appid);
                 if(!appdata) {
                     entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${data.appid}" data-name="">`
-                      +    '<a class="app-header"></a>'
-                      +    `<div class="conf-list-entry-profile">${data.appid}</div>`
+                      +    '<a class="app-header">'
+                      +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
+                      +    '</a>'
+                      +    `<div class="conf-list-entry-profile">appid-${data.appid}</div>`
                       +    `<div class="conf-list-entry-descript">${data.descript}</div>`
                       + '</div>';
                 } else {
@@ -2264,7 +2278,7 @@ async function matcherConfigLoadUI() {
                 }
 
 
-                entriesHTMLString.push({ key1: appdata?.name ?? '', key2: data.appid, string: entryHTMLString });
+                entriesHTMLString.push({ key1: appdata?.name, key2: data.appid, string: entryHTMLString });
             } else {
                 console.warn('matcherConfigLoadUI(): HTML generation for a list not implemented, that list will be empty!');
                 break;
@@ -2272,7 +2286,7 @@ async function matcherConfigLoadUI() {
         }
 
         if(listName === 'applist') {
-            entriesHTMLString.sort((a, b) => a.key1==='' ? a.key2-b.key2 : a.key1-b.key1);
+            entriesHTMLString.sort((a, b) => !a.key1 ? a.key2-b.key2 : a.key1-b.key1);
         }
 
         entryGroupElem.insertAdjacentHTML('afterbegin', entriesHTMLString.reduce((str, entry) => str+entry.string, ''));
@@ -2280,46 +2294,46 @@ async function matcherConfigLoadUI() {
 
     // set active tab
     if(globalSettings.matcher.currentTab) {
-        MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.userscript-config-list-tab[data-list-name=${globalSettings.matcher.currentTab}]`).classList.add('active');
-        matcherConfigShowActiveList();
+        matcherConfigSetListTab(globalSettings.matcher.currentTab);
     }
 
     matcherConfigResetEntryForm();
 
-    MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
 }
 
 function matcherConfigSetEntryActionBar(actionBarName) {
-    let listActionElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-action');
-    if(actionBarName === 'add') {
-        listActionElem.classList.remove('modify');
-        listActionElem.classList.add('add');
-    } else if(actionBarName === 'modify') {
-        listActionElem.classList.remove('add');
-        listActionElem.classList.add('modify');
+    const validActions = ['add', 'modify'];
+    let listActionElem = MatcherConfigShortcuts.listActionBarElem;
+    if(validActions.includes(actionBarName)) {
+        listActionElem.className = 'conf-list-entry-action ' + actionBarName;
     } else {
-        console.warn('matcherConfigSetEntryActionBar(): Action bar name not implemented, nothing will change!');
+        console.warn('matcherConfigSetEntryActionBar(): Action bar name not valid, nothing will change!');
     }
 }
 
-// needs testing
 function matcherConfigSelectListTabListener(event) {
     console.log(event.target); // debugging
     if(!event.target.matches('.userscript-config-list-tab') || event.target.matches('.active')) {
         return;
     }
+    matcherConfigSetListTab(event.target.dataset.listName);
+}
 
-    event.currentTarget.querySelector(`.userscript-config-list-tab.active`)?.classList.remove('active');
-    event.target.classList.add('active');
-    globalSettings.matcher.currentTab = event.target.dataset.listName;
+function matcherConfigSetListTab(tabName) {
+    if(!Object.keys(globalSettings.matcher.lists).includes(tabName)) {
+        console.error('matcherConfigSetListTab(): invalid tab name!');
+        return;
+    }
+
+    MatcherConfigShortcuts.listTabListElem.querySelector(`.userscript-config-list-tab.active`)?.classList.remove('active');
+    const target = MatcherConfigShortcuts.listTabListElem.querySelector(`.userscript-config-list-tab[data-list-name=${tabName}]`);
+    target.classList.add('active');
+    globalSettings.matcher.currentTab = target.dataset.listName;
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
 
     if(MatcherConfigShortcuts.selectedListEntryElem) {
-        MatcherConfigShortcuts.selectedListEntryElem.classList.remove('selected');
-        MatcherConfigShortcuts.selectedListEntryElem = undefined;
-
-        MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
-        matcherConfigResetEntryForm();
-        matcherConfigSetEntryActionBar('add');
+        matcherConfigSelectListEntry(MatcherConfigShortcuts.selectedListEntryElem, true);
     }
 
     matcherConfigResetEntryForm();
@@ -2329,30 +2343,30 @@ function matcherConfigSelectListTabListener(event) {
 function matcherConfigResetEntryForm() {
     let currentTab = globalSettings.matcher.currentTab;
 
-    let entryFormElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.conf-list-entry-form');
+    let entryFormElem = MatcherConfigShortcuts.listFormElem;
     let currentFormType = entryFormElem.dataset.type;
 
     if(currentFormType !== currentTab) {
         // set innerHTML to wipe everything and change form
         entryFormElem.innerHTML = '';
         if(currentTab==='matchlist' || currentTab==='blacklist') {
-            entryFormElem.innerHTML = '<input type="text" id="entry-form-id" placeholder="profileid/customUrlid">'
-              + '<textarea name="" id="entry-form-descript" placeholder="Note (Optional)"></textarea>';
+            entryFormElem.innerHTML = '<input type="text" id="entry-form-id" class="userscript-input" placeholder="profileid/customUrlid">'
+              + '<textarea name="" id="entry-form-descript" class="userscript-input" placeholder="Note (Optional)" rows="5"></textarea>';
         } else if(currentTab === 'applist') {
-            entryFormElem.innerHTML = '<input type="text" id="entry-form-id" placeholder="appid">'
-              + '<textarea name="" id="entry-form-descript" placeholder="Note (Optional)"></textarea>';
+            entryFormElem.innerHTML = '<input type="text" id="entry-form-id" class="userscript-input" placeholder="appid">'
+              + '<textarea name="" id="entry-form-descript" class="userscript-input" placeholder="Note (Optional)" rows="5"></textarea>';
         } else {
             console.warn('matcherConfigResetEntryForm(): Tab reset not implemented, form will not be generated!');
             return;
         }
 
-        let entryFormActionHTMLString = '<div class="entry-form-action">'
-          +    '<button id="conf-list-entry-form-cancel" class="red">Cancel</button>'
-          +    '<button id="conf-list-entry-form-add" class="green">Add</button>'
+        let entryFormActionHTMLString = '<div class="userscript-dialog-container">'
+          +    '<button id="dialog-form-cancel" class="userscript-btn red">Cancel</button>'
+          +    '<button id="dialog-form-add" class="userscript-btn green">Add</button>'
           + '</div>';
         entryFormElem.insertAdjacentHTML('beforeend', entryFormActionHTMLString);
-        document.getElementById('conf-list-entry-form-cancel').addEventListener('click', matcherConfigEntryFormCancelListener);
-        document.getElementById('conf-list-entry-form-add').addEventListener('click', matcherConfigEntryFormAddListener);
+        document.getElementById('dialog-form-cancel').addEventListener('click', matcherConfigEntryFormCancelListener);
+        document.getElementById('dialog-form-add').addEventListener('click', matcherConfigEntryFormAddListener);
 
         entryFormElem.dataset.type = currentTab;
     } else {
@@ -2372,7 +2386,7 @@ function matcherConfigResetEntryForm() {
 
 function matcherConfigShowActiveList() {
     let currentTab = globalSettings.matcher.currentTab;
-    for(let listGroup of MatcherConfigShortcuts.MAIN_ELEM.querySelectorAll(`.userscript-config-list-entry-group`)) {
+    for(let listGroup of Object.values(MatcherConfigShortcuts.listElems)) {
         if(currentTab !== listGroup.dataset.listName) {
             listGroup.classList.remove('active');
         } else {
@@ -2384,7 +2398,7 @@ function matcherConfigShowActiveList() {
 function matcherConfigSelectListEntryListener(event) {
     console.log(event.target);
     let entryElem = event.target;
-    while (!entryElem.matches('.userscript-config-list-entries')) {
+    while(!entryElem.matches('.userscript-config-list-entries')) {
         if(entryElem.matches('.userscript-config-list-entry')) {
             break;
         } else {
@@ -2416,7 +2430,6 @@ function matcherConfigSelectListEntry(entryElem, toggle = true) {
     }
 }
 
-// needs testing
 function matcherConfigUpdateChecklistListener(event) {
     console.log(event.currentTarget); // debugging
     if(!event.target.matches('input')) {
@@ -2428,21 +2441,21 @@ function matcherConfigUpdateChecklistListener(event) {
     for(let group of Object.values(globalSettings.matcher.config)) {
         if(group.id === groupId) {
             group.options.find(x => x.id === optionId).value = event.target.checked;
+            break;
         }
     }
 }
 
 // add new config list entry, populated input values persist when form is minimized
-function matcherConfigAddListEntryListener(event) {
-    MatcherConfigShortcuts.listFormContainerElem.classList.toggle('active');
+function matcherConfigToggleEntryFormListener(event) {
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, !MatcherConfigShortcuts.listContentsElem.matches('.overlay'), 'form');
 }
 
-// modify selected HTML that is selected
+// edit selected entry, prefilled with selected entry info
 function matcherConfigEditListEntryListener(event) {
-    /* edit selected entry, prefilled with selected entry info */
     let currentTab = globalSettings.matcher.currentTab;
-    if(MatcherConfigShortcuts.listFormContainerElem.matches('.active')) {
-        MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
+    if(MatcherConfigShortcuts.listContentsElem.matches('.overlay') && MatcherConfigShortcuts.listContentsElem.querySelector('> .userscript-overlay')?.matches('.form')) {
+        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
         return;
     }
 
@@ -2462,13 +2475,13 @@ function matcherConfigEditListEntryListener(event) {
         return;
     }
 
-    MatcherConfigShortcuts.listFormContainerElem.classList.add('active');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'form');
 }
 
-// delete selected HTML elements
+// remove selected entry
 function matcherConfigDeleteListEntryListener(event) {
     if(!MatcherConfigShortcuts.selectedListEntryElem) {
-        console.log('matcherConfigDeleteListEntryListener(): No entry selected, nothing is removed...');
+        console.log('matcherConfigDeleteListEntryListener(): No entry selected, nothing will be removed...');
         return;
     }
     let listGroup = MatcherConfigShortcuts.selectedListEntryElem.parentElement.dataset.listName;
@@ -2509,9 +2522,9 @@ async function matcherConfigEntryFormAddListener(event) {
 
     if(currentTab==='matchlist' || currentTab==='blacklist') {
         MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
-        MatcherConfigShortcuts.listOverlayElem.classList.add('active');
+        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
 
-        const formElem = MatcherConfigShortcuts.listFormContainerElem.querySelector('.conf-list-entry-form');
+        const formElem = MatcherConfigShortcuts.listFormElem;
         let profileValue = formElem.querySelector('#entry-form-id').value;
         let description = formElem.querySelector('#entry-form-descript').value;
         let profileEntry;
@@ -2522,14 +2535,14 @@ async function matcherConfigEntryFormAddListener(event) {
 
         if(profileEntry) {
             // app found: prompt user if they want to overwrite existing data
-            let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.userscript-config-list-entry[data-profileid="${profileEntry.profileid}"]`);
+            let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`[data-profileid="${profileEntry.profileid}"]`);
             MatcherConfigShortcuts.entryEditOld = profileEntry;
             MatcherConfigShortcuts.entryEditNew = { descript: description };
             matcherConfigSelectListEntry(selectedEntryElem, false);
             document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
             document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
             document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
-            MatcherConfigShortcuts.listDialogElem.classList.add('active');
+            matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading dialog');
             return;
         } else {
             let profile = await Profile.findProfile(profileValue);
@@ -2537,20 +2550,20 @@ async function matcherConfigEntryFormAddListener(event) {
                 profileEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.profileid === profile.id);
                 if(profileEntry) {
                     // app found: prompt user if they want to overwrite existing data
-                    let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.userscript-config-list-entry[data-profileid="${profileEntry.profileid}"]`);
+                    let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`[data-profileid="${profileEntry.profileid}"]`);
                     MatcherConfigShortcuts.entryEditOld = profileEntry;
                     MatcherConfigShortcuts.entryEditNew = { descript: description };
                     matcherConfigSelectListEntry(selectedEntryElem, false);
                     document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
                     document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
                     document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
-                    MatcherConfigShortcuts.listDialogElem.classList.add('active');
+                    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading dialog');
                     return;
                 } else {
                     let entryGroupElem = MatcherConfigShortcuts.listElems[currentTab];
                     let tradeTokenWarning = currentTab === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
                     let entryHTMLString = `<div class="userscript-config-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
-                      +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar offline">`
+                      +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar ${profile.getStateString()}">`
                       +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
                       +    '</a>'
                       +    `<div class="conf-list-entry-name" title="${profile.name}" >${profile.name}</div>`
@@ -2565,14 +2578,13 @@ async function matcherConfigEntryFormAddListener(event) {
             }
         }
 
-        MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
-        MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
+        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
         MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
     } else if(currentTab === 'applist') {
         MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
-        MatcherConfigShortcuts.listOverlayElem.classList.add('active');
+        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
 
-        const formElem = MatcherConfigShortcuts.listFormContainerElem.querySelector('.conf-list-entry-form');
+        const formElem = MatcherConfigShortcuts.listFormElem;
         let appid = parseInt(formElem.querySelector('#entry-form-id').value);
         let description = formElem.querySelector('#entry-form-descript').value;
         let appidEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.appid === appid);
@@ -2586,7 +2598,7 @@ async function matcherConfigEntryFormAddListener(event) {
             document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
             document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
             document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
-            MatcherConfigShortcuts.listDialogElem.classList.add('active');
+            matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading dialog');
             return;
         } else {
             let appdata = await Profile.findAppMetaData(appid);
@@ -2594,7 +2606,9 @@ async function matcherConfigEntryFormAddListener(event) {
                 // no appdata exists, could possibly mean that community data was nuked (eg 梦中女孩) even if the items still exist
                 // therefore don't reject entry submission and add entry
                 let entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${appid}" data-name="">`
-                  +    '<a class="app-header"></a>'
+                  +    `<a class="app-header">`
+                  +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
+                  +    '</a>'
                   +    `<div class="conf-list-entry-profile">${appid}</div>`
                   +    `<div class="conf-list-entry-descript">${description}</div>`
                   + '</div>';
@@ -2617,13 +2631,16 @@ async function matcherConfigEntryFormAddListener(event) {
                   +    `<div class="conf-list-entry-descript">${description}</div>`
                   + '</div>';
 
-                insertBeforeThisEntry.insertAdjacentHTML('beforebegin', entryHTMLString);
+                if(insertBeforeThisEntry) {
+                    insertBeforeThisEntry.insertAdjacentHTML('beforebegin', entryHTMLString);
+                } else {
+                    MatcherConfigShortcuts.listElems[currentTab].insertAdjacentHTML('afterbegin', entryHTMLString);
+                }
                 let entryIndex = globalSettings.matcher.lists[currentTab].data.findIndex(x => x.appid === parseInt(insertBeforeThisEntry.dataset.appid));
                 globalSettings.matcher.lists[currentTab].data.splice(entryIndex - 1, 0, { appid: appdata.appid, descript: description });
             }
 
-            MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
-            MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
+            matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
             MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
         }
     } else {
@@ -2634,25 +2651,23 @@ async function matcherConfigEntryFormAddListener(event) {
 function matcherConfigEntryFormCancelListener(event) {
     let currentTab = globalSettings.matcher.currentTab;
     if(currentTab === 'matchlist' || currentTab === 'blacklist') {
-        MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = '';
-        MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = '';
+        MatcherConfigShortcuts.listContainer.querySelector('#entry-form-id').value = '';
+        MatcherConfigShortcuts.listContainer.querySelector('#entry-form-descript').value = '';
     } else if(currentTab === 'applist') {
-        MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = '';
-        MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = '';
+        MatcherConfigShortcuts.listContainer.querySelector('#entry-form-id').value = '';
+        MatcherConfigShortcuts.listContainer.querySelector('#entry-form-descript').value = '';
     } else {
         console.warn('matcherConfigEntryFormCancelListener(): Entry form cancel not implemented, form will not be cleared!');
     }
 
-    MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
 }
 
 function matcherConfigListDialogCancelListener(event) {
-    MatcherConfigShortcuts.listDialogElem.classList.remove('active');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'form');
     document.getElementById('conf-list-entry-old').innerHTML = '';
     document.getElementById('conf-list-entry-new').innerHTML = '';
-    MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
     MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
-    //MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
     MatcherConfigShortcuts.entryEditOld = undefined;
     MatcherConfigShortcuts.entryEditNew = undefined;
 }
@@ -2660,12 +2675,10 @@ function matcherConfigListDialogCancelListener(event) {
 function matcherConfigListDialogConfirmListener(event) {
     Object.assign(MatcherConfigShortcuts.entryEditOld, MatcherConfigShortcuts.entryEditNew);
     MatcherConfigShortcuts.selectedListEntryElem.innerHTML = document.getElementById('conf-list-entry-new').innerHTML;
-    MatcherConfigShortcuts.listDialogElem.classList.remove('active');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
     document.getElementById('conf-list-entry-old').innerHTML = '';
     document.getElementById('conf-list-entry-new').innerHTML = '';
-    MatcherConfigShortcuts.listOverlayElem.classList.remove('active');
     MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
-    MatcherConfigShortcuts.listFormContainerElem.classList.remove('active');
     matcherConfigResetEntryForm();
     MatcherConfigShortcuts.entryEditOld = undefined;
     MatcherConfigShortcuts.entryEditNew = undefined;
@@ -2725,34 +2738,98 @@ async function matcherConfigLoadListener() {
 }
 
 function matcherConfigResetDefaultListener() {
-    // prompt user to confirm action
-
-    globalSettings.matcher = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcher);
-    matcherConfigLoadUI();
+    let promptInput = prompt('WARNING: This will reset all config options back to default and all the lists will be earased. Proceed? (y/n)');
+    if(promptInput.toLowerCase().startsWith('y')) {
+        globalSettings.matcher = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcher);
+        matcherConfigLoadUI();
+    }
 }
 
-function matcherConfigFullMatchListener() {
-    console.warn('matcherConfigFullMatchListener(): Not Implemented Yet!');
+async function matcherConfigFullMatchListener() {
+    MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
 
-    // check if settings are the same in db, prompt user to save if they want
-    // generate matcher page with a loading animation
-    // defer to an in-progress matching function
+    let settings = globalSettings.matcher.config;
+    let blacklist = settings.ignoreGroup.options.find(x => x.name==='blacklist').value
+      ? globalSettings.matcher.lists.blacklist.data
+      : [];
+    let profileGroups = {};
+    let asfBots; // save in iDB, include match priority ranking
+
+    for(let matchGroup of settings.matchGroup.options) {
+        if(!matchGroup.value) {
+            continue;
+        }
+
+        let groupProfiles = profileGroups[matchGroup.name] = [];
+
+        if(matchGroup.name === 'friends') {
+            if(!Profile.me) {
+                await Profile.findProfile(steamToolsUtils.getMySteamId());
+            }
+            if(!Profile.me.friends || !Profile.me.friends.length) {
+                await Profile.me.getTradeFriends();
+            }
+            for(let profile of Profile.me.friends) {
+                groupProfiles.push(profile);
+            }
+        } else if(matchGroup.name === 'asfAny') {
+            asfBots ??= await getASFProfiles();
+            for(let botEntry of asfBots) {
+                if(!botEntry.matchAny) {
+                    continue;
+                }
+
+                Profile.addTradeURL({ partner: botEntry.id, token: botEntry.tradeToken });
+                groupProfiles.push(botEntry.id);
+            }
+        } else if(matchGroup.name === 'asfFair') {
+            asfBots ??= await getASFProfiles();
+            for(let botEntry of asfBots) {
+                if(botEntry.matchAny) {
+                    continue;
+                }
+
+                Profile.addTradeURL({ partner: botEntry.id, token: botEntry.tradeToken });
+                groupProfiles.push(botEntry.id);
+            }
+        } else if(matchGroup.name === 'custom') {
+            for(let profileEntry of globalSettings.matcher.lists.matchlist.data) {
+                groupProfiles.push(profileEntry.profileid);
+            }
+        } else {
+            console.warn(`matcherConfigFullMatchListener(): Match Group '${matchGroup.name}' profile list processing not implemented, skipped!`);
+        }
+    }
+
+    MatcherConfigShortcuts.matchProfileGroups = profileGroups;
+
+    await matcherStartMatching(Object.keys(profileGroups));
 }
 
 async function matcherConfigSingleMatchListener() {
-    // verify that the provided profileid/customurl is valid, cancel if invalid
-    // check if settings are the same in db, prompt user to save if they want
-    // generate matcher page with a loading animation
-    // defer to an in-progress matching function
-    MatcherConfigShortcuts.configMenu.classList.add('overlay');
+    MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
+    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
+
     MatcherConfigShortcuts.matchSingleProfileProfileid.value = MatcherConfigShortcuts.matchSingleProfileProfileid.value.trim();
     let profile = await Profile.findProfile(MatcherConfigShortcuts.matchSingleProfileProfileid.value);
     if(!profile || (await profile.isMe())) {
         alert('Invalid profile!');
-        MatcherConfigShortcuts.configMenu.classList.remove('overlay');
+        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
+        MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
         return;
     }
 
+    if( !(await matcherVerifyConfigSave()) ) {
+        return;
+    }
+
+    MatcherConfigShortcuts.matchProfileGroups = { single: [profile.id] };
+
+    await matcherStartMatching(['single']);
+}
+
+async function matcherVerifyConfigSave() {
     let savedConfig = await SteamToolsDbManager.getToolConfig('matcher');
     if(JSON.stringify(globalSettings.matcher) !== JSON.stringify(savedConfig.matcher)) {
         let userPrompt = prompt('WARNING: Settings have not been saved! Save now? (y/n/cancel)');
@@ -2761,21 +2838,22 @@ async function matcherConfigSingleMatchListener() {
             console.log('matcherConfigSingleMatchListener(): Saved Settings. Continuing to matching process...');
         } else if(!userPrompt[0].localeCompare('n', 'en', { sensitivity: 'base' })) {
             console.log('matcherConfigSingleMatchListener(): Settings will not be saved. Continuing to matching process...');
-        } else if(!userPrompt[0].localeCompare('c', 'en', { sensitivity: 'base' })) {
-            console.log('matcherConfigSingleMatchListener(): Cancelled. Matching will not continue...');
-            MatcherConfigShortcuts.configMenu.classList.remove('overlay');
-            return;
         } else {
-            console.log('matcherConfigSingleMatchListener(): Invalid input. Matching will not continue...');
-            MatcherConfigShortcuts.configMenu.classList.remove('overlay');
-            return;
+            if(!userPrompt[0].localeCompare('c', 'en', { sensitivity: 'base' })) {
+                console.log('matcherConfigSingleMatchListener(): Cancelled. Matching will not continue...');
+            } else {
+                console.log('matcherconfigsinglematchlistener(): invalid input. matching will not continue...');
+            }
+            matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
+            MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
+            return false;
         }
     }
 
-    await matcherStartMatching(profile);
+    return true;
 }
 
-async function matcherStartMatching(profile) {
+async function matcherStartMatching(profileGroups) {
     const generateMatchGroupString = (groupName) => `<div class="match-group" data-group="${groupName}"></div>`;
     const generateMatchNameHeaderString = (profile, reverseDirection = false) => {
         return `<div class="match-name${reverseDirection ? ' align-right' : ''}">`
@@ -2915,6 +2993,99 @@ async function matcherMatchProfile() {
 
 
     loadingContainer.parentElement.classList.remove('loading');
+}
+
+function matcherSetOverlay(overlayParentElem, overlayEnable, overlayState) {
+    if(overlayEnable) {
+        overlayParentElem.classList.add('overlay');
+    } else {
+        overlayParentElem.classList.remove('overlay');
+    }
+
+    if(typeof overlayState === 'string') {
+        let overlayElem;
+        for(let childElem of overlayParentElem.children) {
+            if(childElem.matches('.userscript-overlay')) {
+                if(overlayElem) {
+                    console.warn('matcherSetOverlay(): Multiple overlay elements detected on same parent!');
+                }
+                overlayElem = childElem;
+            }
+        }
+
+        if(!overlayElem) {
+            console.warn('matcherSetOverlay(): No overlay element found in immediate children!');
+            return;
+        }
+
+        overlayElem.className = 'userscript-overlay ' + overlayState;
+    }
+}
+
+async function getASFProfiles() {
+    const REQUEST_URL = 'https://asf.justarchi.net/Api/Listing/Bots';
+    const MATCHABLE_TYPES = {
+        "2": 'emoticon',
+        "3": 'card',
+        "4": 'background',
+        "5": 'card'
+    }
+
+    let result = await new Promise((resolve, reject) => {
+        const resolveError = (mssg) => {
+            console.error(mssg);
+            resolve();
+        };
+
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: REQUEST_URL,
+            onload(response) {
+                if(response.status !== 200) {
+                    resolveError('getASFProfiles(): Status code ' + response.status);
+                }
+
+                // NOTE: avoid using 'SteamID' property (always exceeds MAX_SAFE_INTEGER, therefore incorrect value)
+                let datalist = JSON.parse(response.response);
+                if(!datalist.Success) {
+                    resolveError('getASFProfiles(): Response object not successful!');
+                }
+                datalist = datalist.Result;
+                for(let i=0; i<datalist.length; ++i) {
+                    let profileData = datalist[i];
+                    let cardTypes = (profileData.MatchableTypes.includes(5) ? 1 : 0)
+                      + (profileData.MatchableTypes.includes(3) ? 2 : 0)
+
+                    datalist[i] = {
+                        id: profileData.SteamIDText,
+                        name: profileData.Nickname,
+                        pfp: profileData.AvatarHash,
+                        tradeToken: profileData.TradeToken,
+                        matchTypes: profileData.MatchableTypes.map(x => MATCHABLE_TYPES[x]),
+                        matchAny: profileData.MatchEverything,
+                        matchTradeholdMax: profileData.MaxTradeHoldDuration,
+                        matchCardTypes: cardTypes,
+                        countGame: profileData.TotalGamesCount,
+                        countInventory: profileData.TotalInventoryCount,
+                        countTradables: profileData.TotalItemsCount
+                    }
+                }
+
+                resolve(datalist);
+            },
+            onerror(response) {
+                resolveError('getASFProfiles(): Error requesting ASF profiles!');
+            },
+            onabort(response) {
+                resolveError('getASFProfiles(): Aborted!');
+            },
+            ontimeout(response) {
+                resolveError('getASFProfiles(): Request timeout!');
+            }
+        });
+    });
+
+    return result;
 }
 
 const DataCollectors = {};
@@ -4760,7 +4931,14 @@ function boosterCrafterParseCooldownDate(dateString) {
     return new Date(dateNow.getFullYear() + (nextYear ? 1 : 0), MONTHS_ARRAY.indexOf(monthStr), parseInt(dayStr), newTime[0], newTime[1]);
 }
 
+GLOBALSETTINGSDEFAULTS.badgepageFilter = {
+    applist: {
+        // object of appids, array/set of profileids
+    },
+    includeCacheMatching: false
+};
 const badgepageFilterShortcuts = {};
+const badgepageFilterPageData = {};
 
 function getCardStock(pageElem) {
     if(!pageElem.querySelector('.badge_card_set_cards')) {
@@ -4777,7 +4955,7 @@ function getCardStock(pageElem) {
 }
 
 async function setupBadgepageFilter() {
-    globalSettings.badgepageFilter = {
+    Object.assign(badgepageFilterPageData, {
         itemIds: {},
         cardInfoList: [],
         appid: document.querySelector('a.whiteLink:nth-child(5)').href.match(/\d+(?=\/$)/g)[0],
@@ -4786,9 +4964,9 @@ async function setupBadgepageFilter() {
         myCardStock: getCardStock(document),
         myMissingCards: new Set(),
         myPossibleCards: new Set()
-    };
+    });
 
-    let { myCardStock, myMissingCards, myPossibleCards } = globalSettings.badgepageFilter;
+    let { myCardStock, myMissingCards, myPossibleCards } = badgepageFilterPageData;
     for(let i=0; i<myCardStock.length; i++) {
         if(myCardStock[i]>=2) {
             myPossibleCards.add(i);
@@ -4797,9 +4975,15 @@ async function setupBadgepageFilter() {
         }
     }
 
+    let config = await SteamToolsDbManager.getToolConfig('badgepageFilter');
+
+    globalSettings.badgepageFilter = config.badgepageFilter ?? steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.badgepageFilter);
+    globalSettings.badgepageFilter.applist[badgepageFilterPageData.appid] ??= [];
+    badgepageFilterPageData.cachedProfiles = steamToolsUtils.deepClone(globalSettings.badgepageFilter.applist[badgepageFilterPageData.appid]);
+
     for(let cardEntry of document.querySelectorAll('.badge_card_set_card')) {
         let textNodes = cardEntry.querySelector('.badge_card_set_text').childNodes;
-        globalSettings.badgepageFilter.cardInfoList.push({
+        badgepageFilterPageData.cardInfoList.push({
             name: textNodes[textNodes.length-3].textContent.trim(),
             img: cardEntry.querySelector('img').src
         });
@@ -4808,7 +4992,7 @@ async function setupBadgepageFilter() {
     for(let missingCardElem of document.querySelectorAll('.badge_card_to_collect')) {
         let itemId = parseInt(missingCardElem.querySelector('img').id.slice(9));
         let index = parseInt(missingCardElem.querySelector('.badge_card_collect_text > :last-child').textContent.match(/\d+/)) - 1;
-        globalSettings.badgepageFilter.itemIds[index] = itemId;
+        badgepageFilterPageData.itemIds[index] = itemId;
     }
 
     addSvgBlock(document.getElementById('responsive_page_template_content'));
@@ -4817,6 +5001,10 @@ async function setupBadgepageFilter() {
     GM_addStyle(cssMatcher);
 
     let friendFilterHTMLString = '<div class="enhanced-options right userscript-vars">'
+      +    '<div>'
+      +       `<input type="checkbox" id="include-cached-profiles" ${globalSettings.badgepageFilter.includeCacheMatching ? 'checked' : ''}>`
+      +       '<label for="include-cached-profiles">Include Past Matches</label>'
+      +    '</div>'
       +    '<button id="friend-filter" class="userscript-btn purple wide">Filter Friends</button>'
       +    '<button id="good-swaps" class="userscript-btn purple wide">Display Good Swaps</button>'
       +    '<button id="balance-cards" class="userscript-btn purple wide">Balance Cards</button>'
@@ -4829,13 +5017,14 @@ async function setupBadgepageFilter() {
     badgepageFilterShortcuts.main.insertAdjacentHTML('beforeend', cssAddThrobber());
     badgepageFilterShortcuts.throbber = document.querySelector('.userscript-throbber');
 
+    document.getElementById('include-cached-profiles').addEventListener('click', badgepageFilterUpdateCacheFlagListener);
     document.getElementById('friend-filter').addEventListener('click', badgepageFilterFilterFriendsWithCardsListener);
     document.getElementById('good-swaps').addEventListener('click', badgepageFilterShowGoodSwapsListener);
     document.getElementById('balance-cards').addEventListener('click', badgepageFilterNeutralOrGoodMatchingListener);
     document.getElementById('help-others').addEventListener('click', badgepageFilterHelpOthersListener);
 }
 
-async function badgepageFilterFetchFriend(profileContainerElem) {
+async function badgepageFilterFetchFriend(target) {
     const getPossibleMatches = (stock, partnerMissingCards, partnerPossibleCards) => {
         let minVal = Math.min(...stock);
         let lowestCards = new Set(stock.reduce((arr, x, i) => {
@@ -4867,13 +5056,14 @@ async function badgepageFilterFetchFriend(profileContainerElem) {
         return { lowestCards, possibleCards };
     };
 
-    let { friendsCardStock, isFoilPage, myMissingCards, myPossibleCards } = globalSettings.badgepageFilter;
-    let profileElem = profileContainerElem.querySelector('.persona');
-    let profileUrl = profileElem.href.match(/(id|profiles)\/[^/]+$/g);
+    let { friendsCardStock, isFoilPage, myMissingCards, myPossibleCards, appid } = badgepageFilterPageData;
+    let profileUrl = typeof target === 'string'
+      ? target
+      : target.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g);
 
     if(!Object.hasOwn(friendsCardStock, profileUrl)) {
-        let [steamId3, appid, itemId] = profileContainerElem.querySelector('.btn_grey_grey ').onclick.toString().match(/\d+/g);
-        let profileBadgepageLink = profileElem.href + '/gamecards/' + appid + '/' + (isFoilPage ? '?border=1' : '');
+        // let [steamId3, appid, itemId] = profileContainerElem.querySelector('.btn_grey_grey ').onclick.toString().match(/\d+/g);
+        let profileBadgepageLink = 'https://steamcommunity.com/' + profileUrl + '/gamecards/' + appid + '/' + (isFoilPage ? '?border=1' : '');
         let response = await fetch(profileBadgepageLink);
 
         let parser = new DOMParser();
@@ -4881,6 +5071,7 @@ async function badgepageFilterFetchFriend(profileContainerElem) {
 
         if(!doc.querySelector('.badge_gamecard_page')) {
             friendsCardStock[profileUrl] = null;
+            await badgepageFilterProfileCacheRemove(profileUrl);
             return;
         }
 
@@ -4897,10 +5088,16 @@ async function badgepageFilterFetchFriend(profileContainerElem) {
           ? getPossibleMatches(profileCardStock, myMissingCards, myPossibleCards)
           : { lowestCards: null, possibleCards: null };
 
+        if(!profileCardStock?.some(x => x)) {
+            await badgepageFilterProfileCacheRemove(profileUrl);
+        } else {
+            await badgepageFilterProfileCacheAdd(profileUrl);
+        }
+
         friendsCardStock[profileUrl] = {
-            id3: steamId3,
+            // id3: steamId3,
             name: profileName,
-            profileLink: profileElem.href,
+            profileLink: 'https://steamcommunity.com/' + profileUrl,
             pfp: profileImgLink,
             state: profileState,
             stock: profileCardStock,
@@ -4912,11 +5109,16 @@ async function badgepageFilterFetchFriend(profileContainerElem) {
     return friendsCardStock[profileUrl];
 }
 
+async function badgepageFilterUpdateCacheFlagListener(event) {
+    globalSettings.badgepageFilter.includeCacheMatching = event.target.checked;
+    await badgepageFilterSaveConfig();
+}
+
 // provides only mutually beneficial matches with any duplicates cards being fair game
 async function badgepageFilterFilterFriendsWithCardsListener() {
-    // remove/disable button
+    document.getElementById('friend-filter').setAttribute('disabled', '');
 
-    let { friendsCardStock } = globalSettings.badgepageFilter;
+    let { friendsCardStock } = badgepageFilterPageData;
 
     for(let missingCardElem of document.querySelectorAll('.badge_card_to_collect')) {
         let index = missingCardElem.querySelector('.badge_card_collect_text').lastElementChild.textContent.match(/^\d+/g)[0];
@@ -4940,68 +5142,76 @@ async function badgepageFilterFilterFriendsWithCardsListener() {
 // provides only mutually beneficial matches with any duplicates cards being fair game
 async function badgepageFilterShowGoodSwapsListener() {
     const generateMatchItemsHTMLString = (indices, priority) => {
-        let { cardInfoList } = globalSettings.badgepageFilter;
+        let { cardInfoList } = badgepageFilterPageData;
         return indices.map(x => `<div class="match-item${priority.has(x) ? ' good' : ''}" title="${cardInfoList[x].name}"><img src="${cardInfoList[x].img + '/96fx96f?allow_animated=1'}" alt="${cardInfoList[x].name}"></div>`).join('');
     };
     const generateMatchRowHTMLString = (profileid3, index, goodMatches, priority) => {
-        let { appid, itemIds } = globalSettings.badgepageFilter;
+        let { appid, itemIds } = badgepageFilterPageData;
         return '<div class="match-item-row align-right">'
-        +    '<div class="match-item-list left">'
-        +       generateMatchItemsHTMLString(goodMatches, priority)
-        +    '</div>'
-        +    `<div class="match-item-action trade" title="Offer a Trade..." onclick="StartTradeOffer( ${profileid3}, {for_tradingcard: '${appid + '_' + itemIds[index]}'} );"></div>`
-        +    '<div class="match-item-list right">'
-        +       generateMatchItemsHTMLString([index], priority)
-        +    '</div>'
-        + '</div>';
+          +    '<div class="match-item-list left">'
+          +       generateMatchItemsHTMLString(goodMatches, priority)
+          +    '</div>'
+          +    `<div class="match-item-action trade" title="Offer a Trade..." onclick="StartTradeOffer( ${profileid3}, {for_tradingcard: '${appid + '_' + itemIds[index]}'} );"></div>`
+          +    '<div class="match-item-list right">'
+          +       generateMatchItemsHTMLString([index], priority)
+          +    '</div>'
+          + '</div>';
     };
     const generateMatchRowsHTMLString = (profileid3, matches, priority) => matches.map((x, i) => x.length ? generateMatchRowHTMLString(profileid3, i, x, priority) : '').join('');
+    async function checkAndDisplayPossibleSingleSwaps(profileUrlString) {
+        if(processedFriends.has(profileUrlString)) {
+            return;
+        }
 
-    // remove/disable button
+        let profile = await badgepageFilterFetchFriend(profileUrlString);
+
+        if(!profile?.stock) {
+            return;
+        } else if(!profile?.possibleCards?.some(x => x.length)) {
+            return;
+        }
+
+        let profileGoodSwapHTMLString = '<div class="match-container-outer">'
+          +    '<div class="match-container max3">'
+          +       '<div class="match-header">'
+          +          '<div class="match-name">'
+          +             `<a href="${profile.profileLink}" class="avatar ${profile.state ?? 'offline'}">`
+          +                `<img src="${profile.pfp}">`
+          +             '</a>'
+          +             profile.name
+          +          '</div>'
+          +       '</div>'
+          +       generateMatchRowsHTMLString(profile.id3, profile.possibleCards, profile.lowestCards)
+          +    '</div>'
+          + '</div>';
+        goodSwapListElem.insertAdjacentHTML('beforeend', profileGoodSwapHTMLString);
+
+        processedFriends.add(profileUrlString);
+    }
+
+    document.getElementById('good-swaps').setAttribute('disabled', '');
 
     let HTMLString = '<div class="badge_detail_tasks footer"></div>'
-    + '<div id="good-swaps-results" class="enhanced-section">'
-    +    '<div class="enhanced-header">Good Matches</div>'
-    +    '<div class="enhanced-body"></div>'
-    + '</div>';
+      + '<div id="good-swaps-results" class="enhanced-section">'
+      +    '<div class="enhanced-header">Good Matches</div>'
+      +    '<div class="enhanced-body"></div>'
+      + '</div>';
     badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
     badgepageFilterShortcuts.main.classList.add('loading');
 
-    let { friendsCardStock } = globalSettings.badgepageFilter;
+    let { friendsCardStock } = badgepageFilterPageData;
     let processedFriends = new Set();
     let goodSwapListElem = document.querySelector('#good-swaps-results > .enhanced-body');
 
     for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
         let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
-        if(processedFriends.has(profileUrl)) {
-            continue;
+        await checkAndDisplayPossibleSingleSwaps(profileUrl);
+    }
+
+    if(globalSettings.includeCacheMatching) {
+        for(let profileUrl of badgepageFilterPageData.cachedProfiles) {
+            await checkAndDisplayPossibleSingleSwaps(profileUrl);
         }
-
-        await badgepageFilterFetchFriend(profileElem);
-        let profile = friendsCardStock[profileUrl];
-
-        if(!profile?.stock) {
-            continue;
-        } else if(!profile?.possibleCards?.some(x => x.length)) {
-            continue;
-        }
-
-        let profileGoodSwapHTMLString = '<div class="match-container-outer">'
-        +    '<div class="match-container max3">'
-        +       '<div class="match-header">'
-        +          '<div class="match-name">'
-        +             `<a href="${profile.profileLink}" class="avatar ${profile.state ?? 'offline'}">`
-        +                `<img src="${profile.pfp}">`
-        +             '</a>'
-        +             profile.name
-        +          '</div>'
-        +       '</div>'
-        +       generateMatchRowsHTMLString(profile.id3, profile.possibleCards, profile.lowestCards)
-        +    '</div>'
-        + '</div>';
-        goodSwapListElem.insertAdjacentHTML('beforeend', profileGoodSwapHTMLString);
-
-        processedFriends.add(profileUrl);
     }
 
     badgepageFilterShortcuts.main.classList.remove('loading');
@@ -5016,47 +5226,61 @@ function badgepageFilterHelpOthersListener() {
 }
 
 async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
-    let HTMLString = '<div class="badge_detail_tasks footer"></div>'
-    + `<div id="${elemId}" class="enhanced-section">`
-    +    `<div class="enhanced-header">${headerTitle}</div>`
-    +    '<div class="enhanced-body"></div>'
-    + '</div>';
-    badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
-    badgepageFilterShortcuts.main.classList.add('loading');
-
-    let { myCardStock, friendsCardStock } = globalSettings.badgepageFilter;
-    let processedFriends = new Set();
-    let balanceMatchingListElem = document.querySelector(`#${elemId} > .enhanced-body`);
-
-    for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
-        let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
-        if(processedFriends.has(profileUrl)) {
-            continue;
+    async function checkAndDisplayPossibleMatches(profileUrlString) {
+        if(processedFriends.has(profileUrlString)) {
+            return;
         }
 
-        await badgepageFilterFetchFriend(profileElem);
-        let profile = friendsCardStock[profileUrl];
+        let profile = await badgepageFilterFetchFriend(profileUrlString);
 
         if(!profile?.stock) {
-            continue;
+            return;
         }
 
         let balanceResult = Matcher.balanceVariance(myCardStock, profile.stock, false, helperMode);
         if(!balanceResult.swap.some(x => x)) {
-            continue;
+            return;
         }
 
         let profileBalancedMatchingHTMLString = badgepageFilterGenerateMatchResultHTML(profile, balanceResult);
         balanceMatchingListElem.insertAdjacentHTML('beforeend', profileBalancedMatchingHTMLString);
 
-        processedFriends.add(profileUrl);
+        processedFriends.add(profileUrlString);
+    }
+    if(helperMode) {
+        document.getElementById('help-others').setAttribute('disabled', '');
+    } else {
+        document.getElementById('balance-cards').setAttribute('disabled', '');
+    }
+
+    let HTMLString = '<div class="badge_detail_tasks footer"></div>'
+      + `<div id="${elemId}" class="enhanced-section">`
+      +    `<div class="enhanced-header">${headerTitle}</div>`
+      +    '<div class="enhanced-body"></div>'
+      + '</div>';
+    badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
+    badgepageFilterShortcuts.main.classList.add('loading');
+
+    let { myCardStock, friendsCardStock } = badgepageFilterPageData;
+    let processedFriends = new Set();
+    let balanceMatchingListElem = document.querySelector(`#${elemId} > .enhanced-body`);
+
+    for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
+        let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
+        await checkAndDisplayPossibleMatches(profileUrl);
+    }
+
+    if(globalSettings.includeCacheMatching) {
+        for(let profileUrl of badgepageFilterPageData.cachedProfiles) {
+            await checkAndDisplayPossibleMatches(profileUrl);
+        }
     }
 
     badgepageFilterShortcuts.main.classList.remove('loading');
 }
 
 function badgepageFilterGenerateMatchResultHTML(profileData, balanceResult) {
-    let { cardInfoList } = globalSettings.badgepageFilter;
+    let { cardInfoList } = badgepageFilterPageData;
 
     const generateMatchItemHTMLString = (qty, i) => {
         return `<div class="match-item" data-qty="${Math.abs(qty)}" title="${cardInfoList[i].name}">`
@@ -5097,6 +5321,30 @@ function badgepageFilterGenerateMatchResultHTML(profileData, balanceResult) {
       +       generateMatchRowHTMLString(balanceResult.swap)
       +    '</div>'
       + '</div>';
+}
+
+async function badgepageFilterProfileCacheAdd(profileUrl) {
+    let { appid } = badgepageFilterPageData;
+    globalSettings.badgepageFilter.applist[appid].push(profileUrl);
+    await badgepageFilterSaveConfig();
+}
+
+async function badgepageFilterProfileCacheRemove(profileUrl) {
+    let { appid } = badgepageFilterPageData;
+    let cachedProfiles = globalSettings.badgepageFilter.applist[appid];
+    cachedProfiles.splice(cachedProfiles.indexOf(profileUrl), 1);
+    await badgepageFilterSaveConfig();
+}
+
+async function badgepageFilterSaveConfig() {
+    await SteamToolsDbManager.setToolConfig('badgepageFilter');
+}
+
+async function badgepageFilterLoadConfig() {
+    let config = await SteamToolsDbManager.getToolConfig('badgepageFilter');
+    if(config.badgepageFilter) {
+        globalSettings.badgepageFilter = config.badgepageFilter;
+    }
 }
 
 function generateSuperNav() {
@@ -5149,65 +5397,65 @@ function generateSuperNav() {
 
 function addSvgBlock(elem) {
     const svgString = '<div class="userscript-svg-assets">'
-    +    '<svg class="solid-clr-filters">'
-    +       '<filter id="filter-red" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-    +          '<feColorMatrix type="matrix" values="0 0 0 0   0.8   0 0 0 0   0   0 0 0 0   0   0 0 0 1   0" />'
-    +       '</filter>'
-    +       '<filter id="filter-red-bright" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-    +          '<feColorMatrix type="matrix" values="0 0 0 0   1   0 0 0 0   0   0 0 0 0   0   0 0 0 1   0" />'
-    +       '</filter>'
-    +       '<filter id="filter-green" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-    +          '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   0.8   0 0 0 0   0   0 0 0 1   0" />'
-    +       '</filter>'
-    +       '<filter id="filter-green-bright" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-    +          '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   1   0 0 0 0   0   0 0 0 1   0" />'
-    +       '</filter>'
-    +       '<filter id="filter-blue" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-    +          '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   0   0 0 0 0   0.8   0 0 0 1   0" />'
-    +       '</filter>'
-    +       '<filter id="filter-blue-bright" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-    +          '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   0   0 0 0 0   1   0 0 0 1   0" />'
-    +       '</filter>'
-    +       '<filter id="filter-dark-gray" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-    +          '<feColorMatrix type="matrix" values="0 0 0 0   0.33   0 0 0 0   0.33   0 0 0 0   0.33   0 0 0 1   0" />'
-    +       '</filter>'
-    +       '<filter id="filter-steam-gray" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-    +          '<feColorMatrix type="matrix" values="0 0 0 0   0.77   0 0 0 0   0.76   0 0 0 0   0.75   0 0 0 1   0" />'
-    +       '</filter>'
-    +          '<filter id="filter-steam-sky-blue" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
-    +          '<feColorMatrix type="matrix" values="0 0 0 0   0.328   0 0 0 0   0.6445   0 0 0 0   0.828   0 0 0 1   0" />'
-    +       '</filter>'
-    +    '</svg>'
-    +    '<svg class="svg-download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 29" fill="none">'
-    +       '<path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M26 20 V25 H4 V20 H0 V29 H30 V20 H26 Z"></path>'
-    +       '<path fill="currentColor"'
-    +          'd="M17 12.1716 L21.5858 7.58578 L24.4142 10.4142 L15 19.8284 L5.58582 10.4142 L8.41424 7.58578 L13 12.1715 V0 H17 V12.1716 Z">'
-    +       '</path>'
-    +    '</svg>'
-    +    '<svg class="svg-upload" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 29" fill="none">'
-    +       '<path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M26 20 V25 H4 V20 H0 V29 H30 V20 H26 Z"></path>'
-    +       '<path fill="currentColor"'
-    +          'd="M17 7.6568 L21.5858 12.24262 L24.4142 9.4142 L15 0 L5.58582 9.4142 L8.41424 12.24262 L13 7.6568 V19.8284 H17 V7.6568 Z">'
-    +       '</path>'
-    +    '</svg>'
-    +    '<svg class="svg-x" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 30" fill="none">'
-    +       '<path fill="currentColor"'
-    +          'd="M29.12 4.41 L25.59 0.880005 L15 11.46 L4.41 0.880005 L0.880005 4.41 L11.46 15 L0.880005 25.59 L4.41 29.12 L15 18.54 L25.59 29.12 L29.12 25.59 L18.54 15 L29.12 4.41 Z">'
-    +       '</path>'
-    +    '</svg>'
-    +    '<svg class="svg-reload" version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">'
-    +       '<path fill="none" stroke="currentColor" stroke-width="30" stroke-linecap="round" stroke-miterlimit="10"'
-    +          'd="M229.809 147.639 A103.5 103.5 0 1 1 211 66.75">'
-    +       '</path>'
-    +       '<polygon  fill="currentColor" points="147.639,108.361 245.755,10.166 245.834,108.361"></polygon>'
-    +    '</svg>'
-    +    '<svg class="svg-reload-2" version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">'
-    +       '<path fill="none" stroke="currentColor" stroke-width="30" stroke-linecap="round" stroke-miterlimit="10"'
-    +          'd="M229.809,147.639 c-9.178,47.863-51.27,84.027-101.809,84.027 c-57.253,0-103.667-46.412-103.667-103.666 S70.747,24.334,128,24.334 c34.107,0,64.368,16.472,83.261,41.895">'
-    +       '</path>'
-    +       '<polygon  fill="currentColor" points="147.639,108.361 245.755,10.166 245.834,108.361"></polygon>'
-    +    '</svg>'
-    + '</div>';
+      +    '<svg class="solid-clr-filters">'
+      +       '<filter id="filter-red" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+      +          '<feColorMatrix type="matrix" values="0 0 0 0   0.8   0 0 0 0   0   0 0 0 0   0   0 0 0 1   0" />'
+      +       '</filter>'
+      +       '<filter id="filter-red-bright" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+      +          '<feColorMatrix type="matrix" values="0 0 0 0   1   0 0 0 0   0   0 0 0 0   0   0 0 0 1   0" />'
+      +       '</filter>'
+      +       '<filter id="filter-green" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+      +          '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   0.8   0 0 0 0   0   0 0 0 1   0" />'
+      +       '</filter>'
+      +       '<filter id="filter-green-bright" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+      +          '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   1   0 0 0 0   0   0 0 0 1   0" />'
+      +       '</filter>'
+      +       '<filter id="filter-blue" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+      +          '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   0   0 0 0 0   0.8   0 0 0 1   0" />'
+      +       '</filter>'
+      +       '<filter id="filter-blue-bright" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+      +          '<feColorMatrix type="matrix" values="0 0 0 0   0   0 0 0 0   0   0 0 0 0   1   0 0 0 1   0" />'
+      +       '</filter>'
+      +       '<filter id="filter-dark-gray" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+      +          '<feColorMatrix type="matrix" values="0 0 0 0   0.33   0 0 0 0   0.33   0 0 0 0   0.33   0 0 0 1   0" />'
+      +       '</filter>'
+      +       '<filter id="filter-steam-gray" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+      +          '<feColorMatrix type="matrix" values="0 0 0 0   0.77   0 0 0 0   0.76   0 0 0 0   0.75   0 0 0 1   0" />'
+      +       '</filter>'
+      +          '<filter id="filter-steam-sky-blue" color-interpolation-filters="sRGB" x="0" y="0" height="100%" width="100%">'
+      +          '<feColorMatrix type="matrix" values="0 0 0 0   0.328   0 0 0 0   0.6445   0 0 0 0   0.828   0 0 0 1   0" />'
+      +       '</filter>'
+      +    '</svg>'
+      +    '<svg class="svg-download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 29" fill="none">'
+      +       '<path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M26 20 V25 H4 V20 H0 V29 H30 V20 H26 Z"></path>'
+      +       '<path fill="currentColor"'
+      +          'd="M17 12.1716 L21.5858 7.58578 L24.4142 10.4142 L15 19.8284 L5.58582 10.4142 L8.41424 7.58578 L13 12.1715 V0 H17 V12.1716 Z">'
+      +       '</path>'
+      +    '</svg>'
+      +    '<svg class="svg-upload" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 29" fill="none">'
+      +       '<path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M26 20 V25 H4 V20 H0 V29 H30 V20 H26 Z"></path>'
+      +       '<path fill="currentColor"'
+      +          'd="M17 7.6568 L21.5858 12.24262 L24.4142 9.4142 L15 0 L5.58582 9.4142 L8.41424 12.24262 L13 7.6568 V19.8284 H17 V7.6568 Z">'
+      +       '</path>'
+      +    '</svg>'
+      +    '<svg class="svg-x" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 30" fill="none">'
+      +       '<path fill="currentColor"'
+      +          'd="M29.12 4.41 L25.59 0.880005 L15 11.46 L4.41 0.880005 L0.880005 4.41 L11.46 15 L0.880005 25.59 L4.41 29.12 L15 18.54 L25.59 29.12 L29.12 25.59 L18.54 15 L29.12 4.41 Z">'
+      +       '</path>'
+      +    '</svg>'
+      +    '<svg class="svg-reload" version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">'
+      +       '<path fill="none" stroke="currentColor" stroke-width="30" stroke-linecap="round" stroke-miterlimit="10"'
+      +          'd="M229.809 147.639 A103.5 103.5 0 1 1 211 66.75">'
+      +       '</path>'
+      +       '<polygon  fill="currentColor" points="147.639,108.361 245.755,10.166 245.834,108.361"></polygon>'
+      +    '</svg>'
+      +    '<svg class="svg-reload-2" version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">'
+      +       '<path fill="none" stroke="currentColor" stroke-width="30" stroke-linecap="round" stroke-miterlimit="10"'
+      +          'd="M229.809,147.639 c-9.178,47.863-51.27,84.027-101.809,84.027 c-57.253,0-103.667-46.412-103.667-103.666 S70.747,24.334,128,24.334 c34.107,0,64.368,16.472,83.261,41.895">'
+      +       '</path>'
+      +       '<polygon  fill="currentColor" points="147.639,108.361 245.755,10.166 245.834,108.361"></polygon>'
+      +    '</svg>'
+      + '</div>';
 
     elem.insertAdjacentHTML('afterend', svgString);
 }
@@ -5230,15 +5478,15 @@ function cssAddOverlay() {
     }
 
     return `<div class="userscript-overlay ${overlayState}">`
-    +    innerHTMLString
-    + '</div>';
+      +    innerHTMLString
+      + '</div>';
 }
 function cssAddThrobber() {
     return '<div class="userscript-throbber">'
-    +    '<div class="throbber-bar"></div>'
-    +    '<div class="throbber-bar"></div>'
-    +    '<div class="throbber-bar"></div>'
-    + '</div>';
+      +    '<div class="throbber-bar"></div>'
+      +    '<div class="throbber-bar"></div>'
+      +    '<div class="throbber-bar"></div>'
+      + '</div>';
 }
 
 
@@ -5642,7 +5890,7 @@ input.userscript-input[type="text"] {
 }
 
 textarea.userscript-input {
-   /* width: 85%; */
+   width: 85%;
    padding: 3px;
    color: white;
    background-color: rgba(0, 0, 0, 1);
@@ -5963,32 +6211,32 @@ input.userscript-input[type="range"] {
    }
 }
 .conf-list-entry-action {
-   height: 2rem;
+   --entry-action-h: 2rem;
+   height: var(--entry-action-h);
    line-height: 2rem;
    text-align: center;
    background-color: black;
    box-shadow: 1px 0px 0px #1b1b1b;
    position: relative;
 }
-.conf-list-entry-action.add > .conf-list-entry-action-add {
-   display: block;
-}
+.conf-list-entry-action.add > .conf-list-entry-action-add,
 .conf-list-entry-action.modify > .conf-list-entry-action-modify {
    display: flex;
 }
-.conf-list-entry-action-add {
-   --psign-size: 1.5rem;
-   --psign-clr-purple: #4f1a98;
-   --psign-clr-hvr-purple: #9467d7;
+.conf-list-entry-action > * {
    display: none;
-   height: 100%;
+   height: var(--entry-action-h);
    width: 100%;
-   position: relative;
-
+   justify-content: space-evenly;
+}
+.conf-list-entry-action-add {
    .entry-action.add {
-      height: inherit;
+      --psign-size: 1.5rem;
+      --psign-clr-purple: #4f1a98;
+      --psign-clr-hvr-purple: #9467d7;
+      height: var(--entry-action-h);
       width: 64px;
-      margin-inline: auto;
+      position: relative;
    }
    .entry-action.add::before {
       display: block;
@@ -6020,11 +6268,6 @@ input.userscript-input[type="range"] {
    }
 }
 .conf-list-entry-action-modify {
-   display: none;
-   height: 100%;
-   width: 100%;
-   justify-content: space-evenly;
-
    > * {
       height: inherit;
       width: 64px;
@@ -6095,11 +6338,13 @@ input.userscript-input[type="range"] {
 }
 
 .loading > .userscript-loader,
-.dialog > .userscript-dialog {
+.dialog > .userscript-dialog,
+.form > .userscript-dialog-form {
       display: flex;
 }
 .userscript-loader,
-.userscript-dialog {
+.userscript-dialog,
+.userscript-dialog-form {
    padding: 5%;
    width: 90%;
    max-height: 90%;
@@ -6111,6 +6356,9 @@ input.userscript-input[type="range"] {
    align-items: center;
    text-align: center;
    font-size: large;
+}
+.userscript-dialog-form {
+   align-items: start;
 }
 
 .userscript-dialog-container {
@@ -6279,7 +6527,8 @@ input.userscript-input[type="range"] {
 }
 .userscript-config-list-entry.selected {
    background: #43167b;
-}`;
+}
+`;
 
  const cssMatcher = `.match-results {
    margin: 3rem;
