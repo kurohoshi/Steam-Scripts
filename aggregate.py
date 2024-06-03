@@ -2,7 +2,12 @@ import sys
 import os
 import json
 
-o_file = open('userscript.js', 'w', encoding="utf-8")
+o_file_name = 'userscript.js'
+if len(sys.argv) > 1:
+    if sys.argv[1]=='test':
+        o_file_name = 'testscript.js'
+
+o_file = open(o_file_name, 'w', encoding="utf-8")
 
 with open('global/config.json', 'r', encoding="utf-8") as config_file:
     config = json.load(config_file)
