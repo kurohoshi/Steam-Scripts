@@ -844,27 +844,6 @@ async function matcherVerifyConfigSave() {
 }
 
 async function matcherStartMatching() {
-    const generateMatchGroupString = (groupName) => `<div class="match-group" data-group="${groupName}"></div>`;
-    const generateMatchNameHeaderString = (profile, reverseDirection = false) => {
-        return `<div class="match-name${reverseDirection ? ' align-right' : ''}">`
-          +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}/` : `profiles/${profile.id}/`}" class="avatar ${profile.getStateString()}">`
-          +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
-          +    '</a>'
-          +    profile.name
-          + '</div>'
-    };
-    const generateMatchContainerString = (profile1, profile2) => {
-        return '<div class="match-container-outer loading">'
-          +    `<div class="match-container grid" data-profileid1="${profile1.id}" data-profileid2="${profile2.id}">`
-          +       '<div class="match-header">'
-          +          generateMatchNameHeaderString(profile1, true)
-          +          '<div class="match-item-action trade"></div>'
-          +          generateMatchNameHeaderString(profile2)
-          +       '</div>'
-          +    '</div>'
-          +    cssAddOverlay(cssAddThrobber())
-          + '</div>'
-    };
 
     GM_addStyle(cssMatcher);
 
@@ -882,23 +861,7 @@ async function matcherStartMatching() {
     }
 
     for(let group of MatcherShortcuts.data.matchProfileGroups) {
-        MatcherShortcuts.results.insertAdjacentHTML('beforeend', generateMatchGroupString(group.name));
-        MatcherShortcuts.resultGroups[group.name] = MatcherConfigShortcuts.results.querySelector(`[data-group="${group.name}"]`);
-
-        for(let profile of group.list) {
-            if( !(profile instanceof Profile) ) {
-                profile = await Profile.findProfile(profile);
-            }
-
-            MatcherShortcuts.resultGroups[group.name].insertAdjacentHTML('beforeend', generateMatchContainerString(Profile.me, profile));
-
-            await matcherMatchProfile();
-
-            let emptyContainer = MatcherShortcuts.resultGroups[group.name].querySelector('.match-container-outer.loading');
-            if(emptyContainer) {
-                emptyContainer.remove();
-            }
-        }
+        await matcherMatchProfileGroup(group);
     }
 
     // friend group matching
@@ -920,7 +883,30 @@ async function matcherStartMatching() {
     // finish matching process here
 }
 
-async function matcherMatchProfile() {
+async function matcherMatchProfileGroup(matchGroup) {
+    const generateMatchGroupString = (groupName) => `<div class="match-group" data-group="${groupName}"></div>`;
+
+    if(!matchGroup.list.length) {
+        return;
+    }
+
+    MatcherShortcuts.results.insertAdjacentHTML('beforeend', generateMatchGroupString(matchGroup.name));
+    MatcherShortcuts.resultGroups[matchGroup.name] = MatcherConfigShortcuts.results.querySelector(`[data-group="${matchGroup.name}"]`);
+
+    for(let profileData of matchGroup.list) {
+        let profile = (profileData instanceof Profile)
+          ? profileData
+          : (await Profile.findProfile(profile));
+
+        if(!profile) {
+            console.warn(`matcherStartMatching(): Profile data ${profileData} is not valid!`);
+        }
+
+        await matcherMatchProfile(matchGroup.name, profile);
+    }
+}
+
+async function matcherMatchProfile(groupName, profile) {
     const generateItemTypeContainerString = (itemType) => `<div class="match-item-type" data-type="${itemType}"></div>`;
     const generateRarityContainerString = (rarity) => `<div class="match-item-rarity" data-rarity="${rarity}"></div>`;
     const generateAppContainerString = (appid) => `<div class="match-item-app" data-appid="${appid}"></div>`;
@@ -949,16 +935,15 @@ async function matcherMatchProfile() {
         ).join('');
     }
 
+    MatcherShortcuts.resultGroups[groupName].insertAdjacentHTML('beforeend', matcherGenerateMatchProfileContainer(Profile.me, profile));
+    let matchContainer = MatcherShortcuts.resultGroups[groupName].querySelector('.match-container-outer.loading > .match-container');
     let shortcuts = {};
-    let loadingContainer = MatcherShortcuts.results.querySelector('.match-container-outer.loading > .match-container');
-    if(!loadingContainer) {
-        console.warn('matcherMatchProfile(): No loading container found!');
-        return;
-    }
 
-    let matchResult = await Matcher.matchInv(loadingContainer.dataset.profileid1, loadingContainer.dataset.profileid2);
+    let matchResult = await Matcher.matchInv(Profile.me, profile);
+
     if(!matchResult || steamToolsUtils.isEmptyObject(matchResult.results)) {
-        console.warn('matcherMatchProfile(): No results to be rendered');
+        console.warn('matcherMatchProfile(): No results to be rendered!');
+        matchContainer.parentElement.remove();
         return;
     }
 
@@ -967,8 +952,8 @@ async function matcherMatchProfile() {
 
         shortcuts[itemType] ??= { elem: null, rarities: {} };
         if(!shortcuts[itemType].elem) {
-            loadingContainer.insertAdjacentHTML('beforeend', generateItemTypeContainerString(itemType));
-            shortcuts[itemType].elem = loadingContainer.querySelector(`[data-type="${itemType}"]`);
+            matchContainer.insertAdjacentHTML('beforeend', generateItemTypeContainerString(itemType));
+            shortcuts[itemType].elem = matchContainer.querySelector(`[data-type="${itemType}"]`);
         }
         shortcuts[itemType].rarities[rarity] ??= { elem: null, appids: {} };
         if(!shortcuts[itemType].rarities[rarity].elem) {
@@ -986,8 +971,32 @@ async function matcherMatchProfile() {
     console.log(matchResult);
     console.log(Profile.itemDescriptions)
 
+    matchContainer.parentElement.classList.remove('loading');
+}
 
-    loadingContainer.parentElement.classList.remove('loading');
+function matcherGenerateMatchProfileContainer(profile1, profile2) {
+    const generateMatchNameHeaderString = (prof, reverseDirection = false) => {
+        return `<div class="match-name${reverseDirection ? ' align-right' : ''}">`
+          +    `<a href="https://steamcommunity.com/${prof.url ? `id/${prof.url}/` : `profiles/${prof.id}/`}" class="avatar ${prof.getStateString()}">`
+          +       `<img src="https://avatars.akamai.steamstatic.com/${prof.pfp}.jpg" alt="">`
+          +    '</a>'
+          +    prof.name
+          + '</div>'
+    };
+    const generateMatchContainerString = (prof1, prof2) => {
+        return '<div class="match-container-outer loading">'
+          +    `<div class="match-container grid" data-profileid1="${prof1.id}" data-profileid2="${prof2.id}">`
+          +       '<div class="match-header">'
+          +          generateMatchNameHeaderString(prof1, true)
+          +          '<div class="match-item-action trade"></div>'
+          +          generateMatchNameHeaderString(prof2)
+          +       '</div>'
+          +    '</div>'
+          +    cssAddOverlay(cssAddThrobber())
+          + '</div>'
+    };
+
+    return generateMatchContainerString(profile1, profile2);
 }
 
 function matcherSetOverlay(overlayParentElem, overlayEnable, overlayState) {
