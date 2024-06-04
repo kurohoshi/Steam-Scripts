@@ -102,6 +102,10 @@ class Profile {
           ? 'online' : 'offline';
     }
 
+    getProfileURL(idOnly=false) {
+        return `https://steamcommunity.com/${(idOnly || !this.url) ? ('profiles/'+this.id) : ('id/'+this.url)}`
+    }
+
     async getTradeFriends() { // TODO: stop profile fetching when desired profile is reached, solution to cutting down friend fetching time
         if(!(await this.isMe())) {
             console.warn("getTradeFriends(): This is not user's profile! Try using getFriends() instead");
