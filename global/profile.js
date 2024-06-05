@@ -106,13 +106,35 @@ class Profile {
         return `https://steamcommunity.com/${(idOnly || !this.url) ? ('profiles/'+this.id) : ('id/'+this.url)}`
     }
 
-    async getTradeFriends() { // TODO: stop profile fetching when desired profile is reached, solution to cutting down friend fetching time
+    async getFriends() {
+        if(!this.friends) {
+            console.log("getFriends(): Fetching friends list");
+            let response = await fetch( this.getProfileURL()+'/friends' );
+            await Profile.utils.sleep(Profile.utils.FETCH_DELAY);
+
+            let parser = new DOMParser();
+            let doc = parser.parseFromString(await response.text(), "text/html");
+
+            this.friends = [];
+            for(let profileElem of doc.getElementById('search_results').children) {
+                if(!profileElem.classList.contains('friend_block_v2')) {
+                    continue;
+                }
+
+                let profileString = profileElem.querySelector('a').href.replace(/^https:\/\/steamcommunity\.com\//g, '');
+                console.log(profileString);
+                this.friends.push(profileString);
+            }
+        }
+    }
+
+    async getTradeFriends() {
         if(!(await this.isMe())) {
             console.warn("getTradeFriends(): This is not user's profile! Try using getFriends() instead");
             return;
         }
 
-        console.log("Updating friends list...");
+        console.log("Getting trade friends...");
 
         console.log("getTradeFriends(): Fetching friends list");
         let response = await fetch("https://steamcommunity.com/actions/PlayerList/?type=friends");
@@ -121,23 +143,13 @@ class Profile {
         let parser = new DOMParser();
         let doc = parser.parseFromString(await response.text(), "text/html");
 
-        this.friends = [];
+        let tradeFriends = [];
         for(let profile of [...doc.querySelectorAll(".FriendBlock")]) {
             let profileString = profile.querySelector('a').href.replace(/^https:\/\/steamcommunity\.com\//g, '');
-            if(profileString.startsWith('profiles')) {
-                let id = profileString.replace(/^profiles\//g, '');
-                let foundProfile = await Profile.findProfile(id);
-                this.friends.push(foundProfile);
-            } else if(profileString.startsWith('id')) {
-                let url = profileString.replace(/^id\//g, '');
-                let foundProfile = await Profile.findProfile(url);
-                this.friends.push(foundProfile);
-            } else {
-                console.warn(`getTradeFriends(): ${profileString} is neither id or custom URL, investigate!`);
-            }
+            tradeFriends.push(profileString);
         }
 
-        console.log("Friends list updated!");
+        return tradeFriends;
     }
 
     async isMe() {
@@ -149,26 +161,18 @@ class Profile {
     }
 
     async isFriend(profile) {
-        if(!this.friends) {
-            if(!(await this.isMe())) {
-                console.error('isFriend(): Method ran on a profile that is not user\'s, exiting!');
-                return;
-            }
-            await this.getTradeFriends(); // A more generic friends list finding is required
-        }
-        if(this.friends.some(x => x.id === profile.id || x.url === profile.url)) {
-            return true;
-        }
-        if( !(profile.id || profile.url) ) {
-            await Profile.findMoreDataForProfile(profile);
-        } else {
+        if(typeof profile === 'string') {
+            profile = await Profile.findProfile(profile);
+        } else if( !(profile instanceof Profile) ) {
+            console.error('isFriend(): profile argument is of incorrect type!');
             return false;
         }
-        if(this.friends.some(x => x.id===profile.id || x.url===profile.url)) {
-            return true;
+
+        if(!this.friends) {
+            await this.getFriends();
         }
 
-        return false;
+        return this.friends.some(x => (x.startsWith('id') && x.endsWith(profile.id)) || (x.startsWith('profiles') && x.endsWith(profile.url)) );
     }
 
     static async loadProfiles(profileStrings, useURL=false) {
