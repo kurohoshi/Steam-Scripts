@@ -146,7 +146,12 @@ let Matcher = {
                 let flip = i%2;
                 let swapset1 = set1.map((x, i) => x.count + swap[i]);
                 let swapset2 = set2.map((x, i) => x.count - swap[i]);
-                let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), false, helper && !flip);
+                let mode = (itemType !== 'card')
+                  ? -1
+                  : (helper && !flip)
+                    ? 1
+                    : 0;
+                let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), false, mode);
                 if(!balanceResult.history.length) {
                     break;
                 }
@@ -171,7 +176,8 @@ let Matcher = {
 
         return this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid];
     },
-    balanceVariance(set1, set2, lowToHigh=false, helper=false) {
+    // mode (<0: mutual only, =0: neutral or good, >0: helper mode)
+    balanceVariance(set1, set2, lowToHigh=false, mode=0) {
         function binReorder(bin, index, isSortedLowToHigh, incremented, binLUT, lutIndex) {
             const cmp = (val1, val2) => incremented ? val1>=val2 : val1<=val2;
             const shiftIndex = (next, offset) => {
@@ -201,6 +207,9 @@ let Matcher = {
 
         if(!Array.isArray(set1) || !Array.isArray(set2) || set1.some(x => typeof x !== "number") || set2.some(x => typeof x !== "number") || set1.length!==set2.length) {
             console.error("balanceVariance(): Invalid sets! Sets must be an array of numbers with the same length!");
+            return;
+        } else if(set1.length <= 1) {
+            console.warn("balanceVariance(): Only 1 item in set, nothing to balance...");
             return;
         }
 
@@ -250,9 +259,10 @@ let Matcher = {
                 // simplified from (x1-1)**2+(x2+1)**2 ?? x1**2 + x2**2  --> -x1+x2+1 ?? 0
                 let bin2vardiff = -bin2_i_elem[1]     +bin2[j][1] +1;
 
-                let isNeutralOrGood = (bin1vardiff<=0 && bin2vardiff<=0) && !(bin1vardiff===0 && bin2vardiff===0);
-                let isHelpful = bin2vardiff<0;
-                if(helper ? isHelpful : isNeutralOrGood) {
+                let isMutual = (mode < 0) && (bin1vardiff<0 && bin2vardiff<0)
+                let isNeutralOrGood = (mode === 0) && (bin1vardiff<=0 && bin2vardiff<=0) && !(bin1vardiff===0 && bin2vardiff===0);
+                let isHelpful = (mode > 0) && bin2vardiff<0;
+                if(isMutual || isNeutralOrGood || isHelpful) {
                     bin1[i][1]++;
                     binReorder(bin1, i, lowToHigh, true, binIndices, 0);
                     bin1_j_elem[1]--;
