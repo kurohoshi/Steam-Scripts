@@ -1675,7 +1675,7 @@ let Matcher = {
             binIndices[bin1[i][0]][0] = i;
             binIndices[bin2[i][0]][1] = i;
         }
- 
+
         for(let max=1, maxlen=setlen*2; max<maxlen; max++) {
             let start = max<=setlen ? 0 : max-setlen;
             let end   = max<=setlen ? max : setlen;
@@ -5253,6 +5253,11 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
         document.getElementById('balance-cards').setAttribute('disabled', '');
     }
 
+function badgepageFilterHelpOthersListener() {
+    badgepageFilterBalanceCards('helper-match', 'Helping Friends', true);
+}
+
+async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
     let HTMLString = '<div class="badge_detail_tasks footer"></div>'
       + `<div id="${elemId}" class="enhanced-section">`
       +    `<div class="enhanced-header">${headerTitle}</div>`

@@ -32,6 +32,7 @@ class Profile {
         mini_profile:    "item_class_13",
         profile_frame:   "item_class_14",
         animated_avatar: "item_class_15"
+        // missing: Consumable, avatar profile frame, keyboard skin, startup vid
     }
     static ITEM_TYPE_ORDER = {
         gem: 1,
@@ -102,13 +103,39 @@ class Profile {
           ? 'online' : 'offline';
     }
 
-    async getTradeFriends() { // TODO: stop profile fetching when desired profile is reached, solution to cutting down friend fetching time
+    getProfileURL(idOnly=false) {
+        return `https://steamcommunity.com/${(idOnly || !this.url) ? ('profiles/'+this.id) : ('id/'+this.url)}`
+    }
+
+    async getFriends() {
+        if(!this.friends) {
+            console.log("getFriends(): Fetching friends list");
+            let response = await fetch( this.getProfileURL()+'/friends' );
+            await Profile.utils.sleep(Profile.utils.FETCH_DELAY);
+
+            let parser = new DOMParser();
+            let doc = parser.parseFromString(await response.text(), "text/html");
+
+            this.friends = [];
+            for(let profileElem of doc.getElementById('search_results').children) {
+                if(!profileElem.classList.contains('friend_block_v2')) {
+                    continue;
+                }
+
+                let profileString = profileElem.querySelector('a').href.replace(/^https:\/\/steamcommunity\.com\//g, '');
+                console.log(profileString);
+                this.friends.push(profileString);
+            }
+        }
+    }
+
+    async getTradeFriends() {
         if(!(await this.isMe())) {
             console.warn("getTradeFriends(): This is not user's profile! Try using getFriends() instead");
             return;
         }
 
-        console.log("Updating friends list...");
+        console.log("Getting trade friends...");
 
         console.log("getTradeFriends(): Fetching friends list");
         let response = await fetch("https://steamcommunity.com/actions/PlayerList/?type=friends");
@@ -117,23 +144,13 @@ class Profile {
         let parser = new DOMParser();
         let doc = parser.parseFromString(await response.text(), "text/html");
 
-        this.friends = [];
+        let tradeFriends = [];
         for(let profile of [...doc.querySelectorAll(".FriendBlock")]) {
             let profileString = profile.querySelector('a').href.replace(/^https:\/\/steamcommunity\.com\//g, '');
-            if(profileString.startsWith('profiles')) {
-                let id = profileString.replace(/^profiles\//g, '');
-                let foundProfile = await Profile.findProfile(id);
-                this.friends.push(foundProfile);
-            } else if(profileString.startsWith('id')) {
-                let url = profileString.replace(/^id\//g, '');
-                let foundProfile = await Profile.findProfile(url);
-                this.friends.push(foundProfile);
-            } else {
-                console.warn(`getTradeFriends(): ${profileString} is neither id or custom URL, investigate!`);
-            }
+            tradeFriends.push(profileString);
         }
 
-        console.log("Friends list updated!");
+        return tradeFriends;
     }
 
     async isMe() {
@@ -145,26 +162,18 @@ class Profile {
     }
 
     async isFriend(profile) {
-        if(!this.friends) {
-            if(!(await this.isMe())) {
-                console.error('isFriend(): Method ran on a profile that is not user\'s, exiting!');
-                return;
-            }
-            await this.getTradeFriends(); // A more generic friends list finding is required
-        }
-        if(this.friends.some(x => x.id === profile.id || x.url === profile.url)) {
-            return true;
-        }
-        if( !(profile.id || profile.url) ) {
-            await Profile.findMoreDataForProfile(profile);
-        } else {
+        if(typeof profile === 'string') {
+            profile = await Profile.findProfile(profile);
+        } else if( !(profile instanceof Profile) ) {
+            console.error('isFriend(): profile argument is of incorrect type!');
             return false;
         }
-        if(this.friends.some(x => x.id===profile.id || x.url===profile.url)) {
-            return true;
+
+        if(!this.friends) {
+            await this.getFriends();
         }
 
-        return false;
+        return this.friends.some(x => (x.startsWith('id') && x.endsWith(profile.id)) || (x.startsWith('profiles') && x.endsWith(profile.url)) );
     }
 
     static async loadProfiles(profileStrings, useURL=false) {
@@ -278,7 +287,7 @@ class Profile {
         }
         let urlID = profile.id || profile.url;
         console.log(`findMoreDataForProfile(): Fetching profile page of ${urlID}`);
-        let response = await fetch(`https://steamcommunity.com/${profile.id !== undefined ? 'profiles' : 'id'}/${urlID}/`);
+        let response = await fetch(`https://steamcommunity.com/${profile.id !== undefined ? 'profiles' : 'id'}/${urlID}`);
         await Profile.utils.sleep(Profile.utils.FETCH_DELAY);
 
         let parser = new DOMParser();
@@ -350,7 +359,9 @@ class Profile {
             token = parsedData[1].replace('token=', '');
         } else if(Profile.utils.isSimplyObject(data)) {
             ({ partner: id, token } = data);
-            id = Profile.utils.getSteamProfileId64(id);
+            if(!Profile.utils.isSteamId64Format(id)) {
+                id = Profile.utils.getSteamProfileId64(id);
+            }
         } else {
             console.warn('addTradeURL(): Invalid datatype provided!')
             return;
@@ -588,12 +599,10 @@ class Profile {
             console.warn("getInventory(): Inventory fetch is not user, careful of rate limits!");
         }
 
-        let data = [];
+        let data = {};
         let counter = 0;
         let resdata = {};
         let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] ?? Number.MAX_SAFE_INTEGER;
-
-        this.resetInventory();
 
         do {
             console.log(`getinventory(): Fetching inventory of ${this.id}, starting at ${counter}`);
@@ -635,15 +644,15 @@ class Profile {
 
                 itemType = Profile.ITEM_TYPE_MAP[itemType.internal_name];
                 rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] ?? parseInt(rarity.internal_name.replace(/\D+/g, ''));
-                if(!this.inventory.data[itemType]) {
-                    this.inventory.data[itemType] = [{}];
-                } else if(this.inventory.data[itemType].length <= rarity) {
-                    this.inventory.data[itemType].push( ...Array(rarity-this.inventory.data[itemType].length+1).fill({}) );
+
+                data[itemType] ??= [{}];
+                while(data[itemType].length <= rarity) {
+                    data[itemType].push({});
                 }
 
-                let itemList = this.inventory.data[itemType][rarity];
-                if(typeof itemList !== 'object' || Array.isArray(itemList) || itemList === null) {
-                    console.error(`getInventory(): No object found for item subgroup: ${itemType.internal_name} ${rarity.internal_name}`);
+                let itemList = data[itemType][rarity];
+                if( !Profile.utils.isSimplyObject(itemList) ) {
+                    console.error(`getInventory(): No object found for item subgroup: ${itemType} ${rarity}`);
                     continue;
                 }
 
@@ -654,7 +663,7 @@ class Profile {
                     appname = {internal_name: ""};
                 }
 
-                await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
+                // await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
 
                 asset.amount = parseInt(asset.amount);
                 let assetInsertEntry = { assetid: asset.assetid, count: asset.amount };
@@ -695,9 +704,12 @@ class Profile {
             }
         } while(counter < count && resdata.more_items);
 
-        this.inventory.size = resdata.total_inventory_count;
-        this.inventory.last_updated = Date.now();
-        this.inventory.tradable_only = false;
+        this.inventory = {
+            data,
+            size: resdata.total_inventory_count,
+            last_updated: Date.now(),
+            tradable_only: false
+        }
     }
 
     async getTradeInventory(refProf, last_itemType = undefined, count = Number.MAX_SAFE_INTEGER) {
@@ -717,7 +729,7 @@ class Profile {
             return;
         }
 
-        let data = [];
+        let data = {};
         let counter = 0;
         let resdata = { more_start: 0 };
         let last_descript;
@@ -727,8 +739,6 @@ class Profile {
         let partnerString = `?partner=${Profile.utils.getSteamProfileId3(this.id)}`;
         let tokenString = (await this.isMe()) ? undefined : this.tradeToken;
         tokenString = !tokenString || (await refProf.isFriend(this.id)) ? '' : `&token=${tokenString}`; // redo this to avoid isFriend
-
-        this.resetInventory();
 
         // NOTE: Only shows tradable items, make sure user knows
         do {
@@ -781,14 +791,14 @@ class Profile {
 
                 itemType = Profile.ITEM_TYPE_MAP[itemType.internal_name];
                 rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] ?? parseInt(rarity.internal_name.replace(/\D+/g, ''));
-                if(!this.inventory.data[itemType]) {
-                    this.inventory.data[itemType] = [{}];
-                } else if(this.inventory.data[itemType].length <= rarity) {
-                    this.inventory.data[itemType].push( ...Array(rarity-this.inventory.data[itemType].length+1).fill({}) );
+
+                data[itemType] ??= [{}];
+                while(data[itemType].length <= rarity) {
+                    data[itemType].push({});
                 }
 
-                let itemList = this.inventory.data[itemType][rarity];
-                if(typeof itemList !== 'object' || Array.isArray(itemList) || itemList === null) {
+                let itemList = data[itemType][rarity];
+                if( !Profile.utils.isSimplyObject(itemList) ) {
                     console.error(`getInventory(): No object found for item subgroup: ${itemType.internal_name} ${rarity.internal_name}`);
                     continue;
                 }
@@ -799,7 +809,8 @@ class Profile {
                     console.log(desc);
                     appname = {internal_name: ""};
                 }
-                await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
+
+                // await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
 
                 asset.amount = parseInt(asset.amount);
                 if(itemList[desc.market_fee_app]) { // app subgroup exists
@@ -835,9 +846,12 @@ class Profile {
             }
         } while(counter < count && resdata.more);
 
-        this.inventory.size = null;
-        this.inventory.last_updated = Date.now();
-        this.inventory.tradable_only = true;
+        this.inventory = {
+            data,
+            size: null,
+            last_updated: Date.now(),
+            tradable_only: true
+        }
     }
 
     async loadBadgepages() {

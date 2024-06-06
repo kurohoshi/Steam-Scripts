@@ -758,10 +758,10 @@ async function matcherConfigFullMatchListener() {
                 await Profile.findProfile(steamToolsUtils.getMySteamId());
             }
             if(!Profile.me.friends || !Profile.me.friends.length) {
-                await Profile.me.getTradeFriends();
+                await Profile.me.getFriends();
             }
-            for(let profile of Profile.me.friends) {
-                groupProfiles.list.push(profile);
+            for(let profileString of Profile.me.friends) {
+                groupProfiles.list.push(profileString.replace(/(id|profiles)\//g,''));
             }
         } else if(matchGroup.name === 'asfAny') {
             asfBots ??= await getASFProfiles();
@@ -792,6 +792,7 @@ async function matcherConfigFullMatchListener() {
         }
     }
 
+    MatcherShortcuts.data ??= {};
     MatcherShortcuts.data.matchProfileGroups = profileGroups;
 
     await matcherStartMatching();
@@ -814,6 +815,7 @@ async function matcherConfigSingleMatchListener() {
         return;
     }
 
+    MatcherShortcuts.data ??= {};
     MatcherShortcuts.data.matchProfileGroups = [{ name: 'single', list: [profile.id] }];
 
     await matcherStartMatching();
@@ -857,7 +859,7 @@ async function matcherStartMatching() {
     MatcherShortcuts.resultGroups = {};
 
     if(!Profile.me) {
-        await Profile.addNewProfile(steamToolsUtils.getMySteamId());
+        await Profile.findProfile(steamToolsUtils.getMySteamId());
     }
 
     for(let group of MatcherShortcuts.data.matchProfileGroups) {
@@ -891,12 +893,12 @@ async function matcherMatchProfileGroup(matchGroup) {
     }
 
     MatcherShortcuts.results.insertAdjacentHTML('beforeend', generateMatchGroupString(matchGroup.name));
-    MatcherShortcuts.resultGroups[matchGroup.name] = MatcherConfigShortcuts.results.querySelector(`[data-group="${matchGroup.name}"]`);
+    MatcherShortcuts.resultGroups[matchGroup.name] = MatcherShortcuts.results.querySelector(`[data-group="${matchGroup.name}"]`);
 
     for(let profileData of matchGroup.list) {
         let profile = (profileData instanceof Profile)
           ? profileData
-          : (await Profile.findProfile(profile));
+          : (await Profile.findProfile(profileData));
 
         if(!profile) {
             console.warn(`matcherStartMatching(): Profile data ${profileData} is not valid!`);
