@@ -596,12 +596,10 @@ class Profile {
             console.warn("getInventory(): Inventory fetch is not user, careful of rate limits!");
         }
 
-        let data = [];
+        let data = {};
         let counter = 0;
         let resdata = {};
         let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] ?? Number.MAX_SAFE_INTEGER;
-
-        this.resetInventory();
 
         do {
             console.log(`getinventory(): Fetching inventory of ${this.id}, starting at ${counter}`);
@@ -643,15 +641,15 @@ class Profile {
 
                 itemType = Profile.ITEM_TYPE_MAP[itemType.internal_name];
                 rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] ?? parseInt(rarity.internal_name.replace(/\D+/g, ''));
-                if(!this.inventory.data[itemType]) {
-                    this.inventory.data[itemType] = [{}];
-                } else if(this.inventory.data[itemType].length <= rarity) {
-                    this.inventory.data[itemType].push( ...Array(rarity-this.inventory.data[itemType].length+1).fill({}) );
+
+                data[itemType] ??= [{}];
+                while(data[itemType].length <= rarity) {
+                    data[itemType].push({});
                 }
 
-                let itemList = this.inventory.data[itemType][rarity];
-                if(typeof itemList !== 'object' || Array.isArray(itemList) || itemList === null) {
-                    console.error(`getInventory(): No object found for item subgroup: ${itemType.internal_name} ${rarity.internal_name}`);
+                let itemList = data[itemType][rarity];
+                if( !Profile.utils.isSimplyObject(itemList) ) {
+                    console.error(`getInventory(): No object found for item subgroup: ${itemType} ${rarity}`);
                     continue;
                 }
 
@@ -662,7 +660,7 @@ class Profile {
                     appname = {internal_name: ""};
                 }
 
-                await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
+                // await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
 
                 asset.amount = parseInt(asset.amount);
                 let assetInsertEntry = { assetid: asset.assetid, count: asset.amount };
@@ -703,9 +701,12 @@ class Profile {
             }
         } while(counter < count && resdata.more_items);
 
-        this.inventory.size = resdata.total_inventory_count;
-        this.inventory.last_updated = Date.now();
-        this.inventory.tradable_only = false;
+        this.inventory = {
+            data,
+            size: resdata.total_inventory_count,
+            last_updated: Date.now(),
+            tradable_only: false
+        }
     }
 
     async getTradeInventory(refProf, last_itemType = undefined, count = Number.MAX_SAFE_INTEGER) {
@@ -725,7 +726,7 @@ class Profile {
             return;
         }
 
-        let data = [];
+        let data = {};
         let counter = 0;
         let resdata = { more_start: 0 };
         let last_descript;
@@ -735,8 +736,6 @@ class Profile {
         let partnerString = `?partner=${Profile.utils.getSteamProfileId3(this.id)}`;
         let tokenString = (await this.isMe()) ? undefined : this.tradeToken;
         tokenString = !tokenString || (await refProf.isFriend(this.id)) ? '' : `&token=${tokenString}`; // redo this to avoid isFriend
-
-        this.resetInventory();
 
         // NOTE: Only shows tradable items, make sure user knows
         do {
@@ -789,14 +788,14 @@ class Profile {
 
                 itemType = Profile.ITEM_TYPE_MAP[itemType.internal_name];
                 rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] ?? parseInt(rarity.internal_name.replace(/\D+/g, ''));
-                if(!this.inventory.data[itemType]) {
-                    this.inventory.data[itemType] = [{}];
-                } else if(this.inventory.data[itemType].length <= rarity) {
-                    this.inventory.data[itemType].push( ...Array(rarity-this.inventory.data[itemType].length+1).fill({}) );
+
+                data[itemType] ??= [{}];
+                while(data[itemType].length <= rarity) {
+                    data[itemType].push({});
                 }
 
-                let itemList = this.inventory.data[itemType][rarity];
-                if(typeof itemList !== 'object' || Array.isArray(itemList) || itemList === null) {
+                let itemList = data[itemType][rarity];
+                if( !Profile.utils.isSimplyObject(itemList) ) {
                     console.error(`getInventory(): No object found for item subgroup: ${itemType.internal_name} ${rarity.internal_name}`);
                     continue;
                 }
@@ -807,7 +806,8 @@ class Profile {
                     console.log(desc);
                     appname = {internal_name: ""};
                 }
-                await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
+
+                // await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
 
                 asset.amount = parseInt(asset.amount);
                 if(itemList[desc.market_fee_app]) { // app subgroup exists
@@ -843,9 +843,12 @@ class Profile {
             }
         } while(counter < count && resdata.more);
 
-        this.inventory.size = null;
-        this.inventory.last_updated = Date.now();
-        this.inventory.tradable_only = true;
+        this.inventory = {
+            data,
+            size: null,
+            last_updated: Date.now(),
+            tradable_only: true
+        }
     }
 
     async loadBadgepages() {
