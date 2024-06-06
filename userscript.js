@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Steam Tools (PLACEHOLDER)
 // @namespace    https://steamcommunity.com/id/KuroHoshiZ/
-// @version      2024-05-15
+// @version      2024-05-23
 // @description  Set of tools to help with Steam Community activities
 // @author       KurohoshiZ
 // @match        *://steamcommunity.com/*
@@ -445,6 +445,7 @@ class Profile {
         mini_profile:    "item_class_13",
         profile_frame:   "item_class_14",
         animated_avatar: "item_class_15"
+        // missing: Consumable, avatar profile frame, keyboard skin, startup vid
     }
     static ITEM_TYPE_ORDER = {
         gem: 1,
@@ -515,13 +516,39 @@ class Profile {
           ? 'online' : 'offline';
     }
 
-    async getTradeFriends() { // TODO: stop profile fetching when desired profile is reached, solution to cutting down friend fetching time
+    getProfileURL(idOnly=false) {
+        return `https://steamcommunity.com/${(idOnly || !this.url) ? ('profiles/'+this.id) : ('id/'+this.url)}`
+    }
+
+    async getFriends() {
+        if(!this.friends) {
+            console.log("getFriends(): Fetching friends list");
+            let response = await fetch( this.getProfileURL()+'/friends' );
+            await Profile.utils.sleep(Profile.utils.FETCH_DELAY);
+
+            let parser = new DOMParser();
+            let doc = parser.parseFromString(await response.text(), "text/html");
+
+            this.friends = [];
+            for(let profileElem of doc.getElementById('search_results').children) {
+                if(!profileElem.classList.contains('friend_block_v2')) {
+                    continue;
+                }
+
+                let profileString = profileElem.querySelector('a').href.replace(/^https:\/\/steamcommunity\.com\//g, '');
+                console.log(profileString);
+                this.friends.push(profileString);
+            }
+        }
+    }
+
+    async getTradeFriends() {
         if(!(await this.isMe())) {
             console.warn("getTradeFriends(): This is not user's profile! Try using getFriends() instead");
             return;
         }
 
-        console.log("Updating friends list...");
+        console.log("Getting trade friends...");
 
         console.log("getTradeFriends(): Fetching friends list");
         let response = await fetch("https://steamcommunity.com/actions/PlayerList/?type=friends");
@@ -530,23 +557,13 @@ class Profile {
         let parser = new DOMParser();
         let doc = parser.parseFromString(await response.text(), "text/html");
 
-        this.friends = [];
+        let tradeFriends = [];
         for(let profile of [...doc.querySelectorAll(".FriendBlock")]) {
             let profileString = profile.querySelector('a').href.replace(/^https:\/\/steamcommunity\.com\//g, '');
-            if(profileString.startsWith('profiles')) {
-                let id = profileString.replace(/^profiles\//g, '');
-                let foundProfile = await Profile.findProfile(id);
-                this.friends.push(foundProfile);
-            } else if(profileString.startsWith('id')) {
-                let url = profileString.replace(/^id\//g, '');
-                let foundProfile = await Profile.findProfile(url);
-                this.friends.push(foundProfile);
-            } else {
-                console.warn(`getTradeFriends(): ${profileString} is neither id or custom URL, investigate!`);
-            }
+            tradeFriends.push(profileString);
         }
 
-        console.log("Friends list updated!");
+        return tradeFriends;
     }
 
     async isMe() {
@@ -558,26 +575,18 @@ class Profile {
     }
 
     async isFriend(profile) {
-        if(!this.friends) {
-            if(!(await this.isMe())) {
-                console.error('isFriend(): Method ran on a profile that is not user\'s, exiting!');
-                return;
-            }
-            await this.getTradeFriends(); // A more generic friends list finding is required
-        }
-        if(this.friends.some(x => x.id === profile.id || x.url === profile.url)) {
-            return true;
-        }
-        if( !(profile.id || profile.url) ) {
-            await Profile.findMoreDataForProfile(profile);
-        } else {
+        if(typeof profile === 'string') {
+            profile = await Profile.findProfile(profile);
+        } else if( !(profile instanceof Profile) ) {
+            console.error('isFriend(): profile argument is of incorrect type!');
             return false;
         }
-        if(this.friends.some(x => x.id===profile.id || x.url===profile.url)) {
-            return true;
+
+        if(!this.friends) {
+            await this.getFriends();
         }
 
-        return false;
+        return this.friends.some(x => (x.startsWith('id') && x.endsWith(profile.id)) || (x.startsWith('profiles') && x.endsWith(profile.url)) );
     }
 
     static async loadProfiles(profileStrings, useURL=false) {
@@ -691,7 +700,7 @@ class Profile {
         }
         let urlID = profile.id || profile.url;
         console.log(`findMoreDataForProfile(): Fetching profile page of ${urlID}`);
-        let response = await fetch(`https://steamcommunity.com/${profile.id !== undefined ? 'profiles' : 'id'}/${urlID}/`);
+        let response = await fetch(`https://steamcommunity.com/${profile.id !== undefined ? 'profiles' : 'id'}/${urlID}`);
         await Profile.utils.sleep(Profile.utils.FETCH_DELAY);
 
         let parser = new DOMParser();
@@ -763,7 +772,9 @@ class Profile {
             token = parsedData[1].replace('token=', '');
         } else if(Profile.utils.isSimplyObject(data)) {
             ({ partner: id, token } = data);
-            id = Profile.utils.getSteamProfileId64(id);
+            if(!Profile.utils.isSteamId64Format(id)) {
+                id = Profile.utils.getSteamProfileId64(id);
+            }
         } else {
             console.warn('addTradeURL(): Invalid datatype provided!')
             return;
@@ -1001,12 +1012,10 @@ class Profile {
             console.warn("getInventory(): Inventory fetch is not user, careful of rate limits!");
         }
 
-        let data = [];
+        let data = {};
         let counter = 0;
         let resdata = {};
         let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] ?? Number.MAX_SAFE_INTEGER;
-
-        this.resetInventory();
 
         do {
             console.log(`getinventory(): Fetching inventory of ${this.id}, starting at ${counter}`);
@@ -1048,15 +1057,15 @@ class Profile {
 
                 itemType = Profile.ITEM_TYPE_MAP[itemType.internal_name];
                 rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] ?? parseInt(rarity.internal_name.replace(/\D+/g, ''));
-                if(!this.inventory.data[itemType]) {
-                    this.inventory.data[itemType] = [{}];
-                } else if(this.inventory.data[itemType].length <= rarity) {
-                    this.inventory.data[itemType].push( ...Array(rarity-this.inventory.data[itemType].length+1).fill({}) );
+
+                data[itemType] ??= [{}];
+                while(data[itemType].length <= rarity) {
+                    data[itemType].push({});
                 }
 
-                let itemList = this.inventory.data[itemType][rarity];
-                if(typeof itemList !== 'object' || Array.isArray(itemList) || itemList === null) {
-                    console.error(`getInventory(): No object found for item subgroup: ${itemType.internal_name} ${rarity.internal_name}`);
+                let itemList = data[itemType][rarity];
+                if( !Profile.utils.isSimplyObject(itemList) ) {
+                    console.error(`getInventory(): No object found for item subgroup: ${itemType} ${rarity}`);
                     continue;
                 }
 
@@ -1067,7 +1076,7 @@ class Profile {
                     appname = {internal_name: ""};
                 }
 
-                await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
+                // await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
 
                 asset.amount = parseInt(asset.amount);
                 let assetInsertEntry = { assetid: asset.assetid, count: asset.amount };
@@ -1108,9 +1117,12 @@ class Profile {
             }
         } while(counter < count && resdata.more_items);
 
-        this.inventory.size = resdata.total_inventory_count;
-        this.inventory.last_updated = Date.now();
-        this.inventory.tradable_only = false;
+        this.inventory = {
+            data,
+            size: resdata.total_inventory_count,
+            last_updated: Date.now(),
+            tradable_only: false
+        }
     }
 
     async getTradeInventory(refProf, last_itemType = undefined, count = Number.MAX_SAFE_INTEGER) {
@@ -1130,7 +1142,7 @@ class Profile {
             return;
         }
 
-        let data = [];
+        let data = {};
         let counter = 0;
         let resdata = { more_start: 0 };
         let last_descript;
@@ -1140,8 +1152,6 @@ class Profile {
         let partnerString = `?partner=${Profile.utils.getSteamProfileId3(this.id)}`;
         let tokenString = (await this.isMe()) ? undefined : this.tradeToken;
         tokenString = !tokenString || (await refProf.isFriend(this.id)) ? '' : `&token=${tokenString}`; // redo this to avoid isFriend
-
-        this.resetInventory();
 
         // NOTE: Only shows tradable items, make sure user knows
         do {
@@ -1194,14 +1204,14 @@ class Profile {
 
                 itemType = Profile.ITEM_TYPE_MAP[itemType.internal_name];
                 rarity = Profile.ITEM_RARITY_MAP[rarity.internal_name] ?? parseInt(rarity.internal_name.replace(/\D+/g, ''));
-                if(!this.inventory.data[itemType]) {
-                    this.inventory.data[itemType] = [{}];
-                } else if(this.inventory.data[itemType].length <= rarity) {
-                    this.inventory.data[itemType].push( ...Array(rarity-this.inventory.data[itemType].length+1).fill({}) );
+
+                data[itemType] ??= [{}];
+                while(data[itemType].length <= rarity) {
+                    data[itemType].push({});
                 }
 
-                let itemList = this.inventory.data[itemType][rarity];
-                if(typeof itemList !== 'object' || Array.isArray(itemList) || itemList === null) {
+                let itemList = data[itemType][rarity];
+                if( !Profile.utils.isSimplyObject(itemList) ) {
                     console.error(`getInventory(): No object found for item subgroup: ${itemType.internal_name} ${rarity.internal_name}`);
                     continue;
                 }
@@ -1212,7 +1222,8 @@ class Profile {
                     console.log(desc);
                     appname = {internal_name: ""};
                 }
-                await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
+
+                // await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
 
                 asset.amount = parseInt(asset.amount);
                 if(itemList[desc.market_fee_app]) { // app subgroup exists
@@ -1248,9 +1259,12 @@ class Profile {
             }
         } while(counter < count && resdata.more);
 
-        this.inventory.size = null;
-        this.inventory.last_updated = Date.now();
-        this.inventory.tradable_only = true;
+        this.inventory = {
+            data,
+            size: null,
+            last_updated: Date.now(),
+            tradable_only: true
+        }
     }
 
     async loadBadgepages() {
@@ -1601,7 +1615,12 @@ let Matcher = {
                 let flip = i%2;
                 let swapset1 = set1.map((x, i) => x.count + swap[i]);
                 let swapset2 = set2.map((x, i) => x.count - swap[i]);
-                let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), false, helper && !flip);
+                let mode = (itemType !== 'card')
+                  ? -1
+                  : (helper && !flip)
+                    ? 1
+                    : 0;
+                let balanceResult = this.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), false, mode);
                 if(!balanceResult.history.length) {
                     break;
                 }
@@ -1626,7 +1645,8 @@ let Matcher = {
 
         return this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid];
     },
-    balanceVariance(set1, set2, lowToHigh=false, helper=false) {
+    // mode (<0: mutual only, =0: neutral or good, >0: helper mode)
+    balanceVariance(set1, set2, lowToHigh=false, mode=0) {
         function binReorder(bin, index, isSortedLowToHigh, incremented, binLUT, lutIndex) {
             const cmp = (val1, val2) => incremented ? val1>=val2 : val1<=val2;
             const shiftIndex = (next, offset) => {
@@ -1657,6 +1677,9 @@ let Matcher = {
         if(!Array.isArray(set1) || !Array.isArray(set2) || set1.some(x => typeof x !== "number") || set2.some(x => typeof x !== "number") || set1.length!==set2.length) {
             console.error("balanceVariance(): Invalid sets! Sets must be an array of numbers with the same length!");
             return;
+        } else if(set1.length <= 1) {
+            console.warn("balanceVariance(): Only 1 item in set, nothing to balance...");
+            return;
         }
 
         let setlen = set1.length;
@@ -1675,7 +1698,7 @@ let Matcher = {
             binIndices[bin1[i][0]][0] = i;
             binIndices[bin2[i][0]][1] = i;
         }
-
+ 
         for(let max=1, maxlen=setlen*2; max<maxlen; max++) {
             let start = max<=setlen ? 0 : max-setlen;
             let end   = max<=setlen ? max : setlen;
@@ -1705,9 +1728,10 @@ let Matcher = {
                 // simplified from (x1-1)**2+(x2+1)**2 ?? x1**2 + x2**2  --> -x1+x2+1 ?? 0
                 let bin2vardiff = -bin2_i_elem[1]     +bin2[j][1] +1;
 
-                let isNeutralOrGood = (bin1vardiff<=0 && bin2vardiff<=0) && !(bin1vardiff===0 && bin2vardiff===0);
-                let isHelpful = bin2vardiff<0;
-                if(helper ? isHelpful : isNeutralOrGood) {
+                let isMutual = (mode < 0) && (bin1vardiff<0 && bin2vardiff<0)
+                let isNeutralOrGood = (mode === 0) && (bin1vardiff<=0 && bin2vardiff<=0) && !(bin1vardiff===0 && bin2vardiff===0);
+                let isHelpful = (mode > 0) && bin2vardiff<0;
+                if(isMutual || isNeutralOrGood || isHelpful) {
                     bin1[i][1]++;
                     binReorder(bin1, i, lowToHigh, true, binIndices, 0);
                     bin1_j_elem[1]--;
@@ -2010,7 +2034,7 @@ let Matcher = {
     },
 }
 
-GLOBALSETTINGSDEFAULTS.matcher = {
+GLOBALSETTINGSDEFAULTS.matcherConfig = {
     config: {
         matchGroup: {
             label: 'Match With',
@@ -2056,12 +2080,13 @@ GLOBALSETTINGSDEFAULTS.matcher = {
     currentTab: 'matchlist'
 };
 const MatcherConfigShortcuts = {};
+const MatcherShortcuts = {};
 
 async function gotoMatcherConfigPage() {
     const generateConfigHeaderString = (title) => `<div class="userscript-config-header"><span>${title}</span></div>`;
     const generateConfigButtonString = (id, label) => `<div class="userscript-config-option"><input type="checkbox" class="button" id="${id}"><label for="${id}">${label}</label></div>`;
     const generateConfigButtonsString = (checkList) => checkList.map(x => generateConfigButtonString(x.id, x.label)).join('');
-    const generateConfigButtonGroupString = () => Object.values(globalSettings.matcher.config).map(x => {
+    const generateConfigButtonGroupString = () => Object.values(globalSettings.matcherConfig.config).map(x => {
         return `<div class="userscript-config-group" data-id="${x.id}">${generateConfigHeaderString(x.label)}${generateConfigButtonsString(x.options)}</div>`
     }).join('');
     const generateConfigListTabs = (list) => {
@@ -2095,11 +2120,11 @@ async function gotoMatcherConfigPage() {
     MatcherConfigShortcuts.MAIN_ELEM.innerHTML = '';
     document.body.classList.remove('profile_page'); // profile page causes bg color to be black
 
-    let config = await SteamToolsDbManager.getToolConfig('matcher');
-    if(config.matcher) {
-        globalSettings.matcher = config.matcher;
+    let config = await SteamToolsDbManager.getToolConfig('matcherConfig');
+    if(config.matcherConfig) {
+        globalSettings.matcherConfig = config.matcherConfig;
     } else {
-        globalSettings.matcher = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcher);
+        globalSettings.matcherConfig = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcherConfig);
     }
 
     addSvgBlock(MatcherConfigShortcuts.MAIN_ELEM);
@@ -2134,7 +2159,7 @@ async function gotoMatcherConfigPage() {
       +    '</div>'
       +    '<div class="userscript-config-list">'
       +       '<div class="userscript-config-list-header tabs">'
-      +          generateConfigListTabs(globalSettings.matcher.lists)
+      +          generateConfigListTabs(globalSettings.matcherConfig.lists)
       +       '</div>'
       +       '<div class="conf-list-entry-action add">'
       +          '<div class="conf-list-entry-action-add">'
@@ -2176,7 +2201,7 @@ async function gotoMatcherConfigPage() {
       +             '</div>'
       +          '</div>'
       +          '<div class="userscript-config-list-entries userscript-custom-scroll">'
-      +             generateConfigListGroups(globalSettings.matcher.lists)
+      +             generateConfigListGroups(globalSettings.matcherConfig.lists)
       +          '</div>'
       +       '</div>'
       +    '</div>'
@@ -2194,7 +2219,7 @@ async function gotoMatcherConfigPage() {
     MatcherConfigShortcuts.listDialogElem = MatcherConfigShortcuts.listContentsElem.querySelector('.userscript-dialog');
     MatcherConfigShortcuts.listFormElem = MatcherConfigShortcuts.listContentsElem.querySelector('.userscript-dialog-form');
     MatcherConfigShortcuts.listElems = {};
-    for(let entryGroup in globalSettings.matcher.lists) {
+    for(let entryGroup in globalSettings.matcherConfig.lists) {
         MatcherConfigShortcuts.listElems[entryGroup] = MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.userscript-config-list-entry-group[data-list-name=${entryGroup}]`);
     }
 
@@ -2228,14 +2253,14 @@ async function matcherConfigLoadUI() {
 
     matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
 
-    for(let optionGroup of Object.values(globalSettings.matcher.config)) {
+    for(let optionGroup of Object.values(globalSettings.matcherConfig.config)) {
         for(let option of optionGroup.options) {
             document.getElementById(option.id).checked = option.value;
         }
     }
 
     // generate lists
-    for(let [listName, listGroup] of Object.entries(globalSettings.matcher.lists)) {
+    for(let [listName, listGroup] of Object.entries(globalSettings.matcherConfig.lists)) {
         let entryGroupElem = MatcherConfigShortcuts.listElems[listName];
         let entriesHTMLString = [];
         for(let data of listGroup.data) {
@@ -2293,8 +2318,8 @@ async function matcherConfigLoadUI() {
     }
 
     // set active tab
-    if(globalSettings.matcher.currentTab) {
-        matcherConfigSetListTab(globalSettings.matcher.currentTab);
+    if(globalSettings.matcherConfig.currentTab) {
+        matcherConfigSetListTab(globalSettings.matcherConfig.currentTab);
     }
 
     matcherConfigResetEntryForm();
@@ -2321,7 +2346,7 @@ function matcherConfigSelectListTabListener(event) {
 }
 
 function matcherConfigSetListTab(tabName) {
-    if(!Object.keys(globalSettings.matcher.lists).includes(tabName)) {
+    if(!Object.keys(globalSettings.matcherConfig.lists).includes(tabName)) {
         console.error('matcherConfigSetListTab(): invalid tab name!');
         return;
     }
@@ -2329,7 +2354,7 @@ function matcherConfigSetListTab(tabName) {
     MatcherConfigShortcuts.listTabListElem.querySelector(`.userscript-config-list-tab.active`)?.classList.remove('active');
     const target = MatcherConfigShortcuts.listTabListElem.querySelector(`.userscript-config-list-tab[data-list-name=${tabName}]`);
     target.classList.add('active');
-    globalSettings.matcher.currentTab = target.dataset.listName;
+    globalSettings.matcherConfig.currentTab = target.dataset.listName;
     matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
 
     if(MatcherConfigShortcuts.selectedListEntryElem) {
@@ -2341,7 +2366,7 @@ function matcherConfigSetListTab(tabName) {
 }
 
 function matcherConfigResetEntryForm() {
-    let currentTab = globalSettings.matcher.currentTab;
+    let currentTab = globalSettings.matcherConfig.currentTab;
 
     let entryFormElem = MatcherConfigShortcuts.listFormElem;
     let currentFormType = entryFormElem.dataset.type;
@@ -2385,7 +2410,7 @@ function matcherConfigResetEntryForm() {
 }
 
 function matcherConfigShowActiveList() {
-    let currentTab = globalSettings.matcher.currentTab;
+    let currentTab = globalSettings.matcherConfig.currentTab;
     for(let listGroup of Object.values(MatcherConfigShortcuts.listElems)) {
         if(currentTab !== listGroup.dataset.listName) {
             listGroup.classList.remove('active');
@@ -2438,7 +2463,7 @@ function matcherConfigUpdateChecklistListener(event) {
     let groupId = event.currentTarget.dataset.id;
     let optionId = event.target.id;
 
-    for(let group of Object.values(globalSettings.matcher.config)) {
+    for(let group of Object.values(globalSettings.matcherConfig.config)) {
         if(group.id === groupId) {
             group.options.find(x => x.id === optionId).value = event.target.checked;
             break;
@@ -2453,7 +2478,7 @@ function matcherConfigToggleEntryFormListener(event) {
 
 // edit selected entry, prefilled with selected entry info
 function matcherConfigEditListEntryListener(event) {
-    let currentTab = globalSettings.matcher.currentTab;
+    let currentTab = globalSettings.matcherConfig.currentTab;
     if(MatcherConfigShortcuts.listContentsElem.matches('.overlay') && MatcherConfigShortcuts.listContentsElem.querySelector('> .userscript-overlay')?.matches('.form')) {
         matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
         return;
@@ -2485,30 +2510,30 @@ function matcherConfigDeleteListEntryListener(event) {
         return;
     }
     let listGroup = MatcherConfigShortcuts.selectedListEntryElem.parentElement.dataset.listName;
-    if(!globalSettings.matcher.lists[listGroup]) {
+    if(!globalSettings.matcherConfig.lists[listGroup]) {
         console.warn('matcherConfigDeleteListEntryListener(): List not found, something is wrong!');
         return;
     }
 
     if(listGroup==='matchlist' || listGroup==='blacklist') {
         let profileid = MatcherConfigShortcuts.selectedListEntryElem.dataset.profileid;
-        let selectedIndex = globalSettings.matcher.lists[listGroup].data.findIndex(x => x.profileid === profileid);
+        let selectedIndex = globalSettings.matcherConfig.lists[listGroup].data.findIndex(x => x.profileid === profileid);
         if(selectedIndex === -1) {
             console.warn('matcherConfigDeleteListEntryListener(): Profileid not found, which means list and data are not synced!');
             return;
         }
-        globalSettings.matcher.lists[listGroup].data.splice(selectedIndex, 1);
+        globalSettings.matcherConfig.lists[listGroup].data.splice(selectedIndex, 1);
         MatcherConfigShortcuts.selectedListEntryElem.remove();
         MatcherConfigShortcuts.selectedListEntryElem = undefined;
         matcherConfigSetEntryActionBar('add');
     } else if(listGroup === 'applist') {
         let appid = MatcherConfigShortcuts.selectedListEntryElem.dataset.appid;
-        let selectedIndex = globalSettings.matcher.lists[listGroup].data.findIndex(x => x.appid === appid);
+        let selectedIndex = globalSettings.matcherConfig.lists[listGroup].data.findIndex(x => x.appid === appid);
         if(selectedIndex === -1) {
             console.warn('matcherConfigDeleteListEntryListener(): Appid not found, which means list and data are not synced!');
             return;
         }
-        globalSettings.matcher.lists[listGroup].data.splice(selectedIndex, 1);
+        globalSettings.matcherConfig.lists[listGroup].data.splice(selectedIndex, 1);
         MatcherConfigShortcuts.selectedListEntryElem.remove();
         MatcherConfigShortcuts.selectedListEntryElem = undefined;
         matcherConfigSetEntryActionBar('add');
@@ -2518,7 +2543,7 @@ function matcherConfigDeleteListEntryListener(event) {
 }
 
 async function matcherConfigEntryFormAddListener(event) {
-    let currentTab = globalSettings.matcher.currentTab;
+    let currentTab = globalSettings.matcherConfig.currentTab;
 
     if(currentTab==='matchlist' || currentTab==='blacklist') {
         MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
@@ -2530,7 +2555,7 @@ async function matcherConfigEntryFormAddListener(event) {
         let profileEntry;
 
         if(steamToolsUtils.isSteamId64Format(profileValue)) {
-            profileEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.profileid === profileValue);
+            profileEntry = globalSettings.matcherConfig.lists[currentTab].data.find(x => x.profileid === profileValue);
         }
 
         if(profileEntry) {
@@ -2547,7 +2572,7 @@ async function matcherConfigEntryFormAddListener(event) {
         } else {
             let profile = await Profile.findProfile(profileValue);
             if(profile) {
-                profileEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.profileid === profile.id);
+                profileEntry = globalSettings.matcherConfig.lists[currentTab].data.find(x => x.profileid === profile.id);
                 if(profileEntry) {
                     // app found: prompt user if they want to overwrite existing data
                     let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`[data-profileid="${profileEntry.profileid}"]`);
@@ -2571,7 +2596,7 @@ async function matcherConfigEntryFormAddListener(event) {
                       + '</div>';
 
                     entryGroupElem.insertAdjacentHTML('afterbegin', entryHTMLString);
-                    globalSettings.matcher.lists[currentTab].data.push({ profileid: profile.id, descript: description });
+                    globalSettings.matcherConfig.lists[currentTab].data.push({ profileid: profile.id, descript: description });
                 }
             } else {
                 alert('No valid profile found. Data will not be added!');
@@ -2587,7 +2612,7 @@ async function matcherConfigEntryFormAddListener(event) {
         const formElem = MatcherConfigShortcuts.listFormElem;
         let appid = parseInt(formElem.querySelector('#entry-form-id').value);
         let description = formElem.querySelector('#entry-form-descript').value;
-        let appidEntry = globalSettings.matcher.lists[currentTab].data.find(x => x.appid === appid);
+        let appidEntry = globalSettings.matcherConfig.lists[currentTab].data.find(x => x.appid === appid);
 
         if(appidEntry) {
             // app found: prompt user if they want to overwrite existing data
@@ -2614,7 +2639,7 @@ async function matcherConfigEntryFormAddListener(event) {
                   + '</div>';
 
                 MatcherConfigShortcuts.listElems[currentTab].insertAdjacentHTML('beforeend', entryHTMLString);
-                globalSettings.matcher.lists[currentTab].data.push({ appid: appid, descript: description });
+                globalSettings.matcherConfig.lists[currentTab].data.push({ appid: appid, descript: description });
             } else {
                 let insertBeforeThisEntry;
                 for(let entryElem of MatcherConfigShortcuts.listElems[currentTab].querySelectorAll(`.userscript-config-list-entry`)) {
@@ -2636,8 +2661,8 @@ async function matcherConfigEntryFormAddListener(event) {
                 } else {
                     MatcherConfigShortcuts.listElems[currentTab].insertAdjacentHTML('afterbegin', entryHTMLString);
                 }
-                let entryIndex = globalSettings.matcher.lists[currentTab].data.findIndex(x => x.appid === parseInt(insertBeforeThisEntry.dataset.appid));
-                globalSettings.matcher.lists[currentTab].data.splice(entryIndex - 1, 0, { appid: appdata.appid, descript: description });
+                let entryIndex = globalSettings.matcherConfig.lists[currentTab].data.findIndex(x => x.appid === parseInt(insertBeforeThisEntry.dataset.appid));
+                globalSettings.matcherConfig.lists[currentTab].data.splice(entryIndex - 1, 0, { appid: appdata.appid, descript: description });
             }
 
             matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
@@ -2649,7 +2674,7 @@ async function matcherConfigEntryFormAddListener(event) {
 }
 
 function matcherConfigEntryFormCancelListener(event) {
-    let currentTab = globalSettings.matcher.currentTab;
+    let currentTab = globalSettings.matcherConfig.currentTab;
     if(currentTab === 'matchlist' || currentTab === 'blacklist') {
         MatcherConfigShortcuts.listContainer.querySelector('#entry-form-id').value = '';
         MatcherConfigShortcuts.listContainer.querySelector('#entry-form-descript').value = '';
@@ -2717,7 +2742,7 @@ async function matcherConfigImportListener() {
         throw 'matcherConfigImportListener(): Invalid imported config!';
     }
 
-    globalSettings.matcher = importedConfig;
+    globalSettings.matcherConfig = importedConfig;
     matcherConfigLoadUI();
 }
 
@@ -2726,13 +2751,13 @@ async function matcherConfigExportListener() {
 }
 
 async function matcherConfigSaveListener() {
-    await SteamToolsDbManager.setToolConfig('matcher');
+    await SteamToolsDbManager.setToolConfig('matcherConfig');
 }
 
 async function matcherConfigLoadListener() {
-    let config = await SteamToolsDbManager.getToolConfig('matcher');
-    if(config.matcher) {
-        globalSettings.matcher = config.matcher;
+    let config = await SteamToolsDbManager.getToolConfig('matcherConfig');
+    if(config.matcherConfig) {
+        globalSettings.matcherConfig = config.matcherConfig;
         matcherConfigLoadUI();
     }
 }
@@ -2740,7 +2765,7 @@ async function matcherConfigLoadListener() {
 function matcherConfigResetDefaultListener() {
     let promptInput = prompt('WARNING: This will reset all config options back to default and all the lists will be earased. Proceed? (y/n)');
     if(promptInput.toLowerCase().startsWith('y')) {
-        globalSettings.matcher = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcher);
+        globalSettings.matcherConfig = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcherConfig);
         matcherConfigLoadUI();
     }
 }
@@ -2749,11 +2774,11 @@ async function matcherConfigFullMatchListener() {
     MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
     matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
 
-    let settings = globalSettings.matcher.config;
+    let settings = globalSettings.matcherConfig.config;
     let blacklist = settings.ignoreGroup.options.find(x => x.name==='blacklist').value
-      ? globalSettings.matcher.lists.blacklist.data
+      ? globalSettings.matcherConfig.lists.blacklist.data
       : [];
-    let profileGroups = {};
+    let profileGroups = [];
     let asfBots; // save in iDB, include match priority ranking
 
     for(let matchGroup of settings.matchGroup.options) {
@@ -2761,17 +2786,18 @@ async function matcherConfigFullMatchListener() {
             continue;
         }
 
-        let groupProfiles = profileGroups[matchGroup.name] = [];
+        let groupProfiles = { name: matchGroup.name, list: [] };
+        profileGroups.push(groupProfiles);
 
         if(matchGroup.name === 'friends') {
             if(!Profile.me) {
                 await Profile.findProfile(steamToolsUtils.getMySteamId());
             }
             if(!Profile.me.friends || !Profile.me.friends.length) {
-                await Profile.me.getTradeFriends();
+                await Profile.me.getFriends();
             }
-            for(let profile of Profile.me.friends) {
-                groupProfiles.push(profile);
+            for(let profileString of Profile.me.friends) {
+                groupProfiles.list.push(profileString.replace(/(id|profiles)\//g,''));
             }
         } else if(matchGroup.name === 'asfAny') {
             asfBots ??= await getASFProfiles();
@@ -2781,7 +2807,7 @@ async function matcherConfigFullMatchListener() {
                 }
 
                 Profile.addTradeURL({ partner: botEntry.id, token: botEntry.tradeToken });
-                groupProfiles.push(botEntry.id);
+                groupProfiles.list.push(botEntry.id);
             }
         } else if(matchGroup.name === 'asfFair') {
             asfBots ??= await getASFProfiles();
@@ -2791,20 +2817,21 @@ async function matcherConfigFullMatchListener() {
                 }
 
                 Profile.addTradeURL({ partner: botEntry.id, token: botEntry.tradeToken });
-                groupProfiles.push(botEntry.id);
+                groupProfiles.list.push(botEntry.id);
             }
         } else if(matchGroup.name === 'custom') {
-            for(let profileEntry of globalSettings.matcher.lists.matchlist.data) {
-                groupProfiles.push(profileEntry.profileid);
+            for(let profileEntry of globalSettings.matcherConfig.lists.matchlist.data) {
+                groupProfiles.list.push(profileEntry.profileid);
             }
         } else {
             console.warn(`matcherConfigFullMatchListener(): Match Group '${matchGroup.name}' profile list processing not implemented, skipped!`);
         }
     }
 
-    MatcherConfigShortcuts.matchProfileGroups = profileGroups;
+    MatcherShortcuts.data ??= {};
+    MatcherShortcuts.data.matchProfileGroups = profileGroups;
 
-    await matcherStartMatching(Object.keys(profileGroups));
+    await matcherStartMatching();
 }
 
 async function matcherConfigSingleMatchListener() {
@@ -2824,17 +2851,18 @@ async function matcherConfigSingleMatchListener() {
         return;
     }
 
-    MatcherConfigShortcuts.matchProfileGroups = { single: [profile.id] };
+    MatcherShortcuts.data ??= {};
+    MatcherShortcuts.data.matchProfileGroups = [{ name: 'single', list: [profile.id] }];
 
-    await matcherStartMatching(['single']);
+    await matcherStartMatching();
 }
 
 async function matcherVerifyConfigSave() {
-    let savedConfig = await SteamToolsDbManager.getToolConfig('matcher');
-    if(JSON.stringify(globalSettings.matcher) !== JSON.stringify(savedConfig.matcher)) {
+    let savedConfig = await SteamToolsDbManager.getToolConfig('matcherConfig');
+    if(JSON.stringify(globalSettings.matcherConfig) !== JSON.stringify(savedConfig.matcherConfig)) {
         let userPrompt = prompt('WARNING: Settings have not been saved! Save now? (y/n/cancel)');
         if(!userPrompt[0].localeCompare('y', 'en', { sensitivity: 'base' })) {
-            await SteamToolsDbManager.setToolConfig('matcher');
+            await SteamToolsDbManager.setToolConfig('matcherConfig');
             console.log('matcherConfigSingleMatchListener(): Saved Settings. Continuing to matching process...');
         } else if(!userPrompt[0].localeCompare('n', 'en', { sensitivity: 'base' })) {
             console.log('matcherConfigSingleMatchListener(): Settings will not be saved. Continuing to matching process...');
@@ -2853,28 +2881,7 @@ async function matcherVerifyConfigSave() {
     return true;
 }
 
-async function matcherStartMatching(profileGroups) {
-    const generateMatchGroupString = (groupName) => `<div class="match-group" data-group="${groupName}"></div>`;
-    const generateMatchNameHeaderString = (profile, reverseDirection = false) => {
-        return `<div class="match-name${reverseDirection ? ' align-right' : ''}">`
-          +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}/` : `profiles/${profile.id}/`}" class="avatar ${profile.getStateString()}">`
-          +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
-          +    '</a>'
-          +    profile.name
-          + '</div>'
-    };
-    const generateMatchContainerString = (profile1, profile2) => {
-        return '<div class="match-container-outer loading">'
-          +    `<div class="match-container grid" data-profileid1="${profile1.id}" data-profileid2="${profile2.id}">`
-          +       '<div class="match-header">'
-          +          generateMatchNameHeaderString(profile1, true)
-          +          '<div class="match-item-action trade"></div>'
-          +          generateMatchNameHeaderString(profile2)
-          +       '</div>'
-          +    '</div>'
-          +    cssAddOverlay(cssAddThrobber())
-          + '</div>'
-    };
+async function matcherStartMatching() {
 
     GM_addStyle(cssMatcher);
 
@@ -2884,26 +2891,15 @@ async function matcherStartMatching(profileGroups) {
     MatcherConfigShortcuts.MAIN_ELEM.innerHTML = '<div class="match-results">'
       + '</div>';
 
-    addSvgBlock(MatcherConfigShortcuts.MAIN_ELEM);
-
-    MatcherConfigShortcuts.results = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.match-results');
-    MatcherConfigShortcuts.resultGroups = {};
+    MatcherShortcuts.results = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.match-results');
+    MatcherShortcuts.resultGroups = {};
 
     if(!Profile.me) {
-        await Profile.addNewProfile(steamToolsUtils.getMySteamId());
+        await Profile.findProfile(steamToolsUtils.getMySteamId());
     }
 
-    if(profile) {
-        MatcherConfigShortcuts.results.insertAdjacentHTML('beforeend', generateMatchGroupString('single'));
-        MatcherConfigShortcuts.resultGroups.single = MatcherConfigShortcuts.results.querySelector('[data-group="single"]');
-        MatcherConfigShortcuts.resultGroups.single.insertAdjacentHTML('beforeend', generateMatchContainerString(Profile.me, profile));
-
-        await matcherMatchProfile();
-
-        let emptyContainer = MatcherConfigShortcuts.resultGroups.single.querySelector('.match-container-outer.loading');
-        if(emptyContainer) {
-            emptyContainer.remove();
-        }
+    for(let group of MatcherShortcuts.data.matchProfileGroups) {
+        await matcherMatchProfileGroup(group);
     }
 
     // friend group matching
@@ -2925,7 +2921,30 @@ async function matcherStartMatching(profileGroups) {
     // finish matching process here
 }
 
-async function matcherMatchProfile() {
+async function matcherMatchProfileGroup(matchGroup) {
+    const generateMatchGroupString = (groupName) => `<div class="match-group" data-group="${groupName}"></div>`;
+
+    if(!matchGroup.list.length) {
+        return;
+    }
+
+    MatcherShortcuts.results.insertAdjacentHTML('beforeend', generateMatchGroupString(matchGroup.name));
+    MatcherShortcuts.resultGroups[matchGroup.name] = MatcherShortcuts.results.querySelector(`[data-group="${matchGroup.name}"]`);
+
+    for(let profileData of matchGroup.list) {
+        let profile = (profileData instanceof Profile)
+          ? profileData
+          : (await Profile.findProfile(profileData));
+
+        if(!profile) {
+            console.warn(`matcherStartMatching(): Profile data ${profileData} is not valid!`);
+        }
+
+        await matcherMatchProfile(matchGroup.name, profile);
+    }
+}
+
+async function matcherMatchProfile(groupName, profile) {
     const generateItemTypeContainerString = (itemType) => `<div class="match-item-type" data-type="${itemType}"></div>`;
     const generateRarityContainerString = (rarity) => `<div class="match-item-rarity" data-rarity="${rarity}"></div>`;
     const generateAppContainerString = (appid) => `<div class="match-item-app" data-appid="${appid}"></div>`;
@@ -2954,16 +2973,15 @@ async function matcherMatchProfile() {
         ).join('');
     }
 
+    MatcherShortcuts.resultGroups[groupName].insertAdjacentHTML('beforeend', matcherGenerateMatchProfileContainer(Profile.me, profile));
+    let matchContainer = MatcherShortcuts.resultGroups[groupName].querySelector('.match-container-outer.loading > .match-container');
     let shortcuts = {};
-    let loadingContainer = MatcherConfigShortcuts.results.querySelector('.match-container-outer.loading > .match-container');
-    if(!loadingContainer) {
-        console.warn('matcherMatchProfile(): No loading container found!');
-        return;
-    }
 
-    let matchResult = await Matcher.matchInv(loadingContainer.dataset.profileid1, loadingContainer.dataset.profileid2);
+    let matchResult = await Matcher.matchInv(Profile.me, profile);
+
     if(!matchResult || steamToolsUtils.isEmptyObject(matchResult.results)) {
-        console.warn('matcherMatchProfile(): No results to be rendered');
+        console.warn('matcherMatchProfile(): No results to be rendered!');
+        matchContainer.parentElement.remove();
         return;
     }
 
@@ -2972,8 +2990,8 @@ async function matcherMatchProfile() {
 
         shortcuts[itemType] ??= { elem: null, rarities: {} };
         if(!shortcuts[itemType].elem) {
-            loadingContainer.insertAdjacentHTML('beforeend', generateItemTypeContainerString(itemType));
-            shortcuts[itemType].elem = loadingContainer.querySelector(`[data-type="${itemType}"]`);
+            matchContainer.insertAdjacentHTML('beforeend', generateItemTypeContainerString(itemType));
+            shortcuts[itemType].elem = matchContainer.querySelector(`[data-type="${itemType}"]`);
         }
         shortcuts[itemType].rarities[rarity] ??= { elem: null, appids: {} };
         if(!shortcuts[itemType].rarities[rarity].elem) {
@@ -2991,8 +3009,32 @@ async function matcherMatchProfile() {
     console.log(matchResult);
     console.log(Profile.itemDescriptions)
 
+    matchContainer.parentElement.classList.remove('loading');
+}
 
-    loadingContainer.parentElement.classList.remove('loading');
+function matcherGenerateMatchProfileContainer(profile1, profile2) {
+    const generateMatchNameHeaderString = (prof, reverseDirection = false) => {
+        return `<div class="match-name${reverseDirection ? ' align-right' : ''}">`
+          +    `<a href="https://steamcommunity.com/${prof.url ? `id/${prof.url}/` : `profiles/${prof.id}/`}" class="avatar ${prof.getStateString()}">`
+          +       `<img src="https://avatars.akamai.steamstatic.com/${prof.pfp}.jpg" alt="">`
+          +    '</a>'
+          +    prof.name
+          + '</div>'
+    };
+    const generateMatchContainerString = (prof1, prof2) => {
+        return '<div class="match-container-outer loading">'
+          +    `<div class="match-container grid" data-profileid1="${prof1.id}" data-profileid2="${prof2.id}">`
+          +       '<div class="match-header">'
+          +          generateMatchNameHeaderString(prof1, true)
+          +          '<div class="match-item-action trade"></div>'
+          +          generateMatchNameHeaderString(prof2)
+          +       '</div>'
+          +    '</div>'
+          +    cssAddOverlay(cssAddThrobber())
+          + '</div>'
+    };
+
+    return generateMatchContainerString(profile1, profile2);
 }
 
 function matcherSetOverlay(overlayParentElem, overlayEnable, overlayState) {
@@ -3762,7 +3804,7 @@ async function boosterCrafterLoadData() {
     boosterCrafterSetOverlay(inventoryListElem, false);
     // enable add button?
     openerActionElem.classList.remove('disabled');
-    boosterCrafterSetOverlay(openerActionElem, false);
+    boosterCrafterSetOverlay(openerListElem, false);
 }
 function boosterCrafterUpdateBoosterCost() {
     let allTotal = 0;
@@ -4269,6 +4311,8 @@ function boosterCrafterCraftListCraftListener(event) {
     let stopFlag = true;
     let tableBodyElem = document.getElementById('craft-dialog-table-body');
     tableBodyElem.innerHTML = '';
+    boosterCrafterData.craftQueue = [];
+
     for(let entryElem of selectedEntries) {
         if(Object.hasOwn(entryElem.dataset, 'cooldownTimer')) {
             continue;
@@ -4376,7 +4420,7 @@ async function boosterCrafterCraftBoosters() {
     });
     let urlString = 'https://steamcommunity.com/tradingcards/ajaxcreatebooster/';
 
-    while (boosterCrafterData.craftQueue.length) {
+    while(boosterCrafterData.craftQueue.length) {
         let entryElem = boosterCrafterData.craftQueue[boosterCrafterData.craftQueue.length - 1];
         let appid = entryElem.dataset.appid;
         let boosterData = boosterCrafterData.boosterDataList[appid];
@@ -4402,16 +4446,16 @@ async function boosterCrafterCraftBoosters() {
 
         // let responseData = {
         //     "purchase_result": {
-        //     "communityitemid": "29863953490",
-        //     "appid": 998490,
-        //     "item_type": 28,
-        //     "purchaseid": "57708606",
-        //     "success": 1,
-        //     "rwgrsn": -2
+        //         "communityitemid": "00000000000",
+        //         "appid": 000000,
+        //         "item_type": 00,
+        //         "purchaseid": "00000000",
+        //         "success": 1,
+        //         "rwgrsn": -2
         //     },
-        //     "goo_amount": "232519",
-        //     "tradable_goo_amount": "232519",
-        //     "untradable_goo_amount": 0
+        //     "goo_amount": "000000",
+        //     "tradable_goo_amount": "000000",
+        //     "untradable_goo_amount": "0000"
         // };
 
         boosterCrafterBoosterCooldownAddTimer(appid, true);
@@ -4606,6 +4650,7 @@ function boosterCrafterOpenerListOpenCancelListener() {
     let openerActionElem = boosterCrafterShortcuts.lists.opener.action;
     let openerListElem = boosterCrafterShortcuts.lists.opener.list;
 
+    boosterCrafterShortcuts.addOpenerButton.disabled = false;
     openerActionElem.classList.remove('disabled');
     boosterCrafterSetOverlay(openerListElem, false);
 }
@@ -4670,24 +4715,24 @@ async function boosterCrafterOpenBoosters() {
         // let responseData = {
         //     "success": 1,
         //     "rgItems": [
-        //     {
-        //         "image": "https://community.akamai.steamstatic.com/economy/image/IzMF03bk9WpSBq-S-ekoE33L-iLqGFHVaU25ZzQNQcXdA3g5gMEPvUZZEfSMJ6dESN8p_2SVTY7V2NgOx3sMkD4QPivs0XEwf-xmMcXBiwb6s-bLFXn2bzKZdiWASVwxTrVcMjnbr2f35uicFjqfR74qRQFQfaEG82Qda8-BaUZrhplRu2L-lUtvGhM6TcxLcQi-lydDaOgnn3ERdJtbzyChcseKgFphbk5vXLHvVruUa4GklykmCEgyG6IEJNXCrmPh-lvL2rlk",
-        //         "name": "zijing card",
-        //         "series": 1,
-        //         "foil": false
-        //     },
-        //     {
-        //         "image": "https://community.akamai.steamstatic.com/economy/image/IzMF03bk9WpSBq-S-ekoE33L-iLqGFHVaU25ZzQNQcXdA3g5gMEPvUZZEfSMJ6dESN8p_2SVTY7V2NgOx3sMkD4QPivs0XEwf-xmMcXBiwb6s-bLFXn2bzKZdiWASVwxTrVcMjnbr2f35uicFjqfR74qRQFQfaEG82Qda8-BaUZrhplRu2L-lUtvGhM6TcxLcQi-lydDaOgnn3ERdJtbzyChcseKgFphbk5vXLHvVruUa4GklykmCEgyG6IEJNXCrmPh-lvL2rlk",
-        //         "name": "zijing card",
-        //         "series": 1,
-        //         "foil": false
-        //     },
-        //     {
-        //         "image": "https://community.akamai.steamstatic.com/economy/image/IzMF03bk9WpSBq-S-ekoE33L-iLqGFHVaU25ZzQNQcXdA3g5gMEPvUZZEfSMJ6dESN8p_2SVTY7V2NgOx3sMkD4QPivs0XEwb-xiP8PTwQvioKmOHWbzLj7JLibcQVhuGbBZPGjY_TL2t7zCRjucSLklS1hWe6RR82YcaJyBORA13NUJ-zH2h0p6WBQnYMFDYjCyx3UUNOB2mHhHJ5xSyiXwL8Ld1AsxO0NvWb7vU7rLZ4GixiskXB1hHfVIMY-XpmWyr4G3Z_UlCJgxuw",
-        //         "name": "jinghuanya card",
-        //         "series": 1,
-        //         "foil": false
-        //     }
+        //         {
+        //             "image": "url-addr-str",
+        //             "name": "string",
+        //             "series": 1,
+        //             "foil": boolean
+        //         },
+        //         {
+        //             "image": "url-addr-str",
+        //             "name": "string",
+        //             "series": 1,
+        //             "foil": boolean
+        //         },
+        //         {
+        //             "image": "url-addr-str",
+        //             "name": "string",
+        //             "series": 1,
+        //             "foil": boolean
+        //         }
         //     ]
         // };
 
@@ -4881,7 +4926,7 @@ async function boosterCrafterConfigLoad() {
     let config = await SteamToolsDbManager.getToolConfig('boosterCrafter');
     if(config.boosterCrafter) {
         globalSettings.boosterCrafter = config.boosterCrafter;
-        boosterCrafterLoadData();
+        boosterCrafterLoadConfig();
     }
 }
 
@@ -5199,7 +5244,6 @@ async function badgepageFilterShowGoodSwapsListener() {
     badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
     badgepageFilterShortcuts.main.classList.add('loading');
 
-    let { friendsCardStock } = badgepageFilterPageData;
     let processedFriends = new Set();
     let goodSwapListElem = document.querySelector('#good-swaps-results > .enhanced-body');
 
@@ -5253,11 +5297,6 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
         document.getElementById('balance-cards').setAttribute('disabled', '');
     }
 
-function badgepageFilterHelpOthersListener() {
-    badgepageFilterBalanceCards('helper-match', 'Helping Friends', true);
-}
-
-async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
     let HTMLString = '<div class="badge_detail_tasks footer"></div>'
       + `<div id="${elemId}" class="enhanced-section">`
       +    `<div class="enhanced-header">${headerTitle}</div>`
@@ -5266,7 +5305,7 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
     badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
     badgepageFilterShortcuts.main.classList.add('loading');
 
-    let { myCardStock, friendsCardStock } = badgepageFilterPageData;
+    let { myCardStock } = badgepageFilterPageData;
     let processedFriends = new Set();
     let balanceMatchingListElem = document.querySelector(`#${elemId} > .enhanced-body`);
 
