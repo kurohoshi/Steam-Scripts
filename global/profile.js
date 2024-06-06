@@ -32,6 +32,7 @@ class Profile {
         mini_profile:    "item_class_13",
         profile_frame:   "item_class_14",
         animated_avatar: "item_class_15"
+        // missing: Consumable, avatar profile frame, keyboard skin, startup vid
     }
     static ITEM_TYPE_ORDER = {
         gem: 1,
@@ -286,7 +287,7 @@ class Profile {
         }
         let urlID = profile.id || profile.url;
         console.log(`findMoreDataForProfile(): Fetching profile page of ${urlID}`);
-        let response = await fetch(`https://steamcommunity.com/${profile.id !== undefined ? 'profiles' : 'id'}/${urlID}/`);
+        let response = await fetch(`https://steamcommunity.com/${profile.id !== undefined ? 'profiles' : 'id'}/${urlID}`);
         await Profile.utils.sleep(Profile.utils.FETCH_DELAY);
 
         let parser = new DOMParser();
@@ -358,7 +359,9 @@ class Profile {
             token = parsedData[1].replace('token=', '');
         } else if(Profile.utils.isSimplyObject(data)) {
             ({ partner: id, token } = data);
-            id = Profile.utils.getSteamProfileId64(id);
+            if(!Profile.utils.isSteamId64Format(id)) {
+                id = Profile.utils.getSteamProfileId64(id);
+            }
         } else {
             console.warn('addTradeURL(): Invalid datatype provided!')
             return;

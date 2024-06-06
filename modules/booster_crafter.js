@@ -1123,7 +1123,7 @@ async function boosterCrafterCraftBoosters() {
     });
     let urlString = 'https://steamcommunity.com/tradingcards/ajaxcreatebooster/';
 
-    while (boosterCrafterData.craftQueue.length) {
+    while(boosterCrafterData.craftQueue.length) {
         let entryElem = boosterCrafterData.craftQueue[boosterCrafterData.craftQueue.length - 1];
         let appid = entryElem.dataset.appid;
         let boosterData = boosterCrafterData.boosterDataList[appid];
@@ -1149,16 +1149,16 @@ async function boosterCrafterCraftBoosters() {
 
         // let responseData = {
         //     "purchase_result": {
-        //     "communityitemid": "29863953490",
-        //     "appid": 998490,
-        //     "item_type": 28,
-        //     "purchaseid": "57708606",
-        //     "success": 1,
-        //     "rwgrsn": -2
+        //         "communityitemid": "00000000000",
+        //         "appid": 000000,
+        //         "item_type": 00,
+        //         "purchaseid": "00000000",
+        //         "success": 1,
+        //         "rwgrsn": -2
         //     },
-        //     "goo_amount": "232519",
-        //     "tradable_goo_amount": "232519",
-        //     "untradable_goo_amount": 0
+        //     "goo_amount": "000000",
+        //     "tradable_goo_amount": "000000",
+        //     "untradable_goo_amount": "0000"
         // };
 
         boosterCrafterBoosterCooldownAddTimer(appid, true);
@@ -1418,24 +1418,24 @@ async function boosterCrafterOpenBoosters() {
         // let responseData = {
         //     "success": 1,
         //     "rgItems": [
-        //     {
-        //         "image": "https://community.akamai.steamstatic.com/economy/image/IzMF03bk9WpSBq-S-ekoE33L-iLqGFHVaU25ZzQNQcXdA3g5gMEPvUZZEfSMJ6dESN8p_2SVTY7V2NgOx3sMkD4QPivs0XEwf-xmMcXBiwb6s-bLFXn2bzKZdiWASVwxTrVcMjnbr2f35uicFjqfR74qRQFQfaEG82Qda8-BaUZrhplRu2L-lUtvGhM6TcxLcQi-lydDaOgnn3ERdJtbzyChcseKgFphbk5vXLHvVruUa4GklykmCEgyG6IEJNXCrmPh-lvL2rlk",
-        //         "name": "zijing card",
-        //         "series": 1,
-        //         "foil": false
-        //     },
-        //     {
-        //         "image": "https://community.akamai.steamstatic.com/economy/image/IzMF03bk9WpSBq-S-ekoE33L-iLqGFHVaU25ZzQNQcXdA3g5gMEPvUZZEfSMJ6dESN8p_2SVTY7V2NgOx3sMkD4QPivs0XEwf-xmMcXBiwb6s-bLFXn2bzKZdiWASVwxTrVcMjnbr2f35uicFjqfR74qRQFQfaEG82Qda8-BaUZrhplRu2L-lUtvGhM6TcxLcQi-lydDaOgnn3ERdJtbzyChcseKgFphbk5vXLHvVruUa4GklykmCEgyG6IEJNXCrmPh-lvL2rlk",
-        //         "name": "zijing card",
-        //         "series": 1,
-        //         "foil": false
-        //     },
-        //     {
-        //         "image": "https://community.akamai.steamstatic.com/economy/image/IzMF03bk9WpSBq-S-ekoE33L-iLqGFHVaU25ZzQNQcXdA3g5gMEPvUZZEfSMJ6dESN8p_2SVTY7V2NgOx3sMkD4QPivs0XEwb-xiP8PTwQvioKmOHWbzLj7JLibcQVhuGbBZPGjY_TL2t7zCRjucSLklS1hWe6RR82YcaJyBORA13NUJ-zH2h0p6WBQnYMFDYjCyx3UUNOB2mHhHJ5xSyiXwL8Ld1AsxO0NvWb7vU7rLZ4GixiskXB1hHfVIMY-XpmWyr4G3Z_UlCJgxuw",
-        //         "name": "jinghuanya card",
-        //         "series": 1,
-        //         "foil": false
-        //     }
+        //         {
+        //             "image": "url-addr-str",
+        //             "name": "string",
+        //             "series": 1,
+        //             "foil": boolean
+        //         },
+        //         {
+        //             "image": "url-addr-str",
+        //             "name": "string",
+        //             "series": 1,
+        //             "foil": boolean
+        //         },
+        //         {
+        //             "image": "url-addr-str",
+        //             "name": "string",
+        //             "series": 1,
+        //             "foil": boolean
+        //         }
         //     ]
         // };
 
