@@ -303,7 +303,7 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
             return;
         }
 
-        let balanceResult = Matcher.balanceVariance(myCardStock, profile.stock, false, helperMode);
+        let balanceResult = Matcher.balanceVariance(myCardStock, profile.stock, false, (helperMode ? 1 : -1) );
         if(!balanceResult.swap.some(x => x)) {
             return;
         }

@@ -1179,6 +1179,8 @@ async function boosterCrafterCraftBoosters() {
         boosterCrafterShortcuts.goostatusGooTradable.innerHTML = parseInt(responseData.tradable_goo_amount).toLocaleString();
         boosterCrafterShortcuts.goostatusGooNontradable.innerHTML = parseInt(responseData.untradable_goo_amount).toLocaleString();
         let gems = boosterCrafterData.gems.find(x => x.classid === '667924416');
+
+        // NOTE: Change gemsDiff if a predictable behaviour can be concluded
         let gemsTradableDiff = gems.tradables.reduce((sum, x) => sum + x.count, 0) - parseInt(responseData.tradable_goo_amount);
         while (gemsTradableDiff > 0) {
             let lastAsset = gems.tradables[gems.tradables.length - 1];
@@ -1205,13 +1207,13 @@ async function boosterCrafterCraftBoosters() {
         gems.count = parseInt(responseData.goo_amount);
 
         if(boosterTradability) {
-            boosterListEntry.nontradables.push({ assetid: responseData.communityitemid, count: 1 });
+            boosterListEntry.nontradables.push({ assetid: responseData.purchase_result.communityitemid, count: 1 });
             boosterListEntry.nontradableCount++;
             if(openerListEntry) {
                 openerListEntry.maxNontradable++;
             }
         } else {
-            boosterListEntry.tradables.push({ assetid: responseData.communityitemid, count: 1 });
+            boosterListEntry.tradables.push({ assetid: responseData.purchase_result.communityitemid, count: 1 });
             boosterListEntry.tradableCount++;
             if(openerListEntry) {
                 openerListEntry.maxTradable++;
@@ -1228,7 +1230,7 @@ async function boosterCrafterCraftBoosters() {
             }
         } else {
             let invEntriesElem = boosterCrafterShortcuts.lists.inventory.list.querySelector('.userscript-config-list-entries');
-            let HTMLString = boosterCrafterGenerateBoosterListEntry({ appid: appid, tradableCount: boosterListEntry.tradableCount, nontradableCount: boosterListEntry.nontradableCount });
+            let HTMLString = boosterCrafterGenerateBoosterListEntry({ appid: appid, name: boosterData.name, tradableCount: boosterListEntry.tradableCount, nontradableCount: boosterListEntry.nontradableCount });
             invEntriesElem.insertAdjacentHTML('beforeend', HTMLString);
         }
 
