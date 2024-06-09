@@ -87,7 +87,7 @@ async function setupBadgepageFilter() {
     document.getElementById('include-cached-profiles').addEventListener('click', badgepageFilterUpdateCacheFlagListener);
     document.getElementById('friend-filter').addEventListener('click', badgepageFilterFilterFriendsWithCardsListener);
     document.getElementById('good-swaps').addEventListener('click', badgepageFilterShowGoodSwapsListener);
-    document.getElementById('balance-cards').addEventListener('click', badgepageFilterNeutralOrGoodMatchingListener);
+    document.getElementById('balance-cards').addEventListener('click', badgepageFilterMutualOnlyMatchingListener);
     document.getElementById('help-others').addEventListener('click', badgepageFilterHelpOthersListener);
 }
 
@@ -96,7 +96,7 @@ async function badgepageFilterFetchFriend(target) {
         let minVal = Math.min(...stock);
         let lowestCards = new Set(stock.reduce((arr, x, i) => {
             if(x==minVal) {
-                arr.push(i)
+                arr.push(i);
             }
             return arr;
         }, []));
@@ -257,6 +257,7 @@ async function badgepageFilterShowGoodSwapsListener() {
     }
 
     document.getElementById('good-swaps').setAttribute('disabled', '');
+    badgepageFilterShortcuts.main.classList.add('loading');
 
     let HTMLString = '<div class="badge_detail_tasks footer"></div>'
       + '<div id="good-swaps-results" class="enhanced-section">'
@@ -264,7 +265,6 @@ async function badgepageFilterShowGoodSwapsListener() {
       +    '<div class="enhanced-body"></div>'
       + '</div>';
     badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
-    badgepageFilterShortcuts.main.classList.add('loading');
 
     let processedFriends = new Set();
     let goodSwapListElem = document.querySelector('#good-swaps-results > .enhanced-body');
@@ -283,7 +283,7 @@ async function badgepageFilterShowGoodSwapsListener() {
     badgepageFilterShortcuts.main.classList.remove('loading');
 }
 
-function badgepageFilterNeutralOrGoodMatchingListener() {
+function badgepageFilterMutualOnlyMatchingListener() {
     badgepageFilterBalanceCards('balance-match', 'Balance Cards', false);
 }
 
@@ -318,6 +318,7 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
     } else {
         document.getElementById('balance-cards').setAttribute('disabled', '');
     }
+    badgepageFilterShortcuts.main.classList.add('loading');
 
     let HTMLString = '<div class="badge_detail_tasks footer"></div>'
       + `<div id="${elemId}" class="enhanced-section">`
@@ -325,7 +326,6 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
       +    '<div class="enhanced-body"></div>'
       + '</div>';
     badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
-    badgepageFilterShortcuts.main.classList.add('loading');
 
     let { myCardStock } = badgepageFilterPageData;
     let processedFriends = new Set();
