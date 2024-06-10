@@ -770,6 +770,18 @@ class Profile {
             // await Profile.utils.sleep(Profile.utils.INV_FETCH_DELAY1);
             resdata = await response.json();
 
+            // Some real Steam BS right here. Instead of rgInventory being an object,
+            // it sometimes is an empty array in the end which makes no sense.
+            if(Array.isArray(resdata.rgInventory)) {
+                if(resdata.rgInventory.length) {
+                    console.warn('getTradeInventory(): Assets returned a populated array!');
+                    console.log(resdata.rgInventory);
+                    throw 'getTradeInventory(): Need to implement inventory array processing!';
+                } else if(!resdata.more) {
+                    continue;
+                }
+            }
+
             for(let asset of Object.values(resdata.rgInventory)) {
                 let desc = resdata.rgDescriptions[last_descript = `${asset.classid}_${asset.instanceid}`];
 
