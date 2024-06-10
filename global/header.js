@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Steam Tools (PLACEHOLDER)
 // @namespace    https://steamcommunity.com/id/KuroHoshiZ/
-// @version      2024-06-06
+// @version      2024-06-09
 // @description  Set of tools to help with Steam Community activities
 // @author       KurohoshiZ
 // @match        *://steamcommunity.com/*
