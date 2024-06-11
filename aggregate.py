@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import json
 
 o_file_name = 'script.user.js'
@@ -33,7 +34,8 @@ for dir_entry in os.scandir('modules'):
 
     with open(dir_entry.path, 'r', encoding="utf-8") as js_module:
         for line in js_module:
-            o_file.write(line)
+            if not re.match(r'^\w*\/\/', line):
+                o_file.write(line)
         o_file.write('\n')
 
 # Append the rest of global functions

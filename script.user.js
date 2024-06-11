@@ -21,6 +21,9 @@
 // https://github.com/Rudokhvist/ASF-STM/
 // https://github.com/Tithen-Firion/STM-UserScript
 
+// Resources Related to Userscript dev:
+// https://stackoverflow.com/questions/72545851/how-to-make-userscript-auto-update-from-private-domain-github
+
 const globalSettings = {};
 const GLOBALSETTINGSDEFAULTS = {};
 const TOOLS_MENU = [
@@ -2495,12 +2498,10 @@ function matcherConfigUpdateChecklistListener(event) {
     }
 }
 
-// add new config list entry, populated input values persist when form is minimized
 function matcherConfigToggleEntryFormListener(event) {
     matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, !MatcherConfigShortcuts.listContentsElem.matches('.overlay'), 'form');
 }
 
-// edit selected entry, prefilled with selected entry info
 function matcherConfigEditListEntryListener(event) {
     let currentTab = globalSettings.matcherConfig.currentTab;
     if(MatcherConfigShortcuts.listContentsElem.matches('.overlay') && MatcherConfigShortcuts.listContentsElem.querySelector('> .userscript-overlay')?.matches('.form')) {
@@ -2527,7 +2528,6 @@ function matcherConfigEditListEntryListener(event) {
     matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'form');
 }
 
-// remove selected entry
 function matcherConfigDeleteListEntryListener(event) {
     if(!MatcherConfigShortcuts.selectedListEntryElem) {
         console.log('matcherConfigDeleteListEntryListener(): No entry selected, nothing will be removed...');
@@ -4894,7 +4894,6 @@ function boosterCrafterSetOverlay(overlayContainerElem, overlayEnable, overlaySt
         overlayElem.className = 'userscript-overlay ' + overlayState;
     }
 }
-// include language params?
 function boosterCrafterGenerateBoosterListEntry(params) {
     if(!Object.hasOwn(params, 'appid')) {
         console.error('boosterCrafterGenerateBoosterListEntry(): Appid not provided!');
@@ -5026,8 +5025,6 @@ function badgepageCraftPromptConfirmListener () {
 
 }
 
-// text/slider and current->target level with a craft button to pull up prompt
-// prompt is either yes/no
 
 
 GLOBALSETTINGSDEFAULTS.badgepageFilter = {
@@ -5296,7 +5293,6 @@ function getPossibleMatches(profile, partnerMissingCards, partnerPossibleCards) 
     return { lowestCards, possibleCards };
 }
 
-// provides only mutually beneficial matches with any duplicates cards being fair game
 async function badgepageFilterFilterFriendsWithCardsListener() {
     document.getElementById('friend-filter').setAttribute('disabled', '');
 
@@ -5331,7 +5327,6 @@ async function badgepageFilterFilterFriendsWithCardsListener() {
     }
 }
 
-// provides only mutually beneficial matches with any duplicates cards being fair game
 async function badgepageFilterShowGoodSwapsListener() {
     const generateMatchItemsHTMLString = (indices, priority) => {
         let { cardInfoList } = badgepageFilterData;
