@@ -51,8 +51,13 @@ async function setupBadgepageFilter() {
       +    '<button id="balance-cards" class="userscript-btn purple wide">Balance Cards</button>'
       +    '<button id="help-others" class="userscript-btn purple wide">Help Friends!</button>'
       + '</div>';
-    let headerLinkElem = document.querySelector('.badge_row_inner');
-    headerLinkElem.insertAdjacentHTML('beforeend', friendMatchHTMLString);
+    if(isMyPage) {
+        let headerLinkElem = document.querySelector('.badge_cards_to_collect');
+        headerLinkElem.insertAdjacentHTML('beforebegin', friendMatchHTMLString);
+    } else {
+        let headerLinkElem = document.querySelector('.badge_row_inner');
+        headerLinkElem.insertAdjacentHTML('beforeend', friendMatchHTMLString);
+    }
 
     badgepageFilterShortcuts.main = document.querySelector('.badge_row_inner');
     badgepageFilterShortcuts.options = document.getElementById('page-match-options');
@@ -118,8 +123,10 @@ async function badgepageFilterprocessMyBadgepage() {
     let possible = new Set();
 
     if(!stock.some(x => x)) {
-        for(let button of document.getElementById('match-page-options').querySelectorAll('button')) {
-            button.setAttribute('disabled', '');
+        if(badgepageFilterShortcuts.options) {
+            for(let button of badgepageFilterShortcuts.options.querySelectorAll('button')) {
+                button.setAttribute('disabled', '');
+            }
         }
 
         badgepageFilterData.me = null;
@@ -162,18 +169,20 @@ async function badgepageFilterGetFriendBadgepage(target) {
             id3: steamId3
         };
 
-        await badgepageFilterProcessOthersBadgepage(doc);
+        await badgepageFilterProcessOthersBadgepage(doc, profileUrl);
     }
 
     return friendsCardStock[profileUrl];
 }
 
-async function badgepageFilterProcessOthersBadgepage(doc) {
+async function badgepageFilterProcessOthersBadgepage(doc, targetUrl) {
     let { friendsCardStock } = badgepageFilterData;
 
     if(!doc.querySelector('.badge_gamecard_page')) {
-        friendsCardStock[profileUrl] = null;
-        await badgepageFilterProfileCacheRemove(profileUrl);
+        if(targetUrl) {
+            friendsCardStock[targetUrl] = null;
+            await badgepageFilterProfileCacheRemove(targetUrl);
+        }
         return;
     }
 
@@ -463,9 +472,9 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
         if(globalSettings.includeCacheMatching) {
             for(let profile of badgepageFilterData.cachedProfiles) {
                 if(profile.url) {
-                    await checkAndDisplayPossibleSingleSwaps('id/'+profile.url);
+                    await checkAndDisplayPossibleMatches('id/'+profile.url);
                 } else {
-                    await checkAndDisplayPossibleSingleSwaps('profiles/'+profile.id);
+                    await checkAndDisplayPossibleMatches('profiles/'+profile.id);
                 }
             }
         }
@@ -530,7 +539,7 @@ function badgepageFilterExtractSteamId3(elem) {
 function badgepageFilterAddGroup(id, title) {
     let HTMLString = '<div class="badge_detail_tasks footer"></div>'
       + `<div id="${id}-results" class="enhanced-section">`
-      +    `<div class="enhanced-header">${title}s</div>`
+      +    `<div class="enhanced-header">${title}</div>`
       +    '<div class="enhanced-body"></div>'
       + '</div>';
     badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);

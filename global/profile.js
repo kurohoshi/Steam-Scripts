@@ -173,7 +173,8 @@ class Profile {
             await this.getFriends();
         }
 
-        return this.friends.some(x => (x.startsWith('id') && x.endsWith(profile.id)) || (x.startsWith('profiles') && x.endsWith(profile.url)) );
+        return this.friends.some(x => (profile.url && x.startsWith('id') && x.endsWith(profile.url))
+          || (profile.id && x.startsWith('profiles') && x.endsWith(profile.id)) );
     }
 
     static async loadProfiles(profileStrings, useURL=false) {
