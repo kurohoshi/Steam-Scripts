@@ -69,6 +69,8 @@ class Profile {
     inventory;
     badgepages = [{}, {}];
 
+    lastRequestTime = {};
+
     constructor(props) {
         if(!props.id && !props.url) {
             throw "new Profile(): id and url are both not provided! Profile not created.";
@@ -173,7 +175,8 @@ class Profile {
             await this.getFriends();
         }
 
-        return this.friends.some(x => (x.startsWith('id') && x.endsWith(profile.id)) || (x.startsWith('profiles') && x.endsWith(profile.url)) );
+        return this.friends.some(x => (profile.url && x.startsWith('id') && x.endsWith(profile.url))
+          || (profile.id && x.startsWith('profiles') && x.endsWith(profile.id)) );
     }
 
     static async loadProfiles(profileStrings, useURL=false) {
@@ -582,10 +585,11 @@ class Profile {
             await Profile.findMoreDataForProfile(this);
         }
         console.log(`getinventorysize(): Fetching inventory of ${this.id}`);
+        let targetDelayTime = (await this.isMe()) ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2;
+        await Profile.utils.sleep((this.lastRequestTime.inventory ?? 0)+targetDelayTime-Date.now());
         let response = await fetch(`https://steamcommunity.com/inventory/${this.id}/753/6?l=${Profile.utils.getSteamLanguage()}&count=1`);
-        await Profile.utils.sleep((await this.isMe()) ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2);
+        this.lastRequestTime.inventory = Date.now();
         let resdata = await response.json();
-
         this.inventory.size = resdata.total_inventory_count;
     }
 
@@ -606,17 +610,20 @@ class Profile {
 
         do {
             console.log(`getinventory(): Fetching inventory of ${this.id}, starting at ${counter}`);
+
+            let targetDelayTime = (await this.isMe()) ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2;
+            await Profile.utils.sleep((this.lastRequestTime.inventory ?? 0)+targetDelayTime-Date.now());
             let response = await fetch("https://steamcommunity.com/inventory/" + this.id + "/753/6?"
               + "l=" + Profile.utils.getSteamLanguage()
               + "&count=" + ( (count-counter < Profile.MAX_ITEM_COUNT) ? count-counter : Profile.MAX_ITEM_COUNT )
               + (resdata.last_assetid ? `&start_assetid=${resdata.last_assetid}` : "")
             );
+            this.lastRequestTime.inventory = Date.now();
             if(response.status == 429) {
                 throw "Steam Inventory Fetch: Too Many Requests!";
             } else if(response.status == 401) {
                 throw "Steam Inventory Fetch: Missing Parameters, or Steam is complaining about nothing.";
             }
-            await Profile.utils.sleep((await this.isMe()) ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2);
             resdata = await response.json();
 
             counter += resdata.assets.length;
@@ -769,6 +776,18 @@ class Profile {
 
             // await Profile.utils.sleep(Profile.utils.INV_FETCH_DELAY1);
             resdata = await response.json();
+
+            // Some real Steam BS right here. Instead of rgInventory being an object,
+            // it sometimes is an empty array in the end which makes no sense.
+            if(Array.isArray(resdata.rgInventory)) {
+                if(resdata.rgInventory.length) {
+                    console.warn('getTradeInventory(): Assets returned a populated array!');
+                    console.log(resdata.rgInventory);
+                    throw 'getTradeInventory(): Need to implement inventory array processing!';
+                } else if(!resdata.more) {
+                    continue;
+                }
+            }
 
             for(let asset of Object.values(resdata.rgInventory)) {
                 let desc = resdata.rgDescriptions[last_descript = `${asset.classid}_${asset.instanceid}`];

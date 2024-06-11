@@ -27,13 +27,17 @@ function generateSuperNav() {
     unsafeWindow.$J(function($) {
         $('#global_header .supernav').v_tooltip({'location':'bottom', 'destroyWhenDone': false, 'tooltipClass': 'supernav_content', 'offsetY':-6, 'offsetX': 1, 'horizontalSnap': 4, 'tooltipParent': '#global_header .supernav_container', 'correctForScreenSize': false});
     });
- }
+}
 
- async function main() {
+async function main() {
     await SteamToolsDbManager.setup();
     await DataCollectors.scrapePage();
 
-    if(/^\/(id|profiles)\/[^/]+\/gamecards\/\d+\/?/.test(window.location.pathname) && document.querySelector('.badge_card_to_collect')) {
+    if(!steamToolsUtils.getMySteamId()) {
+        return;
+    }
+
+    if(/^\/(id|profiles)\/[^/]+\/gamecards\/\d+\/?/.test(window.location.pathname) && document.querySelector('.badge_card_set_card')) {
         setupBadgepageFilter();
     }
 
@@ -42,6 +46,6 @@ function generateSuperNav() {
     }
 
     generateSuperNav();
- }
+}
 
- setTimeout(main, 0); // macrotask
+setTimeout(main, 0); // macrotask
