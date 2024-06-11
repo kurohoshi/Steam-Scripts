@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Steam Tools (PLACEHOLDER)
 // @namespace    https://steamcommunity.com/id/KuroHoshiZ/
-// @version      2024-06-09
+// @version      2024-06-10
 // @description  Set of tools to help with Steam Community activities
 // @author       KurohoshiZ
 // @match        *://steamcommunity.com/*
@@ -482,6 +482,8 @@ class Profile {
     inventory;
     badgepages = [{}, {}];
 
+    lastRequestTime = {};
+
     constructor(props) {
         if(!props.id && !props.url) {
             throw "new Profile(): id and url are both not provided! Profile not created.";
@@ -586,7 +588,8 @@ class Profile {
             await this.getFriends();
         }
 
-        return this.friends.some(x => (x.startsWith('id') && x.endsWith(profile.id)) || (x.startsWith('profiles') && x.endsWith(profile.url)) );
+        return this.friends.some(x => (profile.url && x.startsWith('id') && x.endsWith(profile.url))
+          || (profile.id && x.startsWith('profiles') && x.endsWith(profile.id)) );
     }
 
     static async loadProfiles(profileStrings, useURL=false) {
@@ -995,10 +998,11 @@ class Profile {
             await Profile.findMoreDataForProfile(this);
         }
         console.log(`getinventorysize(): Fetching inventory of ${this.id}`);
+        let targetDelayTime = (await this.isMe()) ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2;
+        await Profile.utils.sleep((this.lastRequestTime.inventory ?? 0)+targetDelayTime-Date.now());
         let response = await fetch(`https://steamcommunity.com/inventory/${this.id}/753/6?l=${Profile.utils.getSteamLanguage()}&count=1`);
-        await Profile.utils.sleep((await this.isMe()) ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2);
+        this.lastRequestTime.inventory = Date.now();
         let resdata = await response.json();
-
         this.inventory.size = resdata.total_inventory_count;
     }
 
@@ -1019,17 +1023,20 @@ class Profile {
 
         do {
             console.log(`getinventory(): Fetching inventory of ${this.id}, starting at ${counter}`);
+
+            let targetDelayTime = (await this.isMe()) ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2;
+            await Profile.utils.sleep((this.lastRequestTime.inventory ?? 0)+targetDelayTime-Date.now());
             let response = await fetch("https://steamcommunity.com/inventory/" + this.id + "/753/6?"
               + "l=" + Profile.utils.getSteamLanguage()
               + "&count=" + ( (count-counter < Profile.MAX_ITEM_COUNT) ? count-counter : Profile.MAX_ITEM_COUNT )
               + (resdata.last_assetid ? `&start_assetid=${resdata.last_assetid}` : "")
             );
+            this.lastRequestTime.inventory = Date.now();
             if(response.status == 429) {
                 throw "Steam Inventory Fetch: Too Many Requests!";
             } else if(response.status == 401) {
                 throw "Steam Inventory Fetch: Missing Parameters, or Steam is complaining about nothing.";
             }
-            await Profile.utils.sleep((await this.isMe()) ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2);
             resdata = await response.json();
 
             counter += resdata.assets.length;
@@ -1182,6 +1189,18 @@ class Profile {
 
             // await Profile.utils.sleep(Profile.utils.INV_FETCH_DELAY1);
             resdata = await response.json();
+
+            // Some real Steam BS right here. Instead of rgInventory being an object,
+            // it sometimes is an empty array in the end which makes no sense.
+            if(Array.isArray(resdata.rgInventory)) {
+                if(resdata.rgInventory.length) {
+                    console.warn('getTradeInventory(): Assets returned a populated array!');
+                    console.log(resdata.rgInventory);
+                    throw 'getTradeInventory(): Need to implement inventory array processing!';
+                } else if(!resdata.more) {
+                    continue;
+                }
+            }
 
             for(let asset of Object.values(resdata.rgInventory)) {
                 let desc = resdata.rgDescriptions[last_descript = `${asset.classid}_${asset.instanceid}`];
@@ -5061,8 +5080,13 @@ async function setupBadgepageFilter() {
       +    '<button id="balance-cards" class="userscript-btn purple wide">Balance Cards</button>'
       +    '<button id="help-others" class="userscript-btn purple wide">Help Friends!</button>'
       + '</div>';
-    let headerLinkElem = document.querySelector('.badge_row_inner');
-    headerLinkElem.insertAdjacentHTML('beforeend', friendMatchHTMLString);
+    if(isMyPage) {
+        let headerLinkElem = document.querySelector('.badge_cards_to_collect');
+        headerLinkElem.insertAdjacentHTML('beforebegin', friendMatchHTMLString);
+    } else {
+        let headerLinkElem = document.querySelector('.badge_row_inner');
+        headerLinkElem.insertAdjacentHTML('beforeend', friendMatchHTMLString);
+    }
 
     badgepageFilterShortcuts.main = document.querySelector('.badge_row_inner');
     badgepageFilterShortcuts.options = document.getElementById('page-match-options');
@@ -5128,8 +5152,10 @@ async function badgepageFilterprocessMyBadgepage() {
     let possible = new Set();
 
     if(!stock.some(x => x)) {
-        for(let button of document.getElementById('match-page-options').querySelectorAll('button')) {
-            button.setAttribute('disabled', '');
+        if(badgepageFilterShortcuts.options) {
+            for(let button of badgepageFilterShortcuts.options.querySelectorAll('button')) {
+                button.setAttribute('disabled', '');
+            }
         }
 
         badgepageFilterData.me = null;
@@ -5172,18 +5198,20 @@ async function badgepageFilterGetFriendBadgepage(target) {
             id3: steamId3
         };
 
-        await badgepageFilterProcessOthersBadgepage(doc);
+        await badgepageFilterProcessOthersBadgepage(doc, profileUrl);
     }
 
     return friendsCardStock[profileUrl];
 }
 
-async function badgepageFilterProcessOthersBadgepage(doc) {
+async function badgepageFilterProcessOthersBadgepage(doc, targetUrl) {
     let { friendsCardStock } = badgepageFilterData;
 
     if(!doc.querySelector('.badge_gamecard_page')) {
-        friendsCardStock[profileUrl] = null;
-        await badgepageFilterProfileCacheRemove(profileUrl);
+        if(targetUrl) {
+            friendsCardStock[targetUrl] = null;
+            await badgepageFilterProfileCacheRemove(targetUrl);
+        }
         return;
     }
 
@@ -5473,9 +5501,9 @@ async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
         if(globalSettings.includeCacheMatching) {
             for(let profile of badgepageFilterData.cachedProfiles) {
                 if(profile.url) {
-                    await checkAndDisplayPossibleSingleSwaps('id/'+profile.url);
+                    await checkAndDisplayPossibleMatches('id/'+profile.url);
                 } else {
-                    await checkAndDisplayPossibleSingleSwaps('profiles/'+profile.id);
+                    await checkAndDisplayPossibleMatches('profiles/'+profile.id);
                 }
             }
         }
@@ -5540,7 +5568,7 @@ function badgepageFilterExtractSteamId3(elem) {
 function badgepageFilterAddGroup(id, title) {
     let HTMLString = '<div class="badge_detail_tasks footer"></div>'
       + `<div id="${id}-results" class="enhanced-section">`
-      +    `<div class="enhanced-header">${title}s</div>`
+      +    `<div class="enhanced-header">${title}</div>`
       +    '<div class="enhanced-body"></div>'
       + '</div>';
     badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
@@ -5611,13 +5639,17 @@ function generateSuperNav() {
     unsafeWindow.$J(function($) {
         $('#global_header .supernav').v_tooltip({'location':'bottom', 'destroyWhenDone': false, 'tooltipClass': 'supernav_content', 'offsetY':-6, 'offsetX': 1, 'horizontalSnap': 4, 'tooltipParent': '#global_header .supernav_container', 'correctForScreenSize': false});
     });
- }
+}
 
- async function main() {
+async function main() {
     await SteamToolsDbManager.setup();
     await DataCollectors.scrapePage();
 
-    if(/^\/(id|profiles)\/[^/]+\/gamecards\/\d+\/?/.test(window.location.pathname) && document.querySelector('.badge_card_to_collect')) {
+    if(!steamToolsUtils.getMySteamId()) {
+        return;
+    }
+
+    if(/^\/(id|profiles)\/[^/]+\/gamecards\/\d+\/?/.test(window.location.pathname) && document.querySelector('.badge_card_set_card')) {
         setupBadgepageFilter();
     }
 
@@ -5626,9 +5658,9 @@ function generateSuperNav() {
     }
 
     generateSuperNav();
- }
+}
 
- setTimeout(main, 0); // macrotask
+setTimeout(main, 0); // macrotask
 
 function addSvgBlock(elem) {
     const svgString = '<div class="userscript-svg-assets">'
