@@ -12,11 +12,17 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        GM_log
+// @homepageURL  https://github.com/kurohoshi/Steam-Scripts
+// @downloadURL  https://raw.githubusercontent.com/kurohoshi/Steam-Scripts/dev/userscript.js
+// @updateURL    https://raw.githubusercontent.com/kurohoshi/Steam-Scripts/dev/userscript.js
 // ==/UserScript==
 
 // Script inspired by the following Userscripts:
 // https://github.com/Rudokhvist/ASF-STM/
 // https://github.com/Tithen-Firion/STM-UserScript
+
+// Resources Related to Userscript dev:
+// https://stackoverflow.com/questions/72545851/how-to-make-userscript-auto-update-from-private-domain-github
 
 const globalSettings = {};
 const GLOBALSETTINGSDEFAULTS = {};

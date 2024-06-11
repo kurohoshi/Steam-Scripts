@@ -2,7 +2,7 @@ import sys
 import os
 import json
 
-o_file_name = 'userscript.js'
+o_file_name = 'script.user.js'
 if len(sys.argv) > 1:
     if sys.argv[1]=='test':
         o_file_name = 'testscript.js'
