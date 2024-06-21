@@ -656,9 +656,9 @@ function boosterCrafterBoosterCooldownAddTimer(appid, craftedNow = false) {
 function boosterCrafterBoosterCooldownUpdateTimer() {
     for(let appid in boosterCrafterData.cooldownList) {
         let timer = boosterCrafterData.cooldownList[appid];
-        if(timer[2] === 0) {
-            if(timer[1] === 0) {
-                if(timer[0] === 0) {
+        if(timer[2] <= 0) {
+            if(timer[1] <= 0) {
+                if(timer[0] <= 0) {
                     delete boosterCrafterData.cooldownList[appid];
                     continue;
                 }
