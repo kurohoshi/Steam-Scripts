@@ -457,23 +457,38 @@ async function boosterCrafterLoadData() {
 
     // if inventory fails, then alert user of failure here
 
-    boosterCrafterData.gems = steamToolsUtils.deepClone(Profile.me.inventory.data.gem[0]['753']);
-    for(let itemClass of boosterCrafterData.gems) {
-        if(itemClass.classid === '667924416') { // gems
-            boosterCrafterShortcuts.goostatusGooTradable.innerHTML = getArraySum(itemClass.tradables).toLocaleString();
-            boosterCrafterShortcuts.goostatusGooNontradable.innerHTML = getArraySum(itemClass.nontradables).toLocaleString();
-        } else if(itemClass.classid === '667933237') { // sacks
-            let sumTradables = getArraySum(itemClass.tradables);
-            let sumNonradables = getArraySum(itemClass.nontradables);
+    boosterCrafterData.gems = steamToolsUtils.deepClone(Profile.me.inventory.data.gem?.[0]['753']);
+    if(!boosterCrafterData.gems) {
+        boosterCrafterShortcuts.goostatusSackTradable.innerHTML = '0';
+        boosterCrafterShortcuts.goostatusSackNontradable.innerHTML = '0';
+        boosterCrafterShortcuts.goostatusGooTradable.innerHTML = '0';
+        boosterCrafterShortcuts.goostatusGooNontradable.innerHTML = '0';
+        boosterCrafterShortcuts.unpackTradableGooButton.removeAttribute('disabled');
+        boosterCrafterShortcuts.unpackNontradableGooButton.removeAttribute('disabled');
+    } else {
+        let gemsData = boosterCrafterData.gems.find(x => x.classid === '667924416');
+        let sacksData = boosterCrafterData.gems.find(x => x.classid === '667933237');
+        let sumTradables, sumNonradables;
+        if(gemsData) {
+            boosterCrafterShortcuts.goostatusGooTradable.innerHTML = getArraySum(gemsData.tradables).toLocaleString();
+            boosterCrafterShortcuts.goostatusGooNontradable.innerHTML = getArraySum(gemsData.nontradables).toLocaleString();
+            gemsData.tradables.sort((a, b) => a.count-b.count);
+            gemsData.nontradables.sort((a, b) => a.count-b.count);
+        }
+        if(sacksData) {
+            sumTradables = getArraySum(sacksData.tradables);
+            sumNonradables = getArraySum(sacksData.nontradables);
             boosterCrafterShortcuts.goostatusSackTradable.innerHTML = sumTradables.toLocaleString();
             boosterCrafterShortcuts.goostatusSackNontradable.innerHTML = sumNonradables.toLocaleString();
-            boosterCrafterShortcuts.unpackTradableGooButton.disabled = !sumTradables ? true : false;
-            boosterCrafterShortcuts.unpackNontradableGooButton.disabled = !sumNonradables ? true : false;
-        } else {
-            console.warn('boosterCrafterLoadData(): Unknown item Class detected in gem itemType!');
+            sacksData.tradables.sort((a, b) => a.count-b.count);
+            sacksData.nontradables.sort((a, b) => a.count-b.count);
         }
-        itemClass.tradables.sort((a, b) => a.count - b.count);
-        itemClass.nontradables.sort((a, b) => a.count - b.count);
+        sumTradables
+          ? boosterCrafterShortcuts.unpackTradableGooButton.removeAttribute('disabled')
+          : boosterCrafterShortcuts.unpackTradableGooButton.setAttribute('disabled', '');
+        sumNonradables
+          ? boosterCrafterShortcuts.unpackNontradableGooButton.removeAttribute('disabled')
+          : boosterCrafterShortcuts.unpackNontradableGooButton.setAttribute('disabled', '');
     }
 
     boosterCrafterData.boosters = {};
