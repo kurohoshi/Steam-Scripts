@@ -474,6 +474,9 @@ async function boosterCrafterLoadData() {
             boosterCrafterShortcuts.goostatusGooNontradable.innerHTML = getArraySum(gemsData.nontradables).toLocaleString();
             gemsData.tradables.sort((a, b) => a.count-b.count);
             gemsData.nontradables.sort((a, b) => a.count-b.count);
+        } else {
+            boosterCrafterShortcuts.goostatusGooTradable.innerHTML = '0';
+            boosterCrafterShortcuts.goostatusGooNontradable.innerHTML = '0';
         }
         if(sacksData) {
             sumTradables = getArraySum(sacksData.tradables);
@@ -482,6 +485,9 @@ async function boosterCrafterLoadData() {
             boosterCrafterShortcuts.goostatusSackNontradable.innerHTML = sumNonradables.toLocaleString();
             sacksData.tradables.sort((a, b) => a.count-b.count);
             sacksData.nontradables.sort((a, b) => a.count-b.count);
+        } else {
+            boosterCrafterShortcuts.goostatusSackTradable.innerHTML = '0';
+            boosterCrafterShortcuts.goostatusSackNontradable.innerHTML = '0';
         }
         sumTradables
           ? boosterCrafterShortcuts.unpackTradableGooButton.removeAttribute('disabled')
