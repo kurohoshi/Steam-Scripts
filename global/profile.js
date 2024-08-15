@@ -609,10 +609,10 @@ class Profile {
         let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] ?? Number.MAX_SAFE_INTEGER;
 
         do {
-            console.log(`getinventory(): Fetching inventory of ${this.id}, starting at ${counter}`);
-
             let targetDelayTime = (await this.isMe()) ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2;
             await Profile.utils.sleep((this.lastRequestTime.inventory ?? 0)+targetDelayTime-Date.now());
+            console.log(`getinventory(): Fetching inventory of ${this.id}, starting at ${counter}`);
+
             let response = await fetch("https://steamcommunity.com/inventory/" + this.id + "/753/6?"
               + "l=" + Profile.utils.getSteamLanguage()
               + "&count=" + ( (count-counter < Profile.MAX_ITEM_COUNT) ? count-counter : Profile.MAX_ITEM_COUNT )
