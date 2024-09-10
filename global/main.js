@@ -42,7 +42,7 @@ async function main() {
     }
 
     if(window.location.pathname.includes('/tradingcards/boostercreator/enhanced')) {
-        setupBoosterCrafter();
+        BoosterCrafter.setup();
     }
 
     generateSuperNav();
