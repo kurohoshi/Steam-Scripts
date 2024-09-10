@@ -535,7 +535,7 @@ const BadgepageFilter = {
     },
     profileCacheAdd: async function(profileUrl) {
         let { appid } = BadgepageFilter.data;
-        let profileInstance = Profile.findProfile(profileUrl.replace(/(id|profiles)\/+/g, ''));
+        let profileInstance = await Profile.findProfile(profileUrl.replace(/(id|profiles)\/+/g, ''));
         if(profileInstance) {
             globalSettings.badgepageFilter.applist[appid].push({
                 id: profileInstance.id,
