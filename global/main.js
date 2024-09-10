@@ -38,7 +38,7 @@ async function main() {
     }
 
     if(/^\/(id|profiles)\/[^/]+\/gamecards\/\d+\/?/.test(window.location.pathname) && document.querySelector('.badge_card_set_card')) {
-        setupBadgepageFilter();
+        BadgepageFilter.setup();
     }
 
     if(window.location.pathname.includes('/tradingcards/boostercreator/enhanced')) {
