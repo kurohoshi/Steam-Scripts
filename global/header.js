@@ -26,11 +26,7 @@
 
 const globalSettings = {};
 const GLOBALSETTINGSDEFAULTS = {};
-const TOOLS_MENU = [
-    { name: 'Main Page', href: 'https://steamcommunity.com/groups/tradingcards/discussions/2/3201493200068346848/', htmlString: undefined, entryFn: undefined },
-    { name: 'Matcher', href: undefined, htmlString: undefined, entryFn: gotoMatcherConfigPage },
-    { name: 'Booster Crafter', href: 'https://steamcommunity.com/tradingcards/boostercreator/enhanced', htmlString: undefined, entryFn: undefined },
-];
+const TOOLS_MENU = [];
 const DB_OBJECTSTORE_CONFIGS = [
     { name: 'config', keypath: undefined, autoincr: undefined },
     { name: 'profiles', keypath: undefined, autoincr: undefined, indices: [

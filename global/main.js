@@ -1,3 +1,9 @@
+TOOLS_MENU.push(...[
+    { name: 'Main Page', href: 'https://steamcommunity.com/groups/tradingcards/discussions/2/3201493200068346848/', htmlString: undefined, entryFn: undefined },
+    { name: 'Matcher', href: undefined, htmlString: undefined, entryFn: SteamItemMatcher.setup },
+    { name: 'Booster Crafter', href: 'https://steamcommunity.com/tradingcards/boostercreator/enhanced', htmlString: undefined, entryFn: undefined },
+]);
+
 function generateSuperNav() {
     let navContainer = document.querySelector('#global_header .supernav_container');
     if(!navContainer) {
