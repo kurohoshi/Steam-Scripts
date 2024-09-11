@@ -306,7 +306,7 @@ const BoosterCrafter = {
         document.getElementById('opener-dialog-confirm').addEventListener('click', BoosterCrafter.openerListOpenConfirmListener);
 
         for(let listElem of document.querySelectorAll('.userscript-config-list-list')) {
-            listElem.addEventListener('click', BoosterCrafter.selectEntriesListenerr);
+            listElem.addEventListener('click', BoosterCrafter.selectEntriesListener);
         }
         for(let removeButtonElem of document.querySelectorAll('.enhanced-list-container .entry-action > .delete')) {
             removeButtonElem.parentElement.addEventListener('click', BoosterCrafter.listRemoveListener);
