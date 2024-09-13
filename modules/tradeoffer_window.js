@@ -91,28 +91,94 @@ const TradeofferWindow = {
             throw 'TradeofferWindow.selectCustomTabListener(): Invalid function name! Was something set up incorrectly?';
         }
 
+        TradeofferWindow.shortcuts.overlayTitle.textContent = tabData.title;
 
         TradeofferWindow[tabData.entry]();
 
+        TradeofferWindow.shortcuts.overlayBody.dataset.name = tabElem.dataset.name;
         TradeofferWindow.shortcuts.overlay.parentElement.classList.add('overlay');
     },
     overlayCloseListener() {
         TradeofferWindow.shortcuts.overlay.parentElement.classList.remove('overlay');
     },
 
+
+
+
+
+    prefilterShortcuts: {},
+
     prefilterSetup: function() {
         console.log('Prefilter WIP');
+
+        if (TradeofferWindow.prefilterShortcuts.body !== undefined) {
+            return;
+        }
+
+        // generate prefilter body and attach to overlay body
     },
+
+
+
+
+
+    quickSearchShortcuts: {},
+
     quickSearchSetup: function() {
         console.log('Quick Search WIP');
+
+        if (TradeofferWindow.quickSearchShortcuts.body !== undefined) {
+            return;
+        }
+
+        // generate prefilter body and attach to overlay body
     },
+
+
+
+
+
+    itemsSelectorShortcuts: {},
+
     itemsSelectorSetup: function() {
         console.log('Items Selector WIP');
+
+        if (TradeofferWindow.itemsSelectorShortcuts.body !== undefined) {
+            return;
+        }
+
+        // generate prefilter body and attach to overlay body
     },
+
+
+
+
+
+    messageShortcuts: {},
+
     messageSetup: function() {
         console.log('Message WIP');
+
+        if (TradeofferWindow.messageShortcuts.body !== undefined) {
+            return;
+        }
+
+        // generate prefilter body and attach to overlay body
     },
+
+
+
+
+
+    summaryShortcuts: {},
+
     summarySetup: function() {
         console.log('Summary WIP');
+
+        if (TradeofferWindow.summaryShortcuts.body !== undefined) {
+            return;
+        }
+
+        // generate prefilter body and attach to overlay body
     },
 };
