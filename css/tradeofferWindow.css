@@ -1,0 +1,50 @@
+.inventory_user_tabs > .inventory_user_tab {
+    width: auto;
+
+    &.userscript-tab {
+        float: right;
+    }
+    &.userscript-tab:hover {
+        background: linear-gradient(to bottom, #41375C 5%, #1D1D1D 95%);
+        cursor: pointer;
+    }
+    > div {
+        padding: 0 0.75em;
+        text-align: center;
+    }
+}
+
+.overlay > .userscript-trade-overlay {
+    display: block;
+}
+.userscript-trade-overlay {
+    display: none;
+    position: absolute;
+    min-height: 936px;
+    inset: 0 0 auto 0;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 5;
+}
+.userscript-trade-overlay-header {
+    padding: 1rem 0 2rem;
+    font-size: 2.5rem;
+    text-align: center;
+}
+.userscript-trade-overlay-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    z-index: 10;
+}
+.userscript-trade-overlay-close::before {
+    position: absolute;
+    top: -0.5rem;
+    content: '🗙';
+    font-size: x-large;
+    text-align: center;
+}
+.userscript-trade-overlay-close:hover::before {
+    text-shadow: 0 0 0.5em white;
+}

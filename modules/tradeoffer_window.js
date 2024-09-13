@@ -18,23 +18,9 @@ const TradeofferWindow = {
         let tabsContainerElem = document.querySelector('.inventory_user_tabs');
         let userTabElem = tabsContainerElem.querySelector('#inventory_select_your_inventory');
         userTabElem.innerHTML = '<div>You</div>';
-        Object.assign(userTabElem.style, {
-            width: 'auto',
-        });
-        Object.assign(userTabElem.querySelector('div').style, {
-            padding: '0 0.75em',
-            textAlign: 'center'
-        });
         let partnerTabElem = tabsContainerElem.querySelector('#inventory_select_their_inventory');
         partnerTabElem.innerHTML = '<div>Them</div>';
-        Object.assign(partnerTabElem.style, {
-            width: 'auto',
-            float: 'left'
-        });
-        Object.assign(partnerTabElem.querySelector('div').style, {
-            padding: '0 0.75em',
-            textAlign: 'center'
-        });
+        partnerTabElem.style.float = ''; // float back to left
 
         // remove apps in app inventory selector with 0 items
         for (let appSelectorOptionElem of document.querySelectorAll('.appselect_options .option > span')) {
@@ -45,16 +31,17 @@ const TradeofferWindow = {
         }
 
         // Add CSS Styles
+        GM_addStyle(cssTradeofferwindow);
 
         // set up overlay
-        const overlayHTMLString = '<div class="userscript-inventory-overlay">'
-            + '<div class="userscript-inventory-overlay-header">'
+        const overlayHTMLString = '<div class="userscript-trade-overlay">'
+            + '<div class="userscript-trade-overlay-header">'
             // the title will be changed when a feature setup is triggered
-            + '<span class="userscript-inventory-overlay-title">?????</span>'
+            + '<span class="userscript-trade-overlay-title">?????</span>'
             + '</div>'
-            + '<div class="userscript-inventory-overlay-close">'
+            + '<div class="userscript-trade-overlay-close">'
             + '</div>'
-            + '<div class="userscript-inventory-overlay-body">'
+            + '<div class="userscript-trade-overlay-body">'
             + '' // the body will be generated on each feature setup
             + '</div>'
             + '</div>';
@@ -64,7 +51,7 @@ const TradeofferWindow = {
 
         // Add tabs to the user_tabs section
         const generateUserTabHTMLString = (featureData) => {
-            return `<div class="inventory_user_tab" data-name=${featureData.name}>`
+            return `<div class="inventory_user_tab userscript-tab" data-name=${featureData.name}>`
                 + '<div>'
                 + featureData.title
                 + '</div>'
@@ -81,9 +68,9 @@ const TradeofferWindow = {
 
 
         TradeofferWindow.shortcuts.userSelectTabs = tabsContainerElem;
-        TradeofferWindow.shortcuts.overlay = tradeAreaElem.querySelector('.userscript-inventory-overlay');
-        TradeofferWindow.shortcuts.overlayTitle = tradeAreaElem.querySelector('.userscript-inventory-overlay-title');
-        TradeofferWindow.shortcuts.overlayBody = tradeAreaElem.querySelector('.userscript-inventory-overlay-body');
+        TradeofferWindow.shortcuts.overlay = tradeAreaElem.querySelector('.userscript-trade-overlay');
+        TradeofferWindow.shortcuts.overlayTitle = tradeAreaElem.querySelector('.userscript-trade-overlay-title');
+        TradeofferWindow.shortcuts.overlayBody = tradeAreaElem.querySelector('.userscript-trade-overlay-body');
 
         tabsContainerElem.addEventListener('click', TradeofferWindow.selectCustomTabListener);
     },
