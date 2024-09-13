@@ -3,13 +3,13 @@ const TradeofferWindow = {
         disabled: [], // disable any unwanted tabs here
     },
 
-    FEATURE_LIST: [
-        { name: 'prefilter', title: 'P', entry: 'prefilterSetup' },
-        { name: 'quickSearch', title: 'Q', entry: 'quickSearchSetup' },
-        { name: 'itemsSelector', title: 'I', entry: 'itemsSelectorSetup' },
-        { name: 'message', title: 'M', entry: 'messageSetup' },
-        { name: 'summary', title: 'S', entry: 'summarySetup' },
-    ],
+    FEATURE_LIST: {
+        prefilter: { title: 'Prefilter', tabContent: 'P', entry: 'prefilterSetup' },
+        quickSearch: { title: 'Quick Search', tabContent: 'Q', entry: 'quickSearchSetup' },
+        itemsSelector: { title: 'Items Selector', tabContent: 'I', entry: 'itemsSelectorSetup' },
+        message: { title: 'Message', tabContent: 'M', entry: 'messageSetup' },
+        summary: { title: 'Summary', tabContent: 'S', entry: 'summarySetup' },
+    },
 
     shortcuts: {},
 
@@ -50,16 +50,17 @@ const TradeofferWindow = {
         tradeAreaElem.insertAdjacentHTML('beforeend', overlayHTMLString);
 
         // Add tabs to the user_tabs section
-        const generateUserTabHTMLString = (featureData) => {
-            return `<div class="inventory_user_tab userscript-tab" data-name=${featureData.name}>`
+        const generateUserTabHTMLString = (featureName, featureData) => {
+            return `<div class="inventory_user_tab userscript-tab" data-name=${featureName}>`
                 + '<div>'
-                + featureData.title
+                + featureData.tabContent
                 + '</div>'
                 + '</div>';
         };
-        const newTabsHTMLString = TradeofferWindow.FEATURE_LIST
-            .map(x => generateUserTabHTMLString(x))
-            .join('');
+        let newTabsHTMLString = '';
+        for (let tabName in TradeofferWindow.FEATURE_LIST) {
+            newTabsHTMLString += generateUserTabHTMLString(tabName, TradeofferWindow.FEATURE_LIST[tabName]);
+        }
 
         // tabsContainerElem.querySelector('[style="clear: both;"]')
         tabsContainerElem.querySelector('.inventory_user_tab_gap')
@@ -78,18 +79,20 @@ const TradeofferWindow = {
     selectCustomTabListener: function(event) {
         let tabElem = event.target;
         while (!tabElem.matches('.inventory_user_tab')) {
-            if (tabElem.matches('inventory_user_tabs')) {
-                throw 'TradeofferWindow.selectCustomTabListener(): No tab found! Was the document structured correctly?';
+            if (tabElem.matches('.inventory_user_tabs')) {
+                console.error('TradeofferWindow.selectCustomTabListener(): No tab element found!');
+                return;
             }
             tabElem = tabElem.parentElement;
         }
 
-        let entryFunctionName = TradeofferWindow.FEATURE_LIST.find(x => tabElem.dataset.name === x.name)?.entry;
-        if (!entryFunctionName || (typeof TradeofferWindow[entryFunctionName] !== 'function')) {
+        let tabData = TradeofferWindow.FEATURE_LIST[tabElem.dataset.name];
+        if (!tabData || (typeof TradeofferWindow[tabData.entry] !== 'function')) {
             throw 'TradeofferWindow.selectCustomTabListener(): Invalid function name! Was something set up incorrectly?';
         }
 
-        TradeofferWindow[entryFunctionName]();
+
+        TradeofferWindow[tabData.entry]();
 
         TradeofferWindow.shortcuts.overlay.parentElement.classList.add('overlay');
     },
