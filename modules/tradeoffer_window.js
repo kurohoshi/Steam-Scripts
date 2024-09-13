@@ -73,6 +73,7 @@ const TradeofferWindow = {
         TradeofferWindow.shortcuts.overlayBody = tradeAreaElem.querySelector('.userscript-trade-overlay-body');
 
         tabsContainerElem.addEventListener('click', TradeofferWindow.selectCustomTabListener);
+        TradeofferWindow.shortcuts.overlay.querySelector('.userscript-trade-overlay-close').addEventListener('click', TradeofferWindow.overlayCloseListener);
     },
     selectCustomTabListener: function(event) {
         let tabElem = event.target;
@@ -89,6 +90,11 @@ const TradeofferWindow = {
         }
 
         TradeofferWindow[entryFunctionName]();
+
+        TradeofferWindow.shortcuts.overlay.parentElement.classList.add('overlay');
+    },
+    overlayCloseListener() {
+        TradeofferWindow.shortcuts.overlay.parentElement.classList.remove('overlay');
     },
 
     prefilterSetup: function() {
