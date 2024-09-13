@@ -47,11 +47,11 @@ async function main() {
         BadgepageFilter.setup();
     }
 
-    if (window.location.pathname.includes('/tradingcards/boostercreator/enhanced')) {
+    if(window.location.pathname.startsWith('/tradingcards/boostercreator/enhanced')) {
         BoosterCrafter.setup();
     }
 
-    if (window.location.pathname.includes('/tradeoffer/new/')) {
+    if(window.location.pathname.startsWith('/tradeoffer/new/')) {
         TradeofferWindow.setup();
     }
 
