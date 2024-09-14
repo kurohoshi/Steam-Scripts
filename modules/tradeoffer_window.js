@@ -12,6 +12,7 @@ const TradeofferWindow = {
     },
 
     shortcuts: {},
+    data: {},
 
     setup: function() {
         // resize existing tabs
@@ -48,6 +49,21 @@ const TradeofferWindow = {
 
         let tradeAreaElem = document.querySelector('.trade_area');
         tradeAreaElem.insertAdjacentHTML('beforeend', overlayHTMLString);
+
+        // Get names, ids, urls for both parties in the trade offer window
+        // NOTE: Since we don't have immediate access to user's own name, we resort to extracting it out of the hidden escrow message
+        Object.assign(TradeofferWindow.data, { me: {}, them: {} });
+        let partnerName = TradeofferWindow.data.them.name = document.getElementById('trade_theirs').querySelector('.offerheader h2 > a').textContent;
+        let partnerEscrowMessage = document.getElementById('trade_escrow_for_them').textContent;
+        let userEscrowMessage = document.getElementById('trade_escrow_for_me').textContent;
+        TradeofferWindow.data.me.name = userEscrowMessage.slice(partnerEscrowMessage.indexOf(partnerName), partnerEscrowMessage.indexOf(partnerName) + partnerName.length - partnerEscrowMessage.length)
+
+        TradeofferWindow.data.them.id = unsafeWindow.UserThem.strSteamId;
+        TradeofferWindow.data.them.url = unsafeWindow.UserThem.strProfileURL;
+        TradeofferWindow.data.them.img = document.getElementById('trade_theirs').querySelector('.avatarIcon img').src;
+        TradeofferWindow.data.me.id = unsafeWindow.UserYou.strSteamId;
+        TradeofferWindow.data.me.url = unsafeWindow.UserYou.strProfileURL;
+        TradeofferWindow.data.me.img = document.getElementById('trade_yours').querySelector('.avatarIcon img').src;
 
         // Add tabs to the user_tabs section
         const generateUserTabHTMLString = (featureName, featureData) => {
