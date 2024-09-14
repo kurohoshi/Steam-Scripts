@@ -132,6 +132,22 @@ const TradeofferWindow = {
         }
 
         // generate prefilter body and attach to overlay body
+        const prefilterBodyHTMLString = '<div class="prefilter-body">'
+        +     '<div class="prefilter-main-control">'
+        +         '<div class="main-control-section">'
+        +             TradeofferWindow.generateAppSelectorHTMLString()
+        +         '</div>'
+        +     '</div>'
+        +     '<div class="prefilter-tag-category-containers">'
+        +         '' // populated when an app is selected
+        +     '</div>'
+        + '</div>';
+
+        TradeofferWindow.shortcuts.overlayBody.insertAdjacentHTML('beforeend', prefilterBodyHTMLString);
+
+        // add shortcuts to parts of the prefilter body
+
+        // add event listeners to everything in the prefilter body
     },
 
 
