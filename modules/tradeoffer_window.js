@@ -164,6 +164,58 @@ const TradeofferWindow = {
         }
 
         // generate prefilter body and attach to overlay body
+        const quickSearchMainControlHTMLString = '<div class="quick-search-main-control">'
+          +     '<div class="main-control-section">'
+          +         TradeofferWindow.generateUserSelectorHTMLString()
+          +         '' // app selection is added when a user is selected
+          +         '' // context selection is added when an app is selected
+          +         '<button class="main-control-selector-action">'
+          +             'Load'
+          +         '</button>'
+          +     '</div>'
+          +     '<div class="main-control-section">'
+          +         '<button class="main-control-selector-action">'
+          +             'Add Selected'
+          +         '</button>'
+          +     '</div>'
+          + '</div>';
+        const quickSearchInventoryFacetHTMLString = '<div class="quick-search-inventory-facet">'
+          +     '<input class="userscript-input" type="text" placeholder="Search item name">'
+          +     '' // tag categories is generated when inventory is loaded
+          + '</div>';
+        const quickSearchInventoryDisplayHTMLString = '<div class="inventory-display-container">'
+          +     '<div class="inventory-pages-container">'
+          +         '' // pages will be set up on display mode selection
+          +     '</div>'
+          +     '<div class="inventory-page-nav">'
+          +         '<button class="inventory-page-nav-btn" data-step="-Infinity">|&lt</button>'
+          +         '<button class="inventory-page-nav-btn" data-step="-10">&lt&lt</button>'
+          +         '<button class="inventory-page-nav-btn" data-step="-1">&lt</button>'
+          +         '<div class="inventory-page-nav-numbers">'
+          +             '<span class="inventory-page-nav-text number first">1</span>'
+          +             '<span class="inventory-page-nav-text ellipsis">...</span>'
+          +             '<span class="inventory-page-nav-text number">50</span>'
+          +             '<span class="inventory-page-nav-text number current">51</span>'
+          +             '<span class="inventory-page-nav-text number">52</span>'
+          +             '<span class="inventory-page-nav-text ellipsis">...</span>'
+          +             '<span class="inventory-page-nav-text number last">1000</span>'
+          +         '</div>'
+          +         '<button class="inventory-page-nav-btn" data-step="1">&gt</button>'
+          +         '<button class="inventory-page-nav-btn" data-step="10">&gt&gt</button>'
+          +         '<button class="inventory-page-nav-btn" data-step="Infinity">&gt|</button>'
+          +     '</div>'
+          + '</div>';
+        const quickSearchBodyHTMLString = '<div class="quick-search-body">'
+          +     quickSearchMainControlHTMLString
+          +     quickSearchInventoryFacetHTMLString
+          +     quickSearchInventoryDisplayHTMLString
+          + '</div>';
+
+        TradeofferWindow.shortcuts.overlayBody.insertAdjacentHTML('beforeend', quickSearchBodyHTMLString);
+
+        // add shortcuts to parts of the quick search body
+
+        // add event listeners to everything in the quick search body
     },
 
 
