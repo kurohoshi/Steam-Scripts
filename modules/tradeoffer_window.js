@@ -24,28 +24,28 @@ const TradeofferWindow = {
         partnerTabElem.style.float = ''; // float back to left
 
         // remove apps in app inventory selector with 0 items
-        for (let appSelectorOptionElem of document.querySelectorAll('.appselect_options .option > span')) {
+        for(let appSelectorOptionElem of document.querySelectorAll('.appselect_options .option > span')) {
             let optionQuantity = parseInt(appSelectorOptionElem.textContent);
-            if (optionQuantity === 0) {
+            if(optionQuantity === 0) {
                 appSelectorOptionElem.parentElement.remove();
             }
         }
 
         // Add CSS Styles
-        GM_addStyle(cssTradeofferwindow);
+        GM_addStyle(cssTradeofferWindow);
 
         // set up overlay
         const overlayHTMLString = '<div class="userscript-trade-overlay">'
-            + '<div class="userscript-trade-overlay-header">'
-            // the title will be changed when a feature setup is triggered
-            + '<span class="userscript-trade-overlay-title">?????</span>'
-            + '</div>'
-            + '<div class="userscript-trade-overlay-close">'
-            + '</div>'
-            + '<div class="userscript-trade-overlay-body">'
-            + '' // the body will be generated on each feature setup
-            + '</div>'
-            + '</div>';
+          +     '<div class="userscript-trade-overlay-header">'
+                  // the title will be changed when a feature setup is triggered
+          +         '<span class="userscript-trade-overlay-title">?????</span>'
+          +     '</div>'
+          +     '<div class="userscript-trade-overlay-close">'
+          +     '</div>'
+          +     '<div class="userscript-trade-overlay-body">'
+          +         '' // the body will be generated on each feature setup
+          +     '</div>'
+          + '</div>';
 
         let tradeAreaElem = document.querySelector('.trade_area');
         tradeAreaElem.insertAdjacentHTML('beforeend', overlayHTMLString);
@@ -68,13 +68,13 @@ const TradeofferWindow = {
         // Add tabs to the user_tabs section
         const generateUserTabHTMLString = (featureName, featureData) => {
             return `<div class="inventory_user_tab userscript-tab" data-name=${featureName}>`
-                + '<div>'
-                + featureData.tabContent
-                + '</div>'
-                + '</div>';
+              +     '<div>'
+              +         featureData.tabContent
+              +     '</div>'
+              + '</div>';
         };
         let newTabsHTMLString = '';
-        for (let tabName in TradeofferWindow.FEATURE_LIST) {
+        for(let tabName in TradeofferWindow.FEATURE_LIST) {
             newTabsHTMLString += generateUserTabHTMLString(tabName, TradeofferWindow.FEATURE_LIST[tabName]);
         }
 
@@ -94,8 +94,8 @@ const TradeofferWindow = {
     },
     selectCustomTabListener: function(event) {
         let tabElem = event.target;
-        while (!tabElem.matches('.inventory_user_tab')) {
-            if (tabElem.matches('.inventory_user_tabs')) {
+        while(!tabElem.matches('.inventory_user_tab')) {
+            if(tabElem.matches('.inventory_user_tabs')) {
                 console.error('TradeofferWindow.selectCustomTabListener(): No tab element found!');
                 return;
             }
@@ -133,15 +133,15 @@ const TradeofferWindow = {
 
         // generate prefilter body and attach to overlay body
         const prefilterBodyHTMLString = '<div class="prefilter-body">'
-        +     '<div class="prefilter-main-control">'
-        +         '<div class="main-control-section">'
-        +             TradeofferWindow.generateAppSelectorHTMLString()
-        +         '</div>'
-        +     '</div>'
-        +     '<div class="prefilter-tag-category-containers">'
-        +         '' // populated when an app is selected
-        +     '</div>'
-        + '</div>';
+          +     '<div class="prefilter-main-control">'
+          +         '<div class="main-control-section">'
+          +             TradeofferWindow.generateAppSelectorHTMLString()
+          +         '</div>'
+          +     '</div>'
+          +     '<div class="prefilter-tag-category-containers">'
+          +         '' // populated when an app is selected
+          +     '</div>'
+          + '</div>';
 
         TradeofferWindow.shortcuts.overlayBody.insertAdjacentHTML('beforeend', prefilterBodyHTMLString);
 
@@ -258,7 +258,7 @@ const TradeofferWindow = {
             HTMLString += `<img src="${imgUrl}">`;
         }
         HTMLString += optionText
-            + '</div>';
+          + '</div>';
 
         return HTMLString;
     },
@@ -296,11 +296,11 @@ const TradeofferWindow = {
         }
 
         return '<div class="main-control-selector-container" style="--selector-width: 15em">'
-        +     '<div class="main-control-selector-select"></div>'
-        +     '<div class="main-control-selector-options">'
-        +         optionsHTMLString
-        +     '</div>'
-        + '</div>';
+          +     '<div class="main-control-selector-select"></div>'
+          +     '<div class="main-control-selector-options">'
+          +         optionsHTMLString
+          +     '</div>'
+          + '</div>';
     },
     generateUserSelectorHTMLString: function() {
         let optionsHTMLString = '';
@@ -310,11 +310,11 @@ const TradeofferWindow = {
         optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(theirProfileData.name, { id: theirProfileData.id }, theirProfileData.img);
 
         return '<div class="main-control-selector-container" style="--selector-width: 10em">'
-        +     '<div class="main-control-selector-select"></div>'
-        +     '<div class="main-control-selector-options">'
-        +         optionsHTMLString
-        +     '</div>'
-        + '</div>';
+          +     '<div class="main-control-selector-select"></div>'
+          +     '<div class="main-control-selector-options">'
+          +         optionsHTMLString
+          +     '</div>'
+          + '</div>';
     },
     generateContextSelectorHTMLString: function(userIsMe, appid) {
         TradeofferWindow.getSelectorData();
@@ -329,10 +329,10 @@ const TradeofferWindow = {
         }
 
         return '<div class="main-control-selector-container" style="--selector-width: 10em">'
-        +     '<div class="main-control-selector-select"></div>'
-        +     '<div class="main-control-selector-options">'
-        +         optionsHTMLString
-        +     '</div>'
-        + '</div>';
+          +     '<div class="main-control-selector-select"></div>'
+          +     '<div class="main-control-selector-options">'
+          +         optionsHTMLString
+          +     '</div>'
+          + '</div>';
     },
 };
