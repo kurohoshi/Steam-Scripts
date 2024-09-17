@@ -68,8 +68,8 @@
 
     img {
         height: 100%;
-        display: inline-block;
-        line-height: 2em;
+        margin-right: 0.25rem;
+        line-height: 2rem;
         vertical-align: top;
         object-fit: contain;
     }
@@ -78,9 +78,9 @@
 .main-control-selector-select {
     padding: 0.25em 1.25em 0.25em 0.25em;
     background: #000;
-    height: 2em;
-    width: calc(var(--selector-width) - 2px);
-    line-height: 2em;
+    height: 2rem;
+    min-width: calc(var(--selector-width) - 2px);
+    line-height: 2rem;
     white-space: nowrap;
     position: relative;
     border: 1px solid #707070;
@@ -103,10 +103,10 @@
 .main-control-selector-option {
     padding: 0.25em 1.25em 0.25em 0.25em;
     background: #111;
-    height: 2em;
-    width: var(--selector-width);
+    height: 2rem;
+    min-width: var(--selector-width);
     white-space: nowrap;
-    line-height: 2em;
+    line-height: 2rem;
     /*   border: 1px solid #707070; */
 }
 
