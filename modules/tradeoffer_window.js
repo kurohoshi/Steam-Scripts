@@ -243,6 +243,49 @@ const TradeofferWindow = {
         prefilterShortcuts.selector.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
         prefilterShortcuts.selectorOptions.addEventListener('click', TradeofferWindow.prefilterAppSelectorMenuSelectListener);
     },
+    prefilterAppSelectorMenuSelectListener: async function(event) {
+        if(!event.currentTarget.matches('.main-control-selector-options')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
+        } else if(!event.currentTarget.parentElement.matches('.main-control-selector-container')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Options container is not immediate child of selector container!';
+        }
+
+        let optionElem = event.target;
+        while (!optionElem.matches('.main-control-selector-option')) {
+            if (optionElem.matches('.main-control-selector-options')) {
+                throw 'tradeofferSelectorMenuSelectListener(): No option found! Was the document structured correctly?';
+            }
+            optionElem = optionElem.parentElement;
+        }
+
+        let selectorElem = event.currentTarget.parentElement;
+        if(selectorElem.dataset.id === optionElem.dataset.id) {
+            return;
+        }
+
+        TradeofferWindow.selectorMenuSelect(selectorElem, optionElem);
+
+        let { categories: categoriesElem } = TradeofferWindow.prefilterShortcuts;
+        let optionId = optionElem.dataset.id;
+        let filterData = await TradeofferWindow.getMarketFilterData(optionId);
+
+        let categoryElemList = categoriesElem.querySelectorAll('.prefilter-tag-category');
+        let categoryElemIndex = 0;
+        let prefilterCategoryIndex = 0;
+
+        while(categoryElemIndex<categoryElemList.length && prefilterCategoryIndex<filterData.categories.length) {
+            // repopulate existing category container
+        }
+
+        if(categoryElemIndex===categoryElemList.length) {
+            // create new category containers for the remaining categories
+            // Add shortcuts? and event listeners here too
+        } else if(prefilterCategoryIndex===filterData.categories.length) {
+            // delete reamining category containers that haven't been repopulated
+        }
+
+        // the event bubbling will take care of toggling the selector menu back off
+    },
 
 
 
@@ -506,6 +549,43 @@ const TradeofferWindow = {
           +         optionsHTMLString
           +     '</div>'
           + '</div>';
+    },
+
+    /// TODO: collapsable category containers, hides only unselected tags
+    repopulateCategoryElement: function(categoryElem, categoryData) {
+        if(!(categoryElem instanceof Element) || !categoryElem.matches('.prefilter-tag-category')) {
+            throw 'TradeofferWindow.repopulateCategoryElement(): Invalid category container element!'
+        }
+
+        categoryElem.dataset.id = categoryData.id;
+        categoryElem.querySelector('.prefilter-tag-category-title').textContent = categoryData.name;
+        // check searchbar eligibility
+        // repopulate selected and unselected tags
+        // NOTE: overwrite tag HTML elems since there will be no event listeners directly attached to them
+        // check open state
+    },
+    generateTagsHTMLStrings: function(tagList) {
+
+    },
+    generateCategoryHTMLString: function(categoryData) {
+        // generate searchbar here?
+        let searchbarHTMLString = categoryData.tags.length < 20 ? '' : '<div class="prefilter-tag-category-searchbar">'
+          +     `<input class="userscript-input" type="text" placeholder="Search ${categoryData.name.toLowerCase()} tags">`
+          + '</div>';
+
+        // generate tags lists here?
+
+        return '<div class="prefilter-tag-category">'
+          +     `<div class="prefilter-tag-category-title">${categoryData.name}</div>`
+          +     searchbarHTMLString
+          +     '<div class="prefilter-tag-category-reset">Reset</div>'
+          +     '<div class="prefilter-tags-selected">'
+          +         '' // populate tags
+          +     '</div>'
+          +     '<div class="prefilter-tags">'
+          +         '' // populate tags
+          +     '</div>'
+          + '</div>'
     },
 
 
