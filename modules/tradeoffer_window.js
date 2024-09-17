@@ -1,6 +1,36 @@
 const TradeofferWindow = {
     SETTINGSDEFAULTS: {
         disabled: [], // disable any unwanted tabs here
+        /* filter: {
+         *     pLastSelected: string,
+         *     qLastSelected: string,
+         *     apps: [
+         *         { // app
+         *             id: string,
+         *             fetched: boolean,
+         *             categories: [
+         *                 { // category
+         *                     id: string,
+         *                     name: string,
+         *                     pOpened: boolean,
+         *                     qOpened: boolean,
+         *                     tags: [
+         *                         { // tag
+         *                             id: string,
+         *                             name: string,
+         *                             excluded: boolean,
+         *                             filtered: boolean
+         *                         },
+         *                         ...
+         *                     ]
+         *                 },
+         *                 ...
+         *             ]
+         *         },
+         *         ...
+         *     ]
+         * }
+         */
     },
 
     FEATURE_LIST: {
@@ -394,5 +424,79 @@ const TradeofferWindow = {
           +         optionsHTMLString
           +     '</div>'
           + '</div>';
+    },
+
+
+
+
+
+    getMarketFilterData: async function(appid) {
+        let urlString = `https://steamcommunity.com/market/appfilters/${appid}`;
+
+        let response = await fetch(urlString);
+        let resdata = await response.json();
+        if(!resdata.success) {
+            throw 'TradeofferWindow.getMarketFilterData(): failed to fetch market filter data!';
+        }
+
+        // Why is this an array?
+        if(Array.isArray(resdata.facets) ) {
+            if(!resdata.facets.length) {
+                console.warn('TradeofferWindow.getMarketFilterData(): Why is the data an empty array?');
+            } else {
+                console.warn('TradeofferWindow.getMarketFilterData(): Why is the data a populated array?');
+                console.log(resdata.facets);
+            }
+            return;
+        }
+
+        let filterData = {
+            id: String(appid),
+            fetched: true,
+            categories: Object.values(resdata.facets).map(categoryData => ({
+                id: categoryData.name,
+                name: categoryData.localized_name,
+                pOpened: false,
+                qOpened: false,
+                tags: Object.entries(categoryData.tags).map(([tagName, tagData]) => ({
+                    id: tagName,
+                    name: tagData.localized_name,
+                    excluded: false,
+                    filtered: false
+                }) )
+            }) )
+        };
+
+        let configFilterData = globalSettings.tradeofferConfig.filter.apps.find(x => x.id === filterData.id);
+        if(!configFilterData) {
+            globalSettings.tradeofferConfig.filter.apps.push(filterData);
+            return filterData;
+        }
+
+        // Move over config settings to the new filter data object
+        for(let configCategoryData of configFilterData.categories) {
+            let filterCategoryData = filterData.categories.find(x => x.id === configCategoryData.id);
+
+            if(!filterCategoryData) {
+                filterData.categories.push(configCategoryData);
+                continue;
+            }
+
+            filterCategoryData.pOpened = configCategoryData.pOpened;
+            filterCategoryData.qOpened = configCategoryData.qOpened;
+            for(let configTagData of configFilterData.tags) {
+                let filterTagData = filterCategoryData.tags.find(x => x.id === configTagData.id);
+
+                if(!filterTagData) {
+                    filterCategoryData.tags.push(configTagData);
+                }
+
+                filterTagData.excluded = configTagData.excluded;
+                filterTagData.filtered = configTagData.filtered;
+            }
+        }
+
+        Object.assign(configFilterData, filterData);
+        return configFilterData;
     },
 };
