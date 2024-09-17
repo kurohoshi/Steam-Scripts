@@ -152,8 +152,56 @@ const TradeofferWindow = {
         TradeofferWindow.shortcuts.overlayBody.dataset.name = tabElem.dataset.name;
         TradeofferWindow.shortcuts.overlay.parentElement.classList.add('overlay');
     },
-    overlayCloseListener() {
+
+
+
+
+
+    overlayCloseListener: function() {
         TradeofferWindow.shortcuts.overlay.parentElement.classList.remove('overlay');
+    },
+    selectorMenuToggleListener: function(event) {
+        if(!event.currentTarget.matches('.main-control-selector-container')) {
+            throw 'TradeofferWindow.selectorMenuToggle(): Not attached to selector container!';
+        }
+
+        event.currentTarget.classList.toggle('active');
+    },
+    selectorMenuSelectListener: function(event) {
+        if(!event.currentTarget.matches('.main-control-selector-options')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
+        } else if(!event.currentTarget.parentElement.matches('.main-control-selector-container')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Options container is not immediate child of selector container!';
+        }
+
+        let optionElem = event.target;
+        while (!optionElem.matches('.main-control-selector-option')) {
+            if (optionElem.matches('.main-control-selector-options')) {
+                throw 'tradeofferSelectorMenuSelectListener(): No option found! Was the document structured correctly?';
+            }
+            optionElem = optionElem.parentElement;
+        }
+
+        TradeofferWindow.selectorMenuSelect(event.currentTarget.parentElement, optionElem);
+
+        // the event bubbling will take care of toggling the selector menu back off
+    },
+    selectorMenuSelect: function(selectorElem, option) {
+        if(!(selectorElem instanceof Element) || (!(option instanceof Element) && !(typeof option !== 'number'))) {
+            throw 'TradeofferWindow.selectorMenuSelect(): invalid arg types...';
+        }
+
+        if(!(option instanceof Element)) {
+            option = selectorElem.querySelector(`.main-control-selector-option[data-id="${option}"]`);
+            if(!option) {
+                console.warn('TradeofferWindow.selectorMenuSelect(): No valid options found');
+            }
+        } else if(!option.matches('.main-control-selector-option')) {
+            throw 'TradeofferWindow.selectorMenuSelect(): option element provided is not an option!';
+        }
+
+        selectorElem.querySelector('.main-control-selector-select').innerHTML = option.innerHTML;
+        Object.assign(selectorElem.dataset, option.dataset);
     },
 
 
