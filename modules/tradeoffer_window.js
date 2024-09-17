@@ -213,7 +213,9 @@ const TradeofferWindow = {
     prefilterSetup: function() {
         console.log('Prefilter WIP');
 
-        if (TradeofferWindow.prefilterShortcuts.body !== undefined) {
+        let { prefilterShortcuts } = TradeofferWindow;
+
+        if(prefilterShortcuts.body !== undefined) {
             return;
         }
 
@@ -232,8 +234,14 @@ const TradeofferWindow = {
         TradeofferWindow.shortcuts.overlayBody.insertAdjacentHTML('beforeend', prefilterBodyHTMLString);
 
         // add shortcuts to parts of the prefilter body
+        let prefilterBody = prefilterShortcuts.body = TradeofferWindow.shortcuts.overlayBody.querySelector('.prefilter-body');
+        prefilterShortcuts.selector = document.getElementById('selector-prefilter-app');
+        prefilterShortcuts.selectorOptions = prefilterShortcuts.selector.querySelector('.main-control-selector-options');
+        prefilterShortcuts.categories = prefilterBody.querySelector('.prefilter-tag-categories-containers');
 
         // add event listeners to everything in the prefilter body
+        prefilterShortcuts.selector.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
+        prefilterShortcuts.selectorOptions.addEventListener('click', TradeofferWindow.prefilterAppSelectorMenuSelectListener);
     },
 
 
@@ -265,11 +273,11 @@ const TradeofferWindow = {
           +         '</button>'
           +     '</div>'
           + '</div>';
-        const quickSearchInventoryFacetHTMLString = '<div class="quick-search-inventory-facet">'
+        const quickSearchInventoryFacetHTMLString = '<div class="quick-search-inventory-facet facet-container">'
           +     '<input class="userscript-input" type="text" placeholder="Search item name">'
           +     '' // tag categories is generated when inventory is loaded
           + '</div>';
-        const quickSearchInventoryDisplayHTMLString = '<div class="inventory-display-container">'
+        const quickSearchInventoryDisplayHTMLString = '<div class="quick-search-inventory-display inventory-display-container">'
           +     '<div class="inventory-pages-container">'
           +         '' // pages will be set up on display mode selection
           +     '</div>'
@@ -300,6 +308,7 @@ const TradeofferWindow = {
         TradeofferWindow.shortcuts.overlayBody.insertAdjacentHTML('beforeend', quickSearchBodyHTMLString);
 
         // add shortcuts to parts of the quick search body
+        TradeofferWindow.quickSearchShortcuts.body = TradeofferWindow.shortcuts.overlayBody.querySelector('.quick-search-body');
 
         // add event listeners to everything in the quick search body
     },
