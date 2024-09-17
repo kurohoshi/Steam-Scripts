@@ -221,7 +221,7 @@ const TradeofferWindow = {
         const prefilterBodyHTMLString = '<div class="prefilter-body">'
           +     '<div class="prefilter-main-control">'
           +         '<div class="main-control-section">'
-          +             TradeofferWindow.generateAppSelectorHTMLString()
+          +             TradeofferWindow.generateAppSelectorHTMLString({ id: 'selector-prefilter-app' })
           +         '</div>'
           +     '</div>'
           +     '<div class="prefilter-tag-category-containers">'
@@ -252,7 +252,7 @@ const TradeofferWindow = {
         // generate prefilter body and attach to overlay body
         const quickSearchMainControlHTMLString = '<div class="quick-search-main-control">'
           +     '<div class="main-control-section">'
-          +         TradeofferWindow.generateUserSelectorHTMLString()
+          +         TradeofferWindow.generateProfileSelectorHTMLString({ id: 'selector-quick-search-profile' })
           +         '' // app selection is added when a user is selected
           +         '' // context selection is added when an app is selected
           +         '<button class="main-control-selector-action">'
@@ -356,7 +356,10 @@ const TradeofferWindow = {
 
 
 
-    selectorData: undefined,
+    selectorData: {
+        blankImg: 'https://community.akamai.steamstatic.com/public/images/economy/blank_gameicon.gif'
+    },
+
     getSelectorData: function() {
         function saveContexts(source, target) {
             for(let appid in source) {
@@ -373,17 +376,16 @@ const TradeofferWindow = {
             }
         }
 
-        if(TradeofferWindow.selectorData) {
-            return;
+        let { selectorData } = TradeofferWindow;
+
+        if(!selectorData.you) {
+            selectorData.you = {};
+            saveContexts(unsafeWindow.UserYou.rgContexts, selectorData.you);
         }
-
-        let selectorData = TradeofferWindow.selectorData = {
-            you: {},
-            them: {}
-        };
-
-        saveContexts(unsafeWindow.UserYou.rgContexts, selectorData.you);
-        saveContexts(unsafeWindow.UserThem.rgContexts, selectorData.them);
+        if(!selectorData.them) {
+            selectorData.them = {};
+            saveContexts(unsafeWindow.UserThem.rgContexts, selectorData.them);
+        }
     },
     generateSelectorOptionHTMLString: function(optionText, dataAttr = {}, imgUrl) {
         let dataAttrString = '';
@@ -400,7 +402,7 @@ const TradeofferWindow = {
 
         return HTMLString;
     },
-    generateAppSelectorHTMLString: function(useUserApps = true, usePartnerApps = true) {
+    generateAppSelectorHTMLString: function({ useUserApps = true, usePartnerApps = true, id }) {
         TradeofferWindow.getSelectorData();
 
         let { selectorData } = TradeofferWindow;
@@ -415,7 +417,7 @@ const TradeofferWindow = {
                 }
 
                 let appInfo = appInfoYou[appid];
-                optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(appInfo.name, { appid: appid }, appInfo.icon);
+                optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(appInfo.name, { id: appid }, appInfo.icon);
                 applist.push(appid);
             }
         }
@@ -428,33 +430,37 @@ const TradeofferWindow = {
                 }
 
                 let appInfo = appInfoThem[appid];
-                optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(appInfo.name, { appid: appid }, appInfo.icon);
+                optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(appInfo.name, { id: appid }, appInfo.icon);
                 applist.push(appid);
             }
         }
 
-        return '<div class="main-control-selector-container" style="--selector-width: 15em">'
-          +     '<div class="main-control-selector-select"></div>'
-          +     '<div class="main-control-selector-options">'
-          +         optionsHTMLString
-          +     '</div>'
-          + '</div>';
+        let selectorParams = {
+            id: id,
+            // placeholderData: -1,
+            placeholderText: 'Choose App',
+            placeholderImg: TradeofferWindow.selectorData.blankImg,
+            width: 15
+        };
+        return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, selectorParams);
     },
-    generateUserSelectorHTMLString: function() {
+    generateProfileSelectorHTMLString: function({ id }) {
         let optionsHTMLString = '';
         let myProfileData = TradeofferWindow.data.me;
         let theirProfileData = TradeofferWindow.data.them;
         optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(myProfileData.name, { id: myProfileData.id }, myProfileData.img);
         optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(theirProfileData.name, { id: theirProfileData.id }, theirProfileData.img);
 
-        return '<div class="main-control-selector-container" style="--selector-width: 10em">'
-          +     '<div class="main-control-selector-select"></div>'
-          +     '<div class="main-control-selector-options">'
-          +         optionsHTMLString
-          +     '</div>'
-          + '</div>';
+        let selectorParams = {
+            id: id,
+            // placeholderData: -1,
+            placeholderText: 'Choose Profile',
+            placeholderImg: TradeofferWindow.selectorData.blankImg,
+            width: 10
+        };
+        return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, selectorParams);
     },
-    generateContextSelectorHTMLString: function(userIsMe, appid) {
+    generateContextSelectorHTMLString: function(userIsMe, appid, { id }) {
         TradeofferWindow.getSelectorData();
 
         let { selectorData } = TradeofferWindow;
@@ -466,8 +472,27 @@ const TradeofferWindow = {
             optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(contextInfo.name, { id: contextInfo.id });
         }
 
-        return '<div class="main-control-selector-container" style="--selector-width: 10em">'
-          +     '<div class="main-control-selector-select"></div>'
+        return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, { id: id, placeholderData: 0, width: 10 });
+    },
+    generateSelectorHTMLString: function(optionsHTMLString,
+      { id, placeholderText = 'Select...', placeholderData = -1, placeholderImg, width } =
+        { placeholderText: 'Select...', placeholderData: -1, /* id, placeholderImg, width */}
+    ) {
+
+        if(typeof optionsHTMLString !== 'string') {
+            throw 'TradeofferWindow.generateSelectorHTMLString(): invalid data type for optionsHTMLString!';
+        }
+
+        let idAttrString = id !== undefined ? `id="${id}"` : '';
+        let widthAttrString = width !== undefined ? `style="--selector-width: ${width}em"` : '';
+        let selectorDataAttrString = placeholderData !== undefined ? ` data-id="${placeholderData}"` : '';
+        let selectorContentHTMLString = (placeholderImg !== undefined ? `<img src="${placeholderImg}">` : '')
+          + (placeholderText ?? '');
+
+        return `<div ${idAttrString} class="main-control-selector-container" ${widthAttrString} ${selectorDataAttrString}>`
+          +     `<div class="main-control-selector-select">`
+          +         selectorContentHTMLString
+          +     '</div>'
           +     '<div class="main-control-selector-options">'
           +         optionsHTMLString
           +     '</div>'
