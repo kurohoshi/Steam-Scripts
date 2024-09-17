@@ -40,6 +40,7 @@ const TradeofferWindow = {
         message: { title: 'Message', tabContent: 'M', entry: 'messageSetup' },
         summary: { title: 'Summary', tabContent: 'S', entry: 'summarySetup' },
     },
+    MIN_TAG_SEARCH: 20,
 
     shortcuts: {},
     data: {},
@@ -551,7 +552,7 @@ const TradeofferWindow = {
           + '</div>';
     },
 
-    /// TODO: collapsable category containers, hides only unselected tags
+    // TODO: collapsable category containers, hides only unselected tags
     repopulateCategoryElement: function(categoryElem, categoryData) {
         if(!(categoryElem instanceof Element) || !categoryElem.matches('.prefilter-tag-category')) {
             throw 'TradeofferWindow.repopulateCategoryElement(): Invalid category container element!'
@@ -559,33 +560,69 @@ const TradeofferWindow = {
 
         categoryElem.dataset.id = categoryData.id;
         categoryElem.querySelector('.prefilter-tag-category-title').textContent = categoryData.name;
-        // check searchbar eligibility
-        // repopulate selected and unselected tags
-        // NOTE: overwrite tag HTML elems since there will be no event listeners directly attached to them
-        // check open state
-    },
-    generateTagsHTMLStrings: function(tagList) {
+        let searchbarElem = categoryElem.querySelector('.prefilter-tag-category-searchbar');
+        let excludeSearchbar = categoryData.tags.length < TradeofferWindow.MIN_TAG_SEARCH;
 
+        if(searchbarElem && excludeSearchbar) {
+            searchbarElem.remove();
+        } else if(!searchbarElem && !excludeSearchbar) {
+            const searchbarHTMLString = '<div class="prefilter-tag-category-searchbar">'
+              +     `<input class="userscript-input" type="text" placeholder="Search ${categoryData.name.toLowerCase()} tags">`
+              + '</div>';
+
+            categoryElem.querySelector('.prefilter-tag-category-title')
+              .insertAdjacentHTML('afterend', searchbarHTMLString);
+        }
+
+        let tagsHTMLStrings = TradeofferWindow.generateTagsHTMLStrings(categoryData.tags);
+        categoryElem.querySelector('.prefilter-tags-selected').innerHTML = tagsHTMLStrings[0];
+        categoryElem.querySelector('.prefilter-tags').innerHTML = tagsHTMLStrings[1];
+
+        let isOpened = categoryElem.classList.contains('hidden');
+        if(isOpened !== categoryData.pOpened) {
+            categoryElem.classList.toggle('hidden');
+        }
+    },
+    generateTagsHTMLStrings: function(tags) {
+        const generateTagHTMLString = (tag, i) => {
+            return `<div class="prefilter-tag-container" data-id="${tag.id}" data-index="${i}">`
+              +     `<span class="prefilter-tag-title">${tag.name}</span>`
+              + '</div>';
+        };
+
+        let tagsHTMLString = '';
+        let tagsHTMLStringExcluded = '';
+        for(let i=0; i<tags.length; ++i) {
+            let tagData = tags[i];
+            if(tag.excluded) {
+                tagsHTMLStringExcluded += generateTagHTMLString(tagData, i);
+            } else {
+                tagsHTMLString += generateTagHTMLString(tagData, i);
+            }
+        }
+
+        return [tagsHTMLStringExcluded, tagsHTMLString];
     },
     generateCategoryHTMLString: function(categoryData) {
-        // generate searchbar here?
-        let searchbarHTMLString = categoryData.tags.length < 20 ? '' : '<div class="prefilter-tag-category-searchbar">'
-          +     `<input class="userscript-input" type="text" placeholder="Search ${categoryData.name.toLowerCase()} tags">`
-          + '</div>';
+        let searchbarHTMLString = categoryData.tags.length < TradeofferWindow.MIN_TAG_SEARCH
+          ? ''
+          : '<div class="prefilter-tag-category-searchbar">'
+            +     `<input class="userscript-input" type="text" placeholder="Search ${categoryData.name.toLowerCase()} tags">`
+            + '</div>';
 
-        // generate tags lists here?
+        let tagsHTMLStrings = TradeofferWindow.generateTagsHTMLStrings(categoryData.tags);
 
         return '<div class="prefilter-tag-category">'
           +     `<div class="prefilter-tag-category-title">${categoryData.name}</div>`
           +     searchbarHTMLString
           +     '<div class="prefilter-tag-category-reset">Reset</div>'
           +     '<div class="prefilter-tags-selected">'
-          +         '' // populate tags
+          +         tagsHTMLStrings[0]
           +     '</div>'
           +     '<div class="prefilter-tags">'
-          +         '' // populate tags
+          +         tagsHTMLStrings[1]
           +     '</div>'
-          + '</div>'
+          + '</div>';
     },
 
 
