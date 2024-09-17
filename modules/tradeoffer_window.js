@@ -34,6 +34,14 @@ const TradeofferWindow = {
         // Add CSS Styles
         GM_addStyle(cssTradeofferWindow);
 
+        // load config
+        let config = await SteamToolsDbManager.getToolConfig('tradeofferConfig');
+        if(config.tradeofferConfig) {
+            globalSettings.tradeofferConfig = config.tradeofferConfig;
+        } else {
+            globalSettings.tradeofferConfig = steamToolsUtils.deepClone(SteamItemMatcher.SETTINGSDEFAULTS.tradeofferConfig);
+        }
+
         // set up overlay
         const overlayHTMLString = '<div class="userscript-trade-overlay">'
           +     '<div class="userscript-trade-overlay-header">'
@@ -75,14 +83,14 @@ const TradeofferWindow = {
         };
         let newTabsHTMLString = '';
         for(let tabName in TradeofferWindow.FEATURE_LIST) {
-            newTabsHTMLString += generateUserTabHTMLString(tabName, TradeofferWindow.FEATURE_LIST[tabName]);
+            if(!globalSettings.tradeofferConfig.disabled.includes(tabName)) {
+                newTabsHTMLString += generateUserTabHTMLString(tabName, TradeofferWindow.FEATURE_LIST[tabName]);
+            }
         }
 
         // tabsContainerElem.querySelector('[style="clear: both;"]')
         tabsContainerElem.querySelector('.inventory_user_tab_gap')
             .insertAdjacentHTML('beforebegin', newTabsHTMLString);
-
-
 
         TradeofferWindow.shortcuts.userSelectTabs = tabsContainerElem;
         TradeofferWindow.shortcuts.overlay = tradeAreaElem.querySelector('.userscript-trade-overlay');
