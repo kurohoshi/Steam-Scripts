@@ -513,6 +513,13 @@ const TradeofferWindow = {
 
 
     getMarketFilterData: async function(appid) {
+        appid = String(appid);
+        let configFilterData = globalSettings.tradeofferConfig.filter.apps.find(x => x.id === appid);
+
+        if(configFilterData?.fetched) {
+            return configFilterData;
+        }
+
         let urlString = `https://steamcommunity.com/market/appfilters/${appid}`;
 
         let response = await fetch(urlString);
@@ -549,7 +556,6 @@ const TradeofferWindow = {
             }) )
         };
 
-        let configFilterData = globalSettings.tradeofferConfig.filter.apps.find(x => x.id === filterData.id);
         if(!configFilterData) {
             globalSettings.tradeofferConfig.filter.apps.push(filterData);
             return filterData;
