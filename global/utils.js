@@ -62,5 +62,15 @@ const steamToolsUtils = {
         tmpElem.setAttribute('type', 'file');
         tmpElem.setAttribute('accept', 'application/json');
         return tmpElem;
+    },
+    debounceFunction(func, delay) {
+        let timeoutId = null;
+        return (...args) => {
+            unsafeWindow.clearTimeout(timeoutId);
+            timeoutId = unsafeWindow.setTimeout(() => {
+                func(...args);
+            }, delay);
+        };
     }
- };
+};
+
