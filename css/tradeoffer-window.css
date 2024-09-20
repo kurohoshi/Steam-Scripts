@@ -66,6 +66,11 @@
     font-size: smaller;
     user-select: none;
 
+    &.disabled {
+        pointer-events: none;
+        opacity: 0.5;
+    }
+
     img {
         height: 100%;
         margin-right: 0.25rem;
@@ -193,7 +198,11 @@
     }
 }
 
-.prefilter-tags {}
+.prefilter-tags {
+    &.hidden {
+        display: none;
+    }
+}
 
 .prefilter-tags-selected,
 .prefilter-tags {
