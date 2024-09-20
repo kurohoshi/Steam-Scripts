@@ -319,6 +319,52 @@ const TradeofferWindow = {
 
         // the event bubbling will take care of toggling the selector menu back off
     },
+    prefilterCategoryResetListener: function(event) {
+        let categoryElem = event.currentTarget.parentElement;
+        if(!event.currentTarget.matches('.prefilter-tag-category-reset')) {
+            throw 'TradeofferWindow.prefilterCategoryResetListener(): Not attached to the correct element class!';
+        } else if(!categoryElem.matches('.prefilter-tag-category')) {
+            throw 'TradeofferWindow.prefilterCategoryResetListener(): Not contained in a category container!';
+        }
+
+        let tagsSelectedElem = categoryElem.querySelector('.prefilter-tags-selected');
+        let tagsElem = categoryElem.querySelector('.prefilter-tags');
+        if(!tagsSelectedElem || !tagsElem) {
+            throw 'TradeofferWindow.prefilterCategoryResetListener(): one or both tags lists not found!';
+        }
+        for(let tagSelectedElem of tagsSelectedElem.querySelectorAll('.prefilter-tag-container')) {
+            let tagSelectedIndex = parseInt(tagSelectedElem.dataset.index);
+            let nextTagElem = null;
+
+            for(let tagElem of tagsElem.querySelectorAll('.prefilter-tag-container')) {
+                if(parseInt(tagElem.dataset.index) > tagSelectedIndex) {
+                    let nextTagElem = tagElem;
+                    break;
+                }
+            }
+
+            nextTagElem
+              ? nextTagElem.before(tagSelectedElem)
+              : tagsElem.appendChild(tagSelectedElem);
+        }
+
+        let appid = TradeofferWindow.prefilterShortcuts.selector.dataset.id;
+        let categoryid = categoryElem.dataset.id;
+
+        let tagsListConfig = globalSettings.tradeofferConfig.filter.apps
+          .find(app => app.id === appid)?.categories
+          .find(category => category.id === categoryid)?.tags;
+
+        if(!tagsListConfig) {
+            throw 'TradeofferWindow.prefilterCategoryResetListener(): tag list not found in config?!?!';
+        }
+
+        for(let tag of tagsListConfig) {
+            tag.excluded = false;
+        }
+
+        // save config
+    },
 
 
 
