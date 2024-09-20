@@ -365,6 +365,60 @@ const TradeofferWindow = {
 
         // save config
     },
+    prefilterCategoryTagsExludeToggleListener: function(event) {
+        let categoryElem = event.currentTarget.parentElement;
+        if(!event.currentTarget.matches('.prefilter-tags, .prefilter-tags-selected')) {
+            throw 'TradeofferWindow.prefilterCategoryTagsExludeToggleListener(): Not attached to a tags container!';
+        } else if(!categoryElem.matches('.prefilter-tag-category')) {
+            throw 'TradeofferWindow.prefilterCategoryTagsExludeToggleListener(): Not contained in a category container!';
+        }
+
+        let tagElem = event.target;
+        while(!tagElem.matches('.prefilter-tag-container')) {
+            if(tagElem.matches('.prefilter-tags')) {
+                throw 'TradeofferWindow.prefilterCategoryTagsExludeToggleListener(): No tag container found!';
+            }
+            tagElem = tagElem.parentElement;
+        }
+
+        let sourceElem = event.currentTarget;
+        let destinationElem = sourceElem.matches('.prefilter-tags')
+          ? categoryElem.querySelector('.prefilter-tags-selected')
+          : categoryElem.querySelector('.prefilter-tags');
+
+        if(!destinationElem) {
+            throw 'TradeofferWindow.prefilterCategoryTagsExludeToggleListener(): Destination Element not found!';
+        }
+
+        let tagIndex = parseInt(tagElem.dataset.index);
+        let nextTagElem;
+        for(let destTagElem of destinationElem.querySelectorAll('.prefilter-tag-container')) {
+            if(parseInt(destTagElem.dataset.index) > tagIndex) {
+                nextTagElem = destTagElem;
+                break;
+            }
+        }
+
+        nextTagElem
+          ? nextTagElem.before(tagElem)
+          : destinationElem.appendChild(tagElem);
+
+        let appid = TradeofferWindow.prefilterShortcuts.selector.dataset.id;
+        let categoryid = categoryElem.dataset.id;
+        let tagid = tagElem.dataset.id;
+
+        let tagConfig = globalSettings.tradeofferConfig.filter.apps
+          .find(app => app.id === appid)?.categories
+          .find(category => category.id === categoryid)?.tags
+          .find(tag => tag.id === tagid);
+
+        if(!tagConfig) {
+            throw 'TradeofferWindow.prefilterCategoryTagsExludeToggleListener(): tag no found in config?!?!';
+        }
+
+        tagConfig.excluded = !tagConfig.excluded;
+        // save config
+    },
 
 
 
