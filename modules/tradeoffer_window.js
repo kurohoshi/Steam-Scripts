@@ -319,6 +319,31 @@ const TradeofferWindow = {
 
         // the event bubbling will take care of toggling the selector menu back off
     },
+    prefilterCategoryToggleListener: function(event) {
+        let categoryElem = event.currentTarget.parentElement;
+        let tagsElem = categoryElem.querySelector('.prefilter-tags');
+        if(!event.currentTarget.matches('.prefilter-collapse-bar')) {
+            throw 'TradeofferWindow.prefilterCategoryToggleListener(): Not attached to a collapse bar!';
+        } else if(!tagsElem) {
+            throw 'TradeofferWindow.prefilterCategoryToggleListener(): No tags container found!';
+        }
+
+        tagsElem.classList.toggle('hidden');
+
+        let appid = TradeofferWindow.prefilterShortcuts.selector.dataset.id;
+        let categoryid = categoryElem.dataset.id;
+
+        let categoryConfig = globalSettings.tradeofferConfig.filter.apps
+          .find(app => app.id === appid)?.categories
+          .find(category => category.id === categoryid);
+
+        if(!categoryConfig) {
+            throw 'TradeofferWindow.prefilterCategoryToggleListener(): category not found in config?!?!';
+        }
+
+        categoryConfig.pOpened = !categoryConfig.pOpened;
+        // save config
+    },
     prefilterCategoryResetListener: function(event) {
         let categoryElem = event.currentTarget.parentElement;
         if(!event.currentTarget.matches('.prefilter-tag-category-reset')) {
