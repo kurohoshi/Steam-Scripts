@@ -41,6 +41,7 @@ const TradeofferWindow = {
         summary: { title: 'Summary', tabContent: 'S', entry: 'summarySetup' },
     },
     MIN_TAG_SEARCH: 20,
+    INPUT_DELAY: 400, // ms
 
     shortcuts: {},
     data: {},
@@ -281,15 +282,40 @@ const TradeofferWindow = {
         let prefilterCategoryIndex = 0;
 
         while(categoryElemIndex<categoryElemList.length && prefilterCategoryIndex<filterData.categories.length) {
-            // repopulate existing category container
+            TradeofferWindow.repopulateCategoryElement(categoryElemList[categoryElemIndex++], filterData.categories[prefilterCategoryIndex++]);
         }
 
         if(categoryElemIndex===categoryElemList.length) {
-            // create new category containers for the remaining categories
-            // Add shortcuts? and event listeners here too
+            let newCategoriesHTMLString = '';
+            let newIndex = categoryElemIndex;
+            while(prefilterCategoryIndex<filterData.categories.length) {
+                newCategoriesHTMLString += TradeofferWindow.generateCategoryHTMLString(filterData.categories[prefilterCategoryIndex++]);
+            }
+
+            TradeofferWindow.prefilterShortcuts.categories.insertAdjacentHTML('beforeend', newCategoriesHTMLString);
+
+            let categoryElemList = TradeofferWindow.prefilterShortcuts.categories.querySelectorAll('.prefilter-tag-category');
+            while(newIndex<categoryElemList.length) {
+                let newCategoryElem = categoryElemList[newIndex++];
+                newCategoryElem.querySelector('.prefilter-tag-category-searchbar')
+                  ?.addEventListener('input', steamToolsUtils.debounceFunction(TradeofferWindow.prefilterCategorySearchInputListener, TradeofferWindow.INPUT_DELAY));
+                newCategoryElem.querySelector('.prefilter-tag-category-reset')
+                  ?.addEventListener('click', TradeofferWindow.prefilterCategoryResetListener);
+                newCategoryElem.querySelector('.prefilter-tags-selected')
+                  ?.addEventListener('click', TradeofferWindow.prefilterCategoryTagsExludeToggleListener);
+                newCategoryElem.querySelector('.prefilter-tags')
+                  ?.addEventListener('click', TradeofferWindow.prefilterCategoryTagsExludeToggleListener);
+                newCategoryElem.querySelector('.prefilter-collapse-bar')
+                  ?.addEventListener('click', TradeofferWindow.prefilterCategoryToggleListener);
+            }
         } else if(prefilterCategoryIndex===filterData.categories.length) {
-            // delete reamining category containers that haven't been repopulated
+            while(categoryElemIndex<categoryElemList.length) {
+                categoryElemList[categoryElemIndex++].remove();
+            }
         }
+
+        globalSettings.tradeofferConfig.filter.pLastSelected = optionId;
+        // save config
 
         // the event bubbling will take care of toggling the selector menu back off
     },
