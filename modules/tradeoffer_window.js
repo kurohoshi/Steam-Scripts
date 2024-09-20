@@ -365,6 +365,26 @@ const TradeofferWindow = {
 
         // save config
     },
+    prefilterCategorySearchInputListener: function(event) {
+        let tagElemList = event.target;
+        while(!tagElemList.matches('.prefilter-tag-category')) {
+            if(tagElemList.matches('.prefilter-body')) {
+                throw 'TradeofferWindow.prefilterCategorySearchInputListener(): category container not found! Is the document structured correctly?';
+            }
+            tagElemList = tagElemList.parentElement;
+        }
+        tagElemList = tagElemList.querySelectorAll('.prefilter-tags .prefilter-tag-container');
+
+        // NOTE: Simple case insensitive compare, cannot deal with accents and special chars
+        let inputStr = event.target.value.toLowerCase();
+        for(let tagElem of tagElemList) {
+            if(tagElem.textContent.toLowerCase().includes(inputStr) || tagElem.dataset.id.toLowerCase().includes(inputStr)) {
+                tagElem.classList.remove('hidden');
+            } else {
+                tagElem.classList.add('hidden');
+            }
+        }
+    },
     prefilterCategoryTagsExludeToggleListener: function(event) {
         let categoryElem = event.currentTarget.parentElement;
         if(!event.currentTarget.matches('.prefilter-tags, .prefilter-tags-selected')) {
