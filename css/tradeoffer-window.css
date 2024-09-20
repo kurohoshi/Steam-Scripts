@@ -198,11 +198,7 @@
     }
 }
 
-.prefilter-tags {
-    &.hidden {
-        display: none;
-    }
-}
+.prefilter-tags {}
 
 .prefilter-tags-selected,
 .prefilter-tags {
@@ -223,6 +219,10 @@
     &:hover {
         border-color: #aaa;
         color: #ccc;
+    }
+
+    &.hidden {
+        display: none;
     }
 }
 

@@ -337,8 +337,8 @@ const TradeofferWindow = {
         const quickSearchMainControlHTMLString = '<div class="quick-search-main-control">'
           +     '<div class="main-control-section">'
           +         TradeofferWindow.generateProfileSelectorHTMLString({ id: 'selector-quick-search-profile' })
-          +         '' // app selection is added when a user is selected
-          +         '' // context selection is added when an app is selected
+          +         TradeofferWindow.generateAppSelectorHTMLString({ useUserApps: false, usePartnerApps: false, id: 'selector-quick-search-app', placeholderText: 'Select profile first', disabled: true })
+          +         TradeofferWindow.generateContextSelectorHTMLString(undefined, undefined, { id: 'selector-quick-search-context', disabled: true })
           +         '<button class="main-control-selector-action">'
           +             'Load'
           +         '</button>'
@@ -487,7 +487,7 @@ const TradeofferWindow = {
 
         return HTMLString;
     },
-    generateAppSelectorHTMLString: function({ useUserApps = true, usePartnerApps = true, id }) {
+    generateAppSelectorHTMLString: function({ useUserApps = true, usePartnerApps = true, id, placeholderText, disabled = false }) {
         TradeofferWindow.getSelectorData();
 
         let { selectorData } = TradeofferWindow;
@@ -523,13 +523,14 @@ const TradeofferWindow = {
         let selectorParams = {
             id: id,
             // placeholderData: -1,
-            placeholderText: 'Choose App',
+            placeholderText: placeholderText || 'Choose App',
             placeholderImg: TradeofferWindow.selectorData.blankImg,
             width: 16,
+            disabled: disabled
         };
         return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, selectorParams);
     },
-    generateProfileSelectorHTMLString: function({ id }) {
+    generateProfileSelectorHTMLString: function({ id, placeholderText, disabled = false }) {
         let optionsHTMLString = '';
         let myProfileData = TradeofferWindow.data.me;
         let theirProfileData = TradeofferWindow.data.them;
@@ -539,13 +540,14 @@ const TradeofferWindow = {
         let selectorParams = {
             id: id,
             // placeholderData: -1,
-            placeholderText: 'Choose Profile',
+            placeholderText: placeholderText || 'Choose Profile',
             placeholderImg: TradeofferWindow.selectorData.blankImg,
             width: 12,
+            disabled: disabled
         };
         return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, selectorParams);
     },
-    generateContextSelectorHTMLString: function(userIsMe, appid, { id }) {
+    generateContextSelectorHTMLString: function(userIsMe, appid, { id, disabled = false }) {
         TradeofferWindow.getSelectorData();
 
         let { selectorData } = TradeofferWindow;
@@ -559,10 +561,10 @@ const TradeofferWindow = {
             }
         }
 
-        return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, { id: id, placeholderData: 0, width: 10 });
+        return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, { id: id, placeholderData: 0, placeholderText: 'All', width: 10, disabled: disabled });
     },
     generateSelectorHTMLString: function(optionsHTMLString,
-      { id, placeholderText = 'Select...', placeholderData = -1, placeholderImg, width } =
+      { id, placeholderText = 'Select...', placeholderData = -1, placeholderImg, width, disabled } =
         { placeholderText: 'Select...', placeholderData: -1, /* id, placeholderImg, width */}
     ) {
 
@@ -575,8 +577,9 @@ const TradeofferWindow = {
         let selectorDataAttrString = placeholderData !== undefined ? ` data-id="${placeholderData}"` : '';
         let selectorContentHTMLString = (placeholderImg !== undefined ? `<img src="${placeholderImg}">` : '')
           + (placeholderText ?? '');
+        let disabledClassString = disabled ? ' disabled' : '';
 
-        return `<div ${idAttrString} class="main-control-selector-container" ${widthAttrString} ${selectorDataAttrString}>`
+        return `<div ${idAttrString} class="main-control-selector-container${disabledClassString}" ${widthAttrString} ${selectorDataAttrString}>`
           +     `<div class="main-control-selector-select">`
           +         selectorContentHTMLString
           +     '</div>'
