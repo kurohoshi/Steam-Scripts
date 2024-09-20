@@ -1,11 +1,11 @@
 const TradeofferWindow = {
     SETTINGSDEFAULTS: {
         disabled: [], // disable any unwanted tabs here
-        /* filter: {
-         *     pLastSelected: string,
-         *     qLastSelected: string,
-         *     apps: [
-         *         { // app
+        filter: {
+            pLastSelected: null,
+            qLastSelected: null,
+            apps: [
+        /*         { // app
          *             id: string,
          *             fetched: boolean,
          *             categories: [
@@ -28,9 +28,9 @@ const TradeofferWindow = {
          *             ]
          *         },
          *         ...
-         *     ]
-         * }
          */
+            ]
+        }
     },
 
     FEATURE_LIST: {
@@ -45,7 +45,7 @@ const TradeofferWindow = {
     shortcuts: {},
     data: {},
 
-    setup: function() {
+    setup: async function() {
         // resize existing tabs
         let tabsContainerElem = document.querySelector('.inventory_user_tabs');
         let userTabElem = tabsContainerElem.querySelector('#inventory_select_your_inventory');
@@ -70,7 +70,7 @@ const TradeofferWindow = {
         if(config.tradeofferConfig) {
             globalSettings.tradeofferConfig = config.tradeofferConfig;
         } else {
-            globalSettings.tradeofferConfig = steamToolsUtils.deepClone(SteamItemMatcher.SETTINGSDEFAULTS.tradeofferConfig);
+            globalSettings.tradeofferConfig = steamToolsUtils.deepClone(TradeofferWindow.SETTINGSDEFAULTS);
         }
 
         // set up overlay
@@ -238,11 +238,17 @@ const TradeofferWindow = {
         let prefilterBody = prefilterShortcuts.body = TradeofferWindow.shortcuts.overlayBody.querySelector('.prefilter-body');
         prefilterShortcuts.selector = document.getElementById('selector-prefilter-app');
         prefilterShortcuts.selectorOptions = prefilterShortcuts.selector.querySelector('.main-control-selector-options');
-        prefilterShortcuts.categories = prefilterBody.querySelector('.prefilter-tag-categories-containers');
+        prefilterShortcuts.categories = prefilterBody.querySelector('.prefilter-tag-category-containers');
 
-        // add event listeners to everything in the prefilter body
+        // add event listeners to everything in the prefilter body minus the categories,
+        //   those will be handled dynamically
         prefilterShortcuts.selector.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
         prefilterShortcuts.selectorOptions.addEventListener('click', TradeofferWindow.prefilterAppSelectorMenuSelectListener);
+
+        let lastSelectedApp = globalSettings.tradeofferConfig.filter.pLastSelected;
+        if(lastSelectedApp) {
+            prefilterShortcuts.selectorOptions.querySelector(`[data-id="${lastSelectedApp}"]`)?.click();
+        }
     },
     prefilterAppSelectorMenuSelectListener: async function(event) {
         if(!event.currentTarget.matches('.main-control-selector-options')) {
@@ -493,7 +499,7 @@ const TradeofferWindow = {
             // placeholderData: -1,
             placeholderText: 'Choose App',
             placeholderImg: TradeofferWindow.selectorData.blankImg,
-            width: 15
+            width: 16,
         };
         return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, selectorParams);
     },
@@ -509,7 +515,7 @@ const TradeofferWindow = {
             // placeholderData: -1,
             placeholderText: 'Choose Profile',
             placeholderImg: TradeofferWindow.selectorData.blankImg,
-            width: 10
+            width: 12,
         };
         return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, selectorParams);
     },
@@ -518,11 +524,13 @@ const TradeofferWindow = {
 
         let { selectorData } = TradeofferWindow;
         let optionsHTMLString = '';
-        let contextInfoList = unsafeWindow[userIsMe ? 'UserYou' : 'UserThem'].rgAppInfo[appid].rgContexts;
+        if( !(userIsMe === undefined || appid === undefined) ) {
+            let contextInfoList = unsafeWindow[userIsMe ? 'UserYou' : 'UserThem'].rgAppInfo[appid].rgContexts;
 
-        for(let contextid of selectorData[userIsMe ? 'you' : 'them'][appid]) {
-            let contextInfo = contextInfoList[contextid];
-            optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(contextInfo.name, { id: contextInfo.id });
+            for(let contextid of selectorData[userIsMe ? 'you' : 'them'][appid]) {
+                let contextInfo = contextInfoList[contextid];
+                optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(contextInfo.name, { id: contextInfo.id });
+            }
         }
 
         return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, { id: id, placeholderData: 0, width: 10 });
@@ -594,7 +602,7 @@ const TradeofferWindow = {
         let tagsHTMLStringExcluded = '';
         for(let i=0; i<tags.length; ++i) {
             let tagData = tags[i];
-            if(tag.excluded) {
+            if(tagData.excluded) {
                 tagsHTMLStringExcluded += generateTagHTMLString(tagData, i);
             } else {
                 tagsHTMLString += generateTagHTMLString(tagData, i);
@@ -610,9 +618,10 @@ const TradeofferWindow = {
             +     `<input class="userscript-input" type="text" placeholder="Search ${categoryData.name.toLowerCase()} tags">`
             + '</div>';
 
+        let categoryidAttr = categoryData.id ? ` data-id="${categoryData.id}"` : '';
         let tagsHTMLStrings = TradeofferWindow.generateTagsHTMLStrings(categoryData.tags);
 
-        return '<div class="prefilter-tag-category">'
+        return `<div class="prefilter-tag-category"${categoryidAttr}>`
           +     `<div class="prefilter-tag-category-title">${categoryData.name}</div>`
           +     searchbarHTMLString
           +     '<div class="prefilter-tag-category-reset">Reset</div>'
@@ -674,6 +683,7 @@ const TradeofferWindow = {
         };
 
         if(!configFilterData) {
+            filterData.categories.sort((a, b) => a.tags.length - b.tags.length);
             globalSettings.tradeofferConfig.filter.apps.push(filterData);
             return filterData;
         }
@@ -702,6 +712,8 @@ const TradeofferWindow = {
         }
 
         Object.assign(configFilterData, filterData);
+        configFilterData.categories.sort((a, b) => a.tags.length - b.tags.length);
+
         return configFilterData;
     },
 };
