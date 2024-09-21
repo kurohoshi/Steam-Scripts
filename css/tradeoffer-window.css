@@ -432,6 +432,8 @@
 }
 
 .inventory-pages-container {
+    min-height: calc(var(--item-container-height) * 5 + var(--item-gap) * 6);
+    min-width: calc(var(--item-container-width) * 6 + var(--item-gap) * 7);
     max-height: 100%;
     display: inline-flex;
     flex-direction: column;
@@ -491,6 +493,16 @@
         &:hover {
             border: 1px solid #AAA;
         }
+    }
+}
+
+.inventory-page-nav-numbers {
+    > :not(:first-child) {
+        margin-left: 0.25em;
+    }
+
+    > :not(:last-child) {
+        margin-right: 0.25em;
     }
 }
 
