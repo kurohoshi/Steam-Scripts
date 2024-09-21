@@ -531,9 +531,128 @@ const TradeofferWindow = {
         TradeofferWindow.shortcuts.overlayBody.insertAdjacentHTML('beforeend', quickSearchBodyHTMLString);
 
         // add shortcuts to parts of the quick search body
-        TradeofferWindow.quickSearchShortcuts.body = TradeofferWindow.shortcuts.overlayBody.querySelector('.quick-search-body');
+        let quickSearchBody = quickSearchShortcuts.body = TradeofferWindow.shortcuts.overlayBody.querySelector('.quick-search-body');
+        quickSearchShortcuts.selectorProfile = document.getElementById('selector-quick-search-profile');
+        quickSearchShortcuts.selectorOptionsProfile = quickSearchShortcuts.selectorProfile.querySelector('.main-control-selector-options');
+        quickSearchShortcuts.selectorApp = document.getElementById('selector-quick-search-app');
+        quickSearchShortcuts.selectorOptionsApp = quickSearchShortcuts.selectorApp.querySelector('.main-control-selector-options');
+        quickSearchShortcuts.selectorContext = document.getElementById('selector-quick-search-context');
+        quickSearchShortcuts.selectorOptionsContext = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-options');
 
         // add event listeners to everything in the quick search body
+        quickSearchShortcuts.selectorProfile.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
+        quickSearchShortcuts.selectorOptionsProfile.addEventListener('click', TradeofferWindow.quickSearchSelectorProfileSelectListener);
+        quickSearchShortcuts.selectorApp.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
+        quickSearchShortcuts.selectorOptionsApp.addEventListener('click', TradeofferWindow.quickSearchSelectorAppSelectListener);
+        quickSearchShortcuts.selectorContext.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
+        quickSearchShortcuts.selectorOptionsContext.addEventListener('click', TradeofferWindow.selectorMenuSelectListener);
+    },
+    quickSearchSelectorProfileSelectListener(event) {
+        if(!event.currentTarget.matches('.main-control-selector-options')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
+        } else if(!event.currentTarget.parentElement.matches('.main-control-selector-container')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Options container is not immediate child of selector container!';
+        }
+
+        let { quickSearchShortcuts } = TradeofferWindow;
+
+        let optionElem = event.target;
+        while (!optionElem.matches('.main-control-selector-option')) {
+            if (optionElem.matches('.main-control-selector-options')) {
+                throw 'tradeofferSelectorMenuSelectListener(): No option found! Was the document structured correctly?';
+            }
+            optionElem = optionElem.parentElement;
+        }
+
+        let selectorElem = event.currentTarget.parentElement;
+        if(selectorElem.dataset.id === optionElem.dataset.id) {
+            return;
+        }
+
+        TradeofferWindow.selectorMenuSelect(selectorElem, optionElem);
+
+        quickSearchShortcuts.selectorApp.classList.remove('disabled');
+        quickSearchShortcuts.selectorApp.classList.remove('active');
+        quickSearchShortcuts.selectorContext.classList.add('disabled');
+        quickSearchShortcuts.selectorContext.classList.remove('active');
+
+        let selectorAppSelect = quickSearchShortcuts.selectorApp.querySelector('.main-control-selector-select');
+        selectorAppSelect.innerHTML = `<img src="${TradeofferWindow.selectorData.blankImg}">`
+          + 'Select App';
+        selectorAppSelect.dataset.id = '-1';
+
+        let appOptions, appsData;
+        if(selectorElem.dataset.id === unsafeWindow.UserYou.strSteamId) {
+            appOptions = TradeofferWindow.selectorData.you;
+            appsData = unsafeWindow.UserYou.rgAppInfo;
+        } else if(selectorElem.dataset.id === unsafeWindow.UserThem.strSteamId) {
+            appOptions = TradeofferWindow.selectorData.them;
+            appsData = unsafeWindow.UserThem.rgAppInfo;
+        } else {
+            throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): profile id is not user nor partner!?!?!';
+        }
+
+        let newSelectorAppOptionsHTMLString = '';
+        for(let appid in appOptions) {
+            let appInfo = appsData[appid];
+            newSelectorAppOptionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(appInfo.name, { id: appid }, appInfo.icon);
+        }
+        quickSearchShortcuts.selectorOptionsApp.innerHTML = newSelectorAppOptionsHTMLString;
+    },
+    quickSearchSelectorAppSelectListener: function(event) {
+        if(!event.currentTarget.matches('.main-control-selector-options')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
+        } else if(!event.currentTarget.parentElement.matches('.main-control-selector-container')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Options container is not immediate child of selector container!';
+        }
+
+        let { quickSearchShortcuts } = TradeofferWindow;
+
+        let optionElem = event.target;
+        while (!optionElem.matches('.main-control-selector-option')) {
+            if (optionElem.matches('.main-control-selector-options')) {
+                throw 'tradeofferSelectorMenuSelectListener(): No option found! Was the document structured correctly?';
+            }
+            optionElem = optionElem.parentElement;
+        }
+
+        let selectorElem = event.currentTarget.parentElement;
+        if(selectorElem.dataset.id === optionElem.dataset.id) {
+            return;
+        }
+
+        TradeofferWindow.selectorMenuSelect(selectorElem, optionElem);
+
+        quickSearchShortcuts.selectorProfile.classList.remove('active');
+        quickSearchShortcuts.selectorContext.classList.remove('disabled');
+        quickSearchShortcuts.selectorContext.classList.remove('active');
+
+        let selectorContextSelect = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-select');
+        selectorContextSelect.innerHTML = 'All';
+        selectorContextSelect.dataset.id = '0';
+
+        let profileid = quickSearchShortcuts.selectorProfile.dataset.id;
+        let appid = optionElem.dataset.id;
+        let contextOptions, contextsData;
+        if(profileid === unsafeWindow.UserYou.strSteamId) {
+            contextOptions = TradeofferWindow.selectorData.you[appid];
+            contextsData = unsafeWindow.UserYou.rgAppInfo[appid].rgContexts;
+        } else if(profileid === unsafeWindow.UserThem.strSteamId) {
+            contextOptions = TradeofferWindow.selectorData.them[appid];
+            contextsData = unsafeWindow.UserThem.rgAppInfo[appid].rgContexts;
+        } else {
+            throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): profile id is not user nor partner!?!?!';
+        }
+
+        let newSelectorContextOptionsHTMLString = '';
+        for(let contextid of contextOptions) {
+            let contextInfo = contextsData[contextid];
+            if(parseInt(contextid) === 0) {
+                continue;
+            }
+            newSelectorContextOptionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(contextInfo.name, { id: contextInfo.id });
+        }
+        quickSearchShortcuts.selectorOptionsContext.innerHTML = newSelectorContextOptionsHTMLString;
     },
 
 
