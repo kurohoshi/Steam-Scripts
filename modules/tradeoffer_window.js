@@ -474,7 +474,9 @@ const TradeofferWindow = {
     quickSearchSetup: function() {
         console.log('Quick Search WIP');
 
-        if (TradeofferWindow.quickSearchShortcuts.body !== undefined) {
+        let { quickSearchShortcuts } = TradeofferWindow;
+
+        if (quickSearchShortcuts.body !== undefined) {
             return;
         }
 
@@ -484,12 +486,12 @@ const TradeofferWindow = {
           +         TradeofferWindow.generateProfileSelectorHTMLString({ id: 'selector-quick-search-profile' })
           +         TradeofferWindow.generateAppSelectorHTMLString({ useUserApps: false, usePartnerApps: false, id: 'selector-quick-search-app', placeholderText: 'Select profile first', disabled: true })
           +         TradeofferWindow.generateContextSelectorHTMLString(undefined, undefined, { id: 'selector-quick-search-context', disabled: true })
-          +         '<button class="main-control-selector-action">'
+          +         '<button id="quick-search-load-inventory" class="main-control-selector-action">'
           +             'Load'
           +         '</button>'
           +     '</div>'
           +     '<div class="main-control-section">'
-          +         '<button class="main-control-selector-action">'
+          +         '<button id="quick-search-add-to-offer" class="main-control-selector-action">'
           +             'Add Selected'
           +         '</button>'
           +     '</div>'
@@ -502,7 +504,7 @@ const TradeofferWindow = {
           +     '<div class="inventory-pages-container">'
           +         '' // pages will be set up on display mode selection
           +     '</div>'
-          +     '<div class="inventory-page-nav">'
+          +     '<div id="quick-search-page-nav" class="inventory-page-nav">'
           +         '<button class="inventory-page-nav-btn" data-step="-Infinity">|&lt</button>'
           +         '<button class="inventory-page-nav-btn" data-step="-10">&lt&lt</button>'
           +         '<button class="inventory-page-nav-btn" data-step="-1">&lt</button>'
@@ -702,6 +704,9 @@ const TradeofferWindow = {
 
             for(let contextid of selectorData[userIsMe ? 'you' : 'them'][appid]) {
                 let contextInfo = contextInfoList[contextid];
+                if(parseInt(contextid) === 0) {
+                    continue;
+                }
                 optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(contextInfo.name, { id: contextInfo.id });
             }
         }
