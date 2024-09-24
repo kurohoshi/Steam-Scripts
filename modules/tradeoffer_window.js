@@ -1014,4 +1014,120 @@ const TradeofferWindow = {
 
         return configFilterData;
     },
+    getTradeInventoryFast: function(profileid, appid, contextid, filterFn) {
+        function requestInventory(url, filterFn) {
+            if(cancelled) {
+                return null;
+            }
+
+            return fetch(url, { signal }).then(
+                response => {
+                    if(response.status !== 200) {
+                        throw 'TradeofferWindow.getTradeInventoryFast(): status ' + response.status;
+                    }
+                    return response.json();
+            }).then(
+                data => {
+                    return filterFn ? filterFn(data) : data;
+                },
+                err => {
+                    cancelled = true;
+                    controller.abort();
+                    console.error('Fetch error: ' + err);
+                    return null;
+                }
+            );
+        }
+        function requestDelayedInventory(url, delay, filterFn) {
+            return steamToolsUtils.sleep(delay)
+              .then(() => requestInventory(url, filterFn));
+        }
+
+        const controller = new AbortController();
+        const { signal } = controller;
+
+        let promises = [];
+        let cancelled = false;
+        let inventorySize;
+        let url;
+        if(steamToolsUtils.getMySteamId() === profileid) {
+            url = new URL(unsafeWindow.g_strInventoryLoadURL + `${appid}/${contextid}`
+              + '/?trading=1'
+            );
+            inventorySize = g_rgAppContextData[appid]?.rgContexts[contextid]?.asset_count;
+        } else {
+            url = new URL(unsafeWindow.g_strTradePartnerInventoryLoadURL
+              + '?sesseionid=' + steamToolsUtils.getSessionId()
+              + '&partner=' + profileid
+              + '&appid=' + appid
+              + '&contextid=' + contextid
+            );
+            inventorySize = g_rgPartnerAppContextData[appid]?.rgContexts[contextid]?.asset_count;
+        }
+        if(!inventorySize) {
+            throw `TradeofferWindow.getTradeInventoryFast(): invalid inventory size to be requested: ${inventorySize}`;
+        }
+
+        for(let i=0, pages=Match.ceil(inventorySize/2000); i<pages; i++) {
+            if(i !== 0) {
+                url.searchParams.set('start', i*2000);
+            }
+            promises.push(requestDelayedInventory(url.href, 250*i, filterFn));
+        }
+
+        return Promise.all(promises).then(invBlocks => {
+            if(!Array.isArray(invBlocks)) {
+                throw 'TradeofferWindow.getTradeInventoryFast(): Promise.all did not pass an array!?!?';
+            }
+
+            let mergedInventory = {
+                full_load: true,
+                rgInventory: {},
+                rgCurrency: {},
+                rgDescriptions: {}
+            };
+
+            for(let invBlock of invBlocks) {
+                if(!invBlock?.success) {
+                    mergedInventory.full_load = false;
+                    continue;
+                }
+
+                mergedInventory.more = invBlock.more;
+                mergedInventory.more_start = invBlock.more_start;
+
+                if(Array.isArray(invBlock.rgInventory)) {
+                    if(invBlock.rgInventory.length) {
+                        console.error('TradeofferWindow.getTradeInventoryFast(): Promise.all inventory block has a populated array?!?!');
+                        console.log(invBlock);
+                        continue;
+                    }
+                } else {
+                    Object.assign(mergedInventory.rgInventory, invBlock.rgInventory);
+                }
+
+                if(Array.isArray(invBlock.rgCurrency)) {
+                    if(invBlock.rgCurrency.length) {
+                        console.error('TradeofferWindow.getTradeInventoryFast(): Promise.all currency block has a populated array?!?!');
+                        console.log(invBlock);
+                        continue;
+                    }
+                } else {
+                    Object.assign(mergedInventory.rgCurrency, invBlock.rgCurrency);
+                }
+
+                if(Array.isArray(invBlock.rgDescriptions)) {
+                    if(invBlock.rgDescriptions.length) {
+                        console.error('TradeofferWindow.getTradeInventoryFast(): Promise.all description block has a populated array?!?!');
+                        console.log(invBlock);
+                        continue;
+                    }
+                } else {
+                    Object.assign(mergedInventory.rgDescriptions, invBlock.rgDescriptions);
+                }
+            }
+
+            return mergedInventory;
+        });
+    }
 };
