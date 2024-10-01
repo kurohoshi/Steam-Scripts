@@ -38,6 +38,9 @@ const steamToolsUtils = {
             }
         } return true;
     },
+    clamp(num, min, max) {
+        return Math.min(Math.max(num, min), max);
+    },
     isOutdatedDays(epochTime, days) {
         return epochTime < Date.now()-days*24*60*60*1000;
     },
