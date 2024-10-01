@@ -90,7 +90,7 @@ const SteamItemMatcher = {
         if(config.matcherConfig) {
             globalSettings.matcherConfig = config.matcherConfig;
         } else {
-            globalSettings.matcherConfig = steamToolsUtils.deepClone(SteamItemMatcher.SETTINGSDEFAULTS.matcherConfig);
+            globalSettings.matcherConfig = steamToolsUtils.deepClone(SteamItemMatcher.SETTINGSDEFAULTS);
         }
 
         addSvgBlock(SteamItemMatcher.configShortcuts.MAIN_ELEM);
