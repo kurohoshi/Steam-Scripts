@@ -74,6 +74,11 @@ const TradeofferWindow = {
             globalSettings.tradeofferConfig = steamToolsUtils.deepClone(TradeofferWindow.SETTINGSDEFAULTS);
         }
 
+        TradeofferWindow.filterLookupReset();
+        if(globalSettings.tradeofferConfig.filter.apps.length) {
+            TradeofferWindow.filterLookupUpdateApp(globalSettings.tradeofferConfig.filter.apps);
+        }
+
         // set up overlay
         const overlayHTMLString = '<div class="userscript-trade-overlay">'
           +     '<div class="userscript-trade-overlay-header">'
@@ -104,6 +109,9 @@ const TradeofferWindow = {
         TradeofferWindow.data.me.id = unsafeWindow.UserYou.strSteamId;
         TradeofferWindow.data.me.url = unsafeWindow.UserYou.strProfileURL;
         TradeofferWindow.data.me.img = document.getElementById('trade_yours').querySelector('.avatarIcon img').src;
+
+        // add app entries into filter
+        TradeofferWindow.addAppFilterApps();
 
         // Add tabs to the user_tabs section
         const generateUserTabHTMLString = (featureName, featureData) => {
@@ -153,6 +161,146 @@ const TradeofferWindow = {
 
         TradeofferWindow.shortcuts.overlayBody.dataset.name = tabElem.dataset.name;
         TradeofferWindow.shortcuts.overlay.parentElement.classList.add('overlay');
+    },
+    addAppFilterApps: function() {
+        let filterData = globalSettings.tradeofferConfig.filter;
+
+        const storeAppFilterEntry = (appInfo) => {
+            for(let appid in appInfo) {
+                if(!filterData.apps.some(x => x.id === appid)) {
+                    let newFilterData = {
+                        id: appid,
+                        fetched: false,
+                        categories: []
+                    };
+                    filterData.apps.push(newFilterData);
+                    TradeofferWindow.filterLookupUpdateApp(newFilterData);
+                }
+            }
+        };
+
+        storeAppFilterEntry(unsafeWindow.g_rgAppContextData);
+        storeAppFilterEntry(unsafeWindow.g_rgPartnerAppContextData);
+
+        // save config
+    },
+
+    filterLookupReset: function() {
+        TradeofferWindow.data.filterLookup = {
+            data: globalSettings.tradeofferConfig.filter,
+            apps: {}
+        };
+    },
+    filterLookupUpdateApp: function(app) {
+        const updateAppLookup = (appData) => {
+            if(!steamToolsUtils.isSimplyObject(appData)) {
+                throw 'TradeofferWindow.filterLookupUpdateApp(): appData is not an object or array!';
+            }
+
+            filterLookup.apps[appData.id] = { data: appData, categories: {} };
+            if(appData.categories.length) {
+                TradeofferWindow.filterLookupUpdateCategory(appData.id, appData.categories);
+            }
+        }
+
+        let { filterLookup } = TradeofferWindow.data;
+        if(!filterLookup) {
+            console.warn('TradeofferWindow.filterLookupUpdateApp(): filterLookup does not exist');
+            return;
+        }
+
+        if(Array.isArray(app)) {
+            for(let appData of app) {
+                updateAppLookup(appData);
+            }
+        } else {
+            updateAppLookup(app);
+        }
+    },
+    filterLookupUpdateCategory: function(appid, category) {
+        const updateCategoryLookup = (categoryData) => {
+            if(!steamToolsUtils.isSimplyObject(categoryData)) {
+                throw 'TradeofferWindow.filterLookupUpdateCategory(): categoryData is not an object or array!';
+            }
+
+            filterLookupApp.categories[categoryData.id] = { data: categoryData, tags: {} };
+            if(categoryData.tags.length) {
+                TradeofferWindow.filterLookupUpdateTag(appid, categoryData.id, categoryData.tags);
+            }
+        }
+
+        let filterLookupApp = TradeofferWindow.data.filterLookup?.apps[appid];
+        if(!filterLookupApp) {
+            console.warn('TradeofferWindow.filterLookupUpdateCategory(): App entry in filterLookup does not exist');
+            return;
+        }
+
+        if(Array.isArray(category)) {
+            for(let categoryData of category) {
+                updateCategoryLookup(categoryData);
+            }
+        } else {
+            updateCategoryLookup(category);
+        }
+    },
+    filterLookupUpdateTag: function(appid, categoryid, tag) {
+        const updateTagLookup = (tagData) => {
+            if(!steamToolsUtils.isSimplyObject(tagData)) {
+                throw 'TradeofferWindow.filterLookupUpdateTag(): tagData is not an object or array!';
+            }
+
+            filterLookupCategory.tags[tagData.id] = { data: tagData };
+        }
+
+        let filterLookupCategory = TradeofferWindow.data.filterLookup?.apps[appid]?.categories[categoryid];
+        if(!filterLookupCategory) {
+            console.warn('TradeofferWindow.filterLookupUpdateTag(): Category entry in filterLookup does not exist');
+            return;
+        }
+
+        if(Array.isArray(tag)) {
+            for(let tagData of tag) {
+                updateTagLookup(tagData);
+            }
+        } else {
+            updateTagLookup(tag);
+        }
+    },
+    filterLookupGet: function(appid, categoryid, tagid) {
+        let data = TradeofferWindow.data.filterLookup;
+        if(!data) {
+            return null;
+        }
+
+        if(typeof appid !== 'string' && typeof appid !== 'number') {
+            return null;
+        }
+        data = data.apps[appid];
+        if(!data) {
+            return null;
+        }
+
+        if(categoryid === undefined) {
+            return data.data;
+        } else if(typeof categoryid !== 'string' && typeof categoryid !== 'number') {
+            return null;
+        }
+        data = data.categories[categoryid];
+        if(!data) {
+            return null;
+        }
+
+        if(tagid === undefined) {
+            return data.data;
+        } else if(typeof tagid !== 'string' && typeof tagid !== 'number') {
+            return null;
+        }
+        data = data.tags[tagid];
+        if(!data) {
+            return null;
+        }
+
+        return data.data;
     },
 
 
@@ -333,9 +481,7 @@ const TradeofferWindow = {
         let appid = TradeofferWindow.prefilterShortcuts.selector.dataset.id;
         let categoryid = categoryElem.dataset.id;
 
-        let categoryConfig = globalSettings.tradeofferConfig.filter.apps
-          .find(app => app.id === appid)?.categories
-          .find(category => category.id === categoryid);
+        let categoryConfig = TradeofferWindow.filterLookupGet(appid, categoryid);
 
         if(!categoryConfig) {
             throw 'TradeofferWindow.prefilterCategoryToggleListener(): category not found in config?!?!';
@@ -376,9 +522,7 @@ const TradeofferWindow = {
         let appid = TradeofferWindow.prefilterShortcuts.selector.dataset.id;
         let categoryid = categoryElem.dataset.id;
 
-        let tagsListConfig = globalSettings.tradeofferConfig.filter.apps
-          .find(app => app.id === appid)?.categories
-          .find(category => category.id === categoryid)?.tags;
+        let tagsListConfig = TradeofferWindow.filterLookupGet(appid, categoryid)?.tags
 
         if(!tagsListConfig) {
             throw 'TradeofferWindow.prefilterCategoryResetListener(): tag list not found in config?!?!';
@@ -452,10 +596,7 @@ const TradeofferWindow = {
         let categoryid = categoryElem.dataset.id;
         let tagid = tagElem.dataset.id;
 
-        let tagConfig = globalSettings.tradeofferConfig.filter.apps
-          .find(app => app.id === appid)?.categories
-          .find(category => category.id === categoryid)?.tags
-          .find(tag => tag.id === tagid);
+        let tagConfig = TradeofferWindow.filterLookupGet(appid, categoryid, tagid);
 
         if(!tagConfig) {
             throw 'TradeofferWindow.prefilterCategoryTagsExludeToggleListener(): tag no found in config?!?!';
@@ -938,7 +1079,7 @@ const TradeofferWindow = {
 
     getMarketFilterData: async function(appid) {
         appid = String(appid);
-        let configFilterData = globalSettings.tradeofferConfig.filter.apps.find(x => x.id === appid);
+        let configFilterData = TradeofferWindow.filterLookupGet(appid);
 
         if(configFilterData?.fetched) {
             return configFilterData;
@@ -1011,6 +1152,7 @@ const TradeofferWindow = {
 
         Object.assign(configFilterData, filterData);
         configFilterData.categories.sort((a, b) => a.tags.length - b.tags.length);
+        TradeofferWindow.filterLookupUpdateApp(configFilterData);
 
         return configFilterData;
     },
