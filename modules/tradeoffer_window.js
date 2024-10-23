@@ -1401,6 +1401,384 @@ const TradeofferWindow = {
         }
     },
 
+    quickSearchDisplayModeToggleListener: function(event) {
+        // toggle display mode
+        // set config data
+        TradeofferWindow.quickSearchDisplaySetup();
+    },
+    quickSearchDisplaySetup: function() {
+        let { displayMode } = globalSettings.tradeofferConfig;
+        if(displayMode === undefined) {
+            TradeofferWindow.quickSearchDisplaySetupPaging();
+        }
+
+        let currentMode = TradeofferWindow.quickSearchData.mode;
+        if(currentMode === undefined || displayMode !== currentMode) {
+            if(displayMode === 0) {
+                TradeofferWindow.quickSearchSetupDisplayPaging();
+            } else if(displayMode === 1) {
+                TradeofferWindow.quickSearchSetupDisplayScrolling();
+            }
+        }
+    },
+    quickSearchDisplaySetupPaging: function() {
+        let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
+        let { paging: pagingData, inventory: { pageCount: pageNumLast } } = quickSearchData;
+
+        if(quickSearchData.mode === 0) {
+            return;
+        }
+
+        if(quickSearchData.mode !== null) {
+            // reset non-paging stuff and selections
+            if(quickSearchData.mode === 1) {
+                let { scrolling: scrollData } = quickSearchData;
+                TradeofferWindow.quickSearchDisplaySelectReset();
+                scrollData.observer.disconnect();
+                for(let pageElem of scrollData.pages) {
+                    pageElem.remove();
+                }
+                scrollData.pages = [];
+                quickSearchShortcuts.display.classList.remove('scrolling');
+            }
+        }
+
+        quickSearchShortcuts.display.classList.add('paging');
+        let pageNumCurrent = quickSearchData.currentPage ? parseInt(quickSearchData.currentPage.dataset.page) : null;
+        if(pageNumCurrent !== null && (pageNumCurrent < 1 || pageNumCurrent > pageNumLast)) {
+            // reuse current page and set active
+            quickSearchShortcuts.pages.insertAdjacentElement('afterbegin', quickSearchData.currentPage);
+            quickSearchData.currentPage.classList.add('active');
+            pagingData.pages.fg = quickSearchData.currentPage;
+        } else {
+            // generate 1st page and set active
+            let pageFgHTMLString = TradeofferWindow.quickSearchDisplayGeneratePageHTMLString(1);
+            quickSearchShortcuts.pages.insertAdjacentHTML('afterbegin', pageFgHTMLString);
+            let pageFgElem = quickSearchShortcuts.pages.querySelector('.inventory-page');
+            pageFgElem.classList.add('active');
+            quickSearchData.currentPage = pageFgElem;
+            pagingData.pages.fg = pageFgElem;
+        }
+
+        let pageBgHTMLString = TradeofferWindow.quickSearchDisplayGeneratePageHTMLString();
+        quickSearchShortcuts.pages.insertAdjacentHTML('afterbegin', pageBgHTMLString);
+        let pageBgElem = quickSearchShortcuts.pages.querySelector('.inventory-page:not(.active)');
+        pagingData.pages.bg = pageBgElem;
+        TradeofferWindow.quickSearchDisplayUpdatePageNavigationBar(1);
+
+        quickSearchData.mode = 0;
+    },
+    quickSearchDisplaySetupScrolling: function() {
+        let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
+        let { scrolling: scrollData } = quickSearchData;
+        if(quickSearchData.mode === 1) {
+            return;
+        }
+
+        if(quickSearchData.mode !== null) {
+            // reset non-scrolling stuff and selections
+            if(quickSearchData.mode === 0) {
+                let { paging: pagingData } = quickSearchData;
+                TradeofferWindow.quickSearchDisplaySelectReset();
+                pagingData.pages.fg.classList.remove('active');
+                pagingData.pages.fg.remove();
+                pagingData.pages.bg.remove();
+                pagingData.pages = { fg: null, bg: null };
+                quickSearchShortcuts.display.classList.remove('paging');
+            }
+        }
+
+        quickSearchShortcuts.display.classList.add('scrolling');
+        let pageNumCurrent = quickSearchData.currentPage ? parseInt(quickSearchData.currentPage.dataset.page) : null;
+        let pagesHTMLString = '';
+        for(let i=(pageNumCurrent ?? 1)-scrollData.startOffset, end=i+scrollData.pageCount; i<end; i++) {
+            if(i === pageNumCurrent) {
+                pagesHTMLString += quickSearchData.currentPage.outerHTML;
+            } else {
+                pagesHTMLString += TradeofferWindow.quickSearchDisplayGeneratePageHTMLString(i);
+            }
+        }
+        quickSearchShortcuts.pages.insertAdjacentHTML('afterbegin', pagesHTMLString);
+
+        let pageElemList = quickSearchShortcuts.pages.querySelectorAll('.inventory-page');
+        let pageHeight =  pageElemList[scrollData.startOffset].clientHeight;
+        // let pageContainerHeight = quickSearchShortcuts.pages.clientHeight;
+        // let observerMargin = (steamToolsUtils.clamp(pageContainerHeight+pageHeight, 1.5*pageHeight, (pageElemList.length-1)*pageHeight) - pageContainerHeight) / 2;
+        let observerOptions = {
+            root: quickSearchShortcuts.pages,
+            rootMargin: '100% 0%',
+            threshold: 1.0
+        };
+        scrollData.observer = new IntersectionObserver(TradeofferWindow.quickSearchDisplayScrollLoadPage, observerOptions);
+
+        for(let page of quickSearchShortcuts.pages.querySelectorAll('.inventory-page')) {
+            scrollData.observer.observe(page);
+            scrollData.pages.push(page);
+        }
+        quickSearchData.currentPage = scrollData.pages[scrollData.startOffset];
+
+        let currentPageNum = parseInt(quickSearchData.currentPage.dataset.page);
+        if(currentPageNum > 2) {
+            quickSearchShortcuts.pages.scroll(scrollData.startOffset*pageHeight);
+        }
+
+        quickSearchData.mode = 1;
+    },
+    quickSearchDisplayScrollLoadPage: function(entries) {
+        entries.forEach((entry) => {
+            let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
+            let { pageCount, pages } = quickSearchData.scrolling;
+
+            if(quickSearchData.mode !== 1) {
+                return;
+            } else if(!entry.isIntersecting) {
+                return;
+            }
+
+            let pageNum = entry.target.dataset.page;
+
+            if(pages[0].dataset.page === pageNum) {
+                let pageElem = pages.pop();
+                pageElem.remove();
+                TradeofferWindow.quickSearchDisplayPopulatePage(pageElem, parseInt(pageNum)-1);
+                quickSearchShortcuts.pages.prepend(pageElem);
+                pages.unshift(pageElem);
+                quickSearchData.currentPage = quickSearchData.currentPage.previousElementSibling;
+            } else if(pages[pageCount-1].dataset.page === pageNum) {
+                let pageElem = pages.shift();
+                pageElem.remove();
+                TradeofferWindow.quickSearchDisplayPopulatePage(pageElem, parseInt(pageNum)+1);
+                quickSearchShortcuts.pages.append(pageElem);
+                pages.push(pageElem);
+                quickSearchData.currentPage = quickSearchData.currentPage.nextElementSibling;
+            }
+        });
+    },
+    quickSearchDisplayPaginateListener: function(event) {
+        let { mode: currentMode, paging: pagingData, inventory: { pageCount: pageNumLast } } = TradeofferWindow.quickSearchData;
+        let pages = pagingData.pages;
+
+        if(currentMode !== 0) {
+            return;
+        } else if(pagingData.isAnimating) {
+            return;
+        }
+
+        let pageStep = parseInt(event.target.dataset.step);
+        if(Number.isNaN(pageStep)) {
+            console.error('TradeofferWindow.quickSearchPaginateListener(): Page step is not a number!?!?');
+            return;
+        } else if(!(pageStep < 0) && !(pageStep > 0)) {
+            console.warn('TradeofferWindow.quickSearchPaginateListener(): Page step of 0 is not useful...');
+            return;
+        }
+
+        let targetPage = steamToolsUtils.clamp(parseInt(pages.fg.dataset.page)+pageStep, 1, Math.max(1, pageNumLast));
+
+        if(targetPage !== pages.bg.dataset.page) {
+            TradeofferWindow.quickSearchDisplayPopulatePage(pages.bg, targetPage);
+        }
+
+        // start animation setup
+        let animationObj1, animationObj2;
+        let isPositive = pageStep > 0;
+        let exitDirection = isPositive ? 'exitLeft' : 'exitRight';
+        let enterDirection = isPositive ? 'enterRight' : 'enterLeft';
+
+        pagingData.isAnimating = true;
+        animationObj1 = pages.fg.animate(pagingData.keyframes[exitDirection], pagingData.options);
+        animationObj2 = pages.bg.animate(pagingData.keyframes[enterDirection], pagingData.options);
+        pagingData.finishAnimation(animationObj2, () => {
+            TradeofferWindow.quickSearchDisplayUpdatePageNavigationBar(targetPage);
+        });
+
+        pages.fg.classList.remove('active');
+        pages.bg.classList.add('active');
+        let tmpPage = pages.fg;
+        pages.fg = pages.bg;
+        pages.bg = tmpPage;
+        TradeofferWindow.quickSearchData.currentPage = pages.fg;
+    },
+    quickSearchDisplayUpdatePageNavigationBar: function(pageNum) {
+        let { quickSearchShortcuts } = TradeofferWindow;
+        let { pageCount: pageNumLast } = TradeofferWindow.quickSearchData.inventory;
+        let pageNumsElem = TradeofferWindow.quickSearchShortcuts.pageNumbers;
+        pageNumsElem.querySelector('.number.current').textContent = pageNum;
+
+        // update page numbers
+        if(pageNum < 3) {
+            if(pageNum <= 1) {
+                pageNumsElem.querySelector('.number.previous').classList.add('hidden');
+            } else {
+                let pagePrevNumElem = pageNumsElem.querySelector('.number.previous');
+                pagePrevNumElem.textContent = 1;
+                pagePrevNumElem.classList.remove('hidden');
+            }
+            pageNumsElem.querySelector('.number.first').classList.add('hidden');
+            pageNumsElem.querySelector('.ellipsis.first').classList.add('hidden');
+        } else {
+            pageNumsElem.querySelector('.number.first').classList.remove('hidden');
+            pageNumsElem.querySelector('.ellipsis.first').classList.remove('hidden');
+            let pagePrevNumElem = pageNumsElem.querySelector('.number.previous');
+            pagePrevNumElem.textContent = pageNum-1;
+            pagePrevNumElem.classList.remove('hidden');
+        }
+        if(pageNumLast-pageNum < 2) {
+            if(pageNum >= pageNumLast) {
+                pageNumsElem.querySelector('.number.next').classList.add('hidden');
+            } else {
+                let pageNextNumElem = pageNumsElem.querySelector('.number.next');
+                pageNextNumElem.textContent = pageNumLast;
+                pageNextNumElem.classList.remove('hidden');
+            }
+            pageNumsElem.querySelector('.number.last').classList.add('hidden');
+            pageNumsElem.querySelector('.ellipsis.last').classList.add('hidden');
+        } else {
+            pageNumsElem.querySelector('.number.last').classList.remove('hidden');
+            pageNumsElem.querySelector('.ellipsis.last').classList.remove('hidden');
+            let pageNextNumElem = pageNumsElem.querySelector('.number.next');
+            pageNextNumElem.textContent = pageNum+1;
+            pageNextNumElem.classList.remove('hidden');
+        }
+
+        // update button disability
+        let navBtnElems = quickSearchShortcuts.pageNavigationBar.querySelectorAll('.inventory-page-nav-btn[data-step^="-"]');
+        for(let navBtnElem of navBtnElems) {
+            navBtnElem.disabled = pageNum <= 1;
+        }
+
+        navBtnElems = quickSearchShortcuts.pageNavigationBar.querySelectorAll('.inventory-page-nav-btn:not([data-step^="-"])');
+        for(let navBtnElem of navBtnElems) {
+            navBtnElem.disabled = pageNum >= pageNumLast;
+        }
+    },
+    quickSearchDisplayGeneratePageHTMLString: function(pageNum) {
+        console.warn('TradeofferWindow.quickSearchDisplayGeneratePageHTMLString(): WIP');
+
+        let { quickSearchData } = TradeofferWindow;
+        let { inventory } = quickSearchData;
+
+        if(pageNum < 1 || pageNum > inventory.pageCount) {
+            return `<div class="inventory-page hidden" data-page="0">`
+              +     'END'
+              + '</div>';
+        }
+
+        let rowsHTMLString = '';
+        let pageItemCount = quickSearchData.display.rows * quickSearchData.display.columns;
+        let startRowIndex = (pageNum-1) * pageItemCount;
+        let lastRowIndex = Math.min(startRowIndex+pageItemCount, inventory.dataListFiltered.length);
+        for(let i=startRowIndex; i<lastRowIndex; i+=quickSearchData.display.columns) {
+            rowsHTMLString += TradeofferWindow.quickSearchRowGenerateHTMLString(i);
+        }
+
+        return `<div class="inventory-page" data-page="${pageNum}">`
+          +     rowsHTMLString
+          + '</div>';
+    },
+    quickSearchRowGenerateHTMLString: function(startIndex) {
+        let { quickSearchData } = TradeofferWindow;
+
+        let itemsHTMLString = '';
+        let lastIndex = Math.min(startIndex+quickSearchData.display.columns, quickSearchData.inventory.dataListFiltered.length);
+        for(let i=startIndex; i<lastIndex; i++) {
+            itemsHTMLString += TradeofferWindow.quickSearchItemGenerateHTMLString(quickSearchData.inventory.dataListFiltered[i]);
+        }
+
+        return '<div class="inventory-page-row">'
+          +     itemsHTMLString
+          + '</div>';
+    },
+    quickSearchItemGenerateHTMLString: function(itemData) {
+        let { inventory } = TradeofferWindow.quickSearchData;
+        let descript = inventory.descriptions[`${itemData.classid}_${itemData.instanceid}`];
+
+        let imgUrl = descript.icon_url ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f` : '';
+        return `<div class="inventory-item-container${itemData.disabled ? ' disabled' : ''}${itemData.selected ? ' selected' : ''}" data-id="${itemData.id}">`
+          +     (imgUrl ? `<img src="${imgUrl}">` : descript.name)
+          + '</div>';
+    },
+    quickSearchDisplayPopulatePage: function(pageElem, pageNum) {
+        console.warn('TradeofferWindow.quickSearchPopulatePage(): WIP');
+
+        let { quickSearchData } = TradeofferWindow;
+        let { inventory } = quickSearchData;
+
+        if(quickSearchData.mode === 1 && (pageNum < 1 || pageNum > inventory.pageCount)) {
+            pageElem.classList.add('hidden');
+            pageElem.dataset.page = '0';
+            pageElem.innerHTML = 'END';
+            return;
+        } else {
+            pageElem.classList.remove('hidden');
+            if(pageElem.innerHTML === 'END') {
+                pageElem.innerHTML = '';
+            }
+        }
+
+        let pageItemCount = quickSearchData.display.rows * quickSearchData.display.columns;
+        let itemIndex = (pageNum-1) * pageItemCount;
+        let lastIndex = Math.min(itemIndex+pageItemCount, inventory.dataListFiltered.length);
+        let rowElemList = pageElem.querySelectorAll('.inventory-page-row');
+        let rowsNeeded = Math.min(Math.ceil((lastIndex-itemIndex)/quickSearchData.display.columns), quickSearchData.display.rows) - rowElemList.length;
+
+        for(let rowElem of rowElemList) {
+            if(itemIndex >= lastIndex) {
+                break;
+            }
+
+            let itemElemList = rowElem.querySelectorAll('.inventory-item-container');
+            let containersNeeded = Math.min(lastIndex-itemIndex, quickSearchData.display.columns) - itemElemList.length;
+
+            for(let itemElem of itemElemList) {
+                if(itemIndex >= lastIndex) {
+                    break;
+                }
+
+                TradeofferWindow.quickSearchItemUpdateElement(itemElem, inventory.dataListFiltered[itemIndex++]);
+            }
+
+            if(containersNeeded < 0) {
+                for(; containersNeeded; containersNeeded++) {
+                    itemElemList[itemElemList.length+containersNeeded].remove();
+                }
+            } else if(containersNeeded > 0) {
+                let itemsHTMLString = '';
+                while(containersNeeded--) {
+                    itemsHTMLString += TradeofferWindow.quickSearchItemGenerateHTMLString(inventory.dataListFiltered[itemIndex++]);
+                }
+                rowElem.insertAdjacentHTML('beforeend', itemsHTMLString);
+            }
+        }
+
+        if(rowsNeeded < 0) {
+            for(; rowsNeeded; rowsNeeded++) {
+                rowElemList[rowElemList.length+rowsNeeded].remove();
+            }
+        } else if(rowsNeeded > 0) {
+            let rowsHTMLString = '';
+            while(rowsNeeded--) {
+                rowsHTMLString += TradeofferWindow.quickSearchRowGenerateHTMLString(itemIndex);
+                itemIndex += quickSearchData.display.columns;
+            }
+            pageElem.insertAdjacentHTML('beforeend', rowsHTMLString);
+        }
+
+        pageElem.dataset.page = pageNum;
+    },
+    quickSearchItemUpdateElement: function(itemElem, itemData) {
+        let { inventory } = TradeofferWindow.quickSearchData;
+        let descript = inventory.descriptions[`${itemData.classid}_${itemData.instanceid}`];
+
+        itemElem.dataset.id = itemData.id;
+        itemElem.classList[ itemData.disabled ? 'add' : 'remove' ]('disabled');
+        itemElem.classList[ itemData.selected ? 'add' : 'remove' ]('selected');
+        let imgElem = itemElem.querySelector('img');
+        if(imgElem) {
+            imgElem.src = descript.icon_url ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f` : '';
+        }
+    },
+
 
 
 
