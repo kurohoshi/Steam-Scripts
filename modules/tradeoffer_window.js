@@ -1036,6 +1036,41 @@ const TradeofferWindow = {
         return data;
     },
 
+    quickSearchAddSelectedListener: function(event) {
+        console.log('quickSearchAddSelectedListener() WIP');
+
+        let { currentContext, inventory } = TradeofferWindow.quickSearchData;
+        let steamInventory;
+        if(unsafeWindow.UserYou.strSteamId === currentContext.profile) {
+            steamInventory = unsafeWindow.UserYou.rgContexts[currentContext.app]?.[currentContext.context]?.inventory?.rgInventory;
+        } else if(unsafeWindow.UserThem.strSteamId === currentContext.profile) {
+            steamInventory = unsafeWindow.UserThem.rgContexts[currentContext.app]?.[currentContext.context]?.inventory?.rgInventory;
+        } else {
+            throw 'TradeofferWindow.quickSearchAddSelectedListener(): current inventory does not belong to either trade partners????';
+        }
+
+        if(!steamInventory) {
+            throw 'TradeofferWindow.quickSearchAddSelectedListener(): steam inventory is not loaded?!?!';
+        }
+
+        for(let assetid in inventory.data) {
+            let asset = inventory.data[assetid];
+            if(!asset.selected) {
+                continue;
+            }
+
+            let steamAsset = steamInventory[asset.id];
+            if(!steamAsset) {
+                console.error('TradeofferWindow.quickSearchAddSelectedListener(): steam asset not found?!?!');
+                continue;
+            }
+
+            unsafeWindow.FindSlotAndSetItem(steamAsset);
+        }
+
+        // close overlay
+        TradeofferWindow.overlayCloseListener();
+    },
     quickSearchSelectorProfileSelectListener(event) {
         if(!event.currentTarget.matches('.main-control-selector-options')) {
             throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
