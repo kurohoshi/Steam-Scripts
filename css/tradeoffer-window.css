@@ -20,10 +20,9 @@
 .userscript-trade-overlay {
     display: none;
     position: absolute;
-    min-height: 936px;
-    inset: 0 0 auto 0;
+    inset: 0;
     background: rgba(0, 0, 0, 0.9);
-    z-index: 5;
+    z-index: 50;
 }
 .userscript-trade-overlay-header {
     padding: 1rem 0 2rem;
@@ -36,7 +35,7 @@
     right: 1rem;
     width: 1.5rem;
     height: 1.5rem;
-    z-index: 10;
+    z-index: 55;
 }
 .userscript-trade-overlay-close::before {
     position: absolute;
@@ -98,7 +97,7 @@
 .main-control-selector-options {
     display: none;
     position: absolute;
-    z-index: 10;
+    z-index: 65;
 }
 
 .main-control-selector-container.active>.main-control-selector-options {
@@ -271,7 +270,7 @@
 .quick-search-main-control {
     display: flex;
     justify-content: space-between;
-    padding: 1rem;
+    padding: 0.75rem;
     background: #0008;
     color: #ccc;
 
@@ -290,7 +289,7 @@
 .facet-container {
     --list-title-height: 1.5rem;
     box-sizing: border-box;
-    padding: 0.5rem;
+    padding: 0.75rem;
     width: 100%;
     height: 100%;
     background: #0008;
@@ -316,12 +315,59 @@
 }
 
 .facet-section.hidden {
-    height: var(--list-title-height);
+    /* Specifically use entry container if we ever want
+     * to selectively show only selected with :has
+     */
+    .facet-list-entry-container {
+        height: 0;
+    }
+    .facet-list-searchbar {
+        height: 0;
+    }
+    .facet-section-title::after {
+        transform: rotate(0);
+    }
 }
 
 .facet-section-title {
+    --dropdown-arrow-width: 1.25em;
+    padding-right: var(--dropdown-arrow-width);
     height: var(--list-title-height);
     font-weight: bolder;
+    position: relative;
+    line-height: var(--list-title-height);
+    user-select: none;
+
+    &::after {
+        display: block;
+        height: var(--list-title-height);
+        width: var(--dropdown-arrow-width);
+        text-align: center;
+        line-height: var(--list-title-height);
+        content: '⯆';
+        color: #555;
+        position: absolute;
+        top: 0;
+        right: 0;
+        transform: rotate(180deg);
+    }
+    &:hover::after {
+        color: red;
+    }
+}
+
+.facet-list-searchbar {
+    overflow: hidden;
+}
+
+.facet-list {
+    max-height: 25rem;
+    overflow: auto;
+    scrollbar-width: thin;
+}
+
+.facet-list-entry-container.hidden {
+    display: none;
 }
 
 .facet-list-entry-label {
@@ -342,7 +388,7 @@
     background: black;
     border: 1px solid grey;
     border-radius: 0.2em;
-    z-index: 5;
+    z-index: 55;
 }
 
 .facet-list input[type="checkbox"]:checked+*::before {
@@ -354,7 +400,7 @@
     position: absolute;
     left: 0;
     opacity: 0;
-    z-index: 1;
+    z-index: 51;
     appearance: none;
 }
 
@@ -391,11 +437,11 @@
 
     .inventory-page {
         position: absolute;
-        z-index: 5;
+        z-index: 55;
     }
 
     .inventory-page.active {
-        z-index: 10;
+        z-index: 60;
     }
 
     .inventory-page.from-right {
@@ -440,6 +486,7 @@
     overflow: auto;
     background: black;
     border: 1px solid #494949;
+    user-select: none;
 }
 
 .inventory-pages-container>*+* {
@@ -468,6 +515,22 @@
     height: var(--item-container-height);
     border: 1px solid #333;
     border-radius: 4px;
+
+    &.selected {
+        background-color: #43167b;
+    }
+
+    &.disabled {
+        filter: brightness(0.4);
+    }
+
+    img {
+        height: inherit;
+        width: inherit;
+        max-height: 100%;
+        max-width: 100%;
+        object-fit: contain;
+    }
 }
 
 .inventory-page-nav {
@@ -490,24 +553,31 @@
         color: #67C1F5;
         text-align: center;
 
-        &:hover {
+        &:not([disabled]):hover {
             border: 1px solid #AAA;
         }
     }
 }
 
 .inventory-page-nav-numbers {
-    > :not(:first-child) {
-        margin-left: 0.25em;
-    }
+    display: flex;
+    min-width: 12rem;
+    justify-content: space-between;
+    align-items: center;
+    text-align: center;
+    gap: 0.25em;
 
-    > :not(:last-child) {
-        margin-right: 0.25em;
+    > * {
+        flex: 4 0 0;
     }
 }
 
 .inventory-page-nav-text {
     color: #ccc;
+
+    &.hidden {
+        visibility: hidden;
+    }
 }
 
 .inventory-page-nav-text.number {}
@@ -517,11 +587,15 @@
 .inventory-page-nav-text.current {
     font-size: larger;
     font-weight: bolder;
+    flex: 6 0 0;
+    color: #43167b;
 }
 
 .inventory-page-nav-text.last {}
 
-.inventory-page-nav-text.ellipsis {}
+.inventory-page-nav-text.ellipsis {
+    flex: 3 0 0;
+}
 
 /**************************/
 /**** Quick Search END ****/
