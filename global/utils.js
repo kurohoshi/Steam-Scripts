@@ -38,6 +38,9 @@ const steamToolsUtils = {
             }
         } return true;
     },
+    clamp(num, min, max) {
+        return Math.min(Math.max(num, min), max);
+    },
     isOutdatedDays(epochTime, days) {
         return epochTime < Date.now()-days*24*60*60*1000;
     },
@@ -62,5 +65,73 @@ const steamToolsUtils = {
         tmpElem.setAttribute('type', 'file');
         tmpElem.setAttribute('accept', 'application/json');
         return tmpElem;
+    },
+    debounceFunction(func, delay) {
+        let timeoutId = null;
+        return (...args) => {
+            unsafeWindow.clearTimeout(timeoutId);
+            timeoutId = unsafeWindow.setTimeout(() => {
+                func(...args);
+            }, delay);
+        };
+    },
+    createFetchQueue(urlList, maxFetches = 3, processData) {
+        // https://krasimirtsonev.com/blog/article/implementing-an-async-queue-in-23-lines-of-code
+
+        const controller = new AbortController();
+        const { signal } = controller;
+        let cancelled = false;
+
+        let numFetches = 0;
+        let urlIndex = 0;
+        let results = Array(urlList.length).fill(null);
+
+        return new Promise(done => {
+            const handleResponse = index => (response) => {
+                if(response.status !== 200) {
+                    results[index] = null;
+                    throw response;
+                }
+                return response.json();
+            };
+
+            const handleData = index => (result) => {
+                results[index] = processData ? processData(result, urlList[index]?.optionalInfo) : result;
+                numFetches--;
+                getNextFetch();
+            };
+
+            const handleError = (error) => {
+                if(error?.status === 429) {
+                    console.error('createFetchQueue(): Too many requests...');
+                    cancelled = true;
+                    controller.abort();
+                } else {
+                    console.log(error);
+                }
+            };
+
+            const getNextFetch = () => {
+                if(cancelled) {
+                    done(results);
+                    return;
+                }
+
+                if(numFetches<maxFetches && urlIndex<urlList.length) {
+                    fetch(urlList[urlIndex].url, { signal })
+                      .then(handleResponse(urlIndex))
+                      .then(handleData(urlIndex))
+                      .catch(handleError);
+                    numFetches++;
+                    urlIndex++;
+                    getNextFetch();
+                } else if(numFetches === 0 && urlIndex === urlList.length) {
+                    done(results);
+                }
+            };
+
+            getNextFetch();
+        });
     }
- };
+};
+
