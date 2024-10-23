@@ -5,32 +5,33 @@ const TradeofferWindow = {
             pLastSelected: null,
             qLastSelected: null,
             apps: [
-        /*         { // app
-         *             id: string,
-         *             fetched: boolean,
-         *             categories: [
-         *                 { // category
-         *                     id: string,
-         *                     name: string,
-         *                     pOpened: boolean,
-         *                     qOpened: boolean,
-         *                     tags: [
-         *                         { // tag
-         *                             id: string,
-         *                             name: string,
-         *                             excluded: boolean,
-         *                             filtered: boolean
-         *                         },
-         *                         ...
-         *                     ]
-         *                 },
-         *                 ...
-         *             ]
-         *         },
-         *         ...
-         */
+            /*     { // app
+             *         id: string,
+             *         fetched: boolean,
+             *         categories: [
+             *             { // category
+             *                 id: string,
+             *                 name: string,
+             *                 pOpened: boolean,
+             *                 qOpened: boolean,
+             *                 tags: [
+             *                     { // tag
+             *                         id: string,
+             *                         name: string,
+             *                         excluded: boolean,
+             *                         filtered: boolean
+             *                     },
+             *                     ...
+             *                 ]
+             *             },
+             *             ...
+             *         ]
+             *     },
+             *     ...
+             */
             ]
-        }
+        },
+        // displayMode: int // set by display setup for quick search
     },
 
     FEATURE_LIST: {
@@ -101,7 +102,7 @@ const TradeofferWindow = {
         let partnerName = TradeofferWindow.data.them.name = document.getElementById('trade_theirs').querySelector('.offerheader h2 > a').textContent;
         let partnerEscrowMessage = document.getElementById('trade_escrow_for_them').textContent;
         let userEscrowMessage = document.getElementById('trade_escrow_for_me').textContent;
-        TradeofferWindow.data.me.name = userEscrowMessage.slice(partnerEscrowMessage.indexOf(partnerName), partnerEscrowMessage.indexOf(partnerName) + partnerName.length - partnerEscrowMessage.length)
+        TradeofferWindow.data.me.name = userEscrowMessage.slice(partnerEscrowMessage.indexOf(partnerName), partnerEscrowMessage.indexOf(partnerName) + partnerName.length - partnerEscrowMessage.length);
 
         TradeofferWindow.data.them.id = unsafeWindow.UserThem.strSteamId;
         TradeofferWindow.data.them.url = unsafeWindow.UserThem.strProfileURL;
@@ -657,7 +658,7 @@ const TradeofferWindow = {
           +     '<div class="main-control-section">'
           +         TradeofferWindow.generateProfileSelectorHTMLString({ id: 'selector-quick-search-profile' })
           +         TradeofferWindow.generateAppSelectorHTMLString({ useUserApps: false, usePartnerApps: false, id: 'selector-quick-search-app', placeholderText: 'Select profile first', disabled: true })
-          +         TradeofferWindow.generateContextSelectorHTMLString(undefined, undefined, { id: 'selector-quick-search-context', disabled: true })
+          +         TradeofferWindow.generateContextSelectorHTMLString(undefined, undefined, { id: 'selector-quick-search-context', placeholder: 'Select profile/app first', disabled: true })
           +         '<button id="quick-search-load-inventory" class="main-control-selector-action">'
           +             'Load'
           +         '</button>'
@@ -668,30 +669,30 @@ const TradeofferWindow = {
           +         '</button>'
           +     '</div>'
           + '</div>';
-        const quickSearchInventoryFacetHTMLString = '<div class="quick-search-inventory-facet facet-container">'
-          +     '<input class="userscript-input" type="text" placeholder="Search item name">'
+        const quickSearchInventoryFacetHTMLString = '<div id="quick-search-facet" class="quick-search-inventory-facet facet-container">'
+          +     '<input id="quick-search-search-inventory" class="userscript-input" type="text" placeholder="Search item name">'
           +     '' // tag categories is generated when inventory is loaded
           + '</div>';
         const quickSearchInventoryDisplayHTMLString = '<div class="quick-search-inventory-display inventory-display-container">'
-          +     '<div class="inventory-pages-container">'
+          +     '<div id="quick-search-pages" class="inventory-pages-container">'
           +         '' // pages will be set up on display mode selection
           +     '</div>'
           +     '<div id="quick-search-page-nav" class="inventory-page-nav">'
-          +         '<button class="inventory-page-nav-btn" data-step="-Infinity">|&lt</button>'
+          +         `<button class="inventory-page-nav-btn" data-step="${Number.MIN_SAFE_INTEGER}">|&lt</button>`
           +         '<button class="inventory-page-nav-btn" data-step="-10">&lt&lt</button>'
           +         '<button class="inventory-page-nav-btn" data-step="-1">&lt</button>'
           +         '<div class="inventory-page-nav-numbers">'
           +             '<span class="inventory-page-nav-text number first">1</span>'
-          +             '<span class="inventory-page-nav-text ellipsis">...</span>'
-          +             '<span class="inventory-page-nav-text number">50</span>'
-          +             '<span class="inventory-page-nav-text number current">51</span>'
-          +             '<span class="inventory-page-nav-text number">52</span>'
-          +             '<span class="inventory-page-nav-text ellipsis">...</span>'
-          +             '<span class="inventory-page-nav-text number last">1000</span>'
+          +             '<span class="inventory-page-nav-text ellipsis first">...</span>'
+          +             '<span class="inventory-page-nav-text number previous"></span>'
+          +             '<span class="inventory-page-nav-text number current"></span>'
+          +             '<span class="inventory-page-nav-text number next"></span>'
+          +             '<span class="inventory-page-nav-text ellipsis last">...</span>'
+          +             '<span class="inventory-page-nav-text number last"></span>'
           +         '</div>'
           +         '<button class="inventory-page-nav-btn" data-step="1">&gt</button>'
           +         '<button class="inventory-page-nav-btn" data-step="10">&gt&gt</button>'
-          +         '<button class="inventory-page-nav-btn" data-step="Infinity">&gt|</button>'
+          +         `<button class="inventory-page-nav-btn" data-step="${Number.MAX_SAFE_INTEGER}">&gt|</button>`
           +     '</div>'
           + '</div>';
         const quickSearchBodyHTMLString = '<div class="quick-search-body">'
@@ -703,13 +704,20 @@ const TradeofferWindow = {
         TradeofferWindow.shortcuts.overlayBody.insertAdjacentHTML('beforeend', quickSearchBodyHTMLString);
 
         // add shortcuts to parts of the quick search body
-        let quickSearchBody = quickSearchShortcuts.body = TradeofferWindow.shortcuts.overlayBody.querySelector('.quick-search-body');
+        quickSearchShortcuts.body = TradeofferWindow.shortcuts.overlayBody.querySelector('.quick-search-body');
         quickSearchShortcuts.selectorProfile = document.getElementById('selector-quick-search-profile');
         quickSearchShortcuts.selectorOptionsProfile = quickSearchShortcuts.selectorProfile.querySelector('.main-control-selector-options');
         quickSearchShortcuts.selectorApp = document.getElementById('selector-quick-search-app');
         quickSearchShortcuts.selectorOptionsApp = quickSearchShortcuts.selectorApp.querySelector('.main-control-selector-options');
         quickSearchShortcuts.selectorContext = document.getElementById('selector-quick-search-context');
         quickSearchShortcuts.selectorOptionsContext = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-options');
+
+        quickSearchShortcuts.facet = document.getElementById('quick-search-facet');
+
+        quickSearchShortcuts.display = quickSearchShortcuts.body.querySelector('.quick-search-inventory-display');
+        quickSearchShortcuts.pages = document.getElementById('quick-search-pages');
+        quickSearchShortcuts.pageNavigationBar = document.getElementById('quick-search-page-nav');
+        quickSearchShortcuts.pageNumbers = quickSearchShortcuts.pageNavigationBar.querySelector('.inventory-page-nav-numbers');
 
         // add event listeners to everything in the quick search body
         quickSearchShortcuts.selectorProfile.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
@@ -718,6 +726,14 @@ const TradeofferWindow = {
         quickSearchShortcuts.selectorOptionsApp.addEventListener('click', TradeofferWindow.quickSearchSelectorAppSelectListener);
         quickSearchShortcuts.selectorContext.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
         quickSearchShortcuts.selectorOptionsContext.addEventListener('click', TradeofferWindow.selectorMenuSelectListener);
+
+        document.getElementById('quick-search-load-inventory').addEventListener('click', TradeofferWindow.quickSearchLoadInventoryListener);
+        document.getElementById('quick-search-add-to-offer').addEventListener('click', TradeofferWindow.quickSearchAddSelectedListener);
+
+        document.getElementById('quick-search-search-inventory').addEventListener('input', steamToolsUtils.debounceFunction(TradeofferWindow.quickSearchFacetSearchInventoryInputListener, TradeofferWindow.INPUT_DELAY));
+
+        quickSearchShortcuts.pages.addEventListener('click', TradeofferWindow.quickSearchDisplaySelectItemsListener);
+        quickSearchShortcuts.pageNavigationBar.addEventListener('click', TradeofferWindow.quickSearchDisplayPaginateListener);
     },
     quickSearchSelectorProfileSelectListener(event) {
         if(!event.currentTarget.matches('.main-control-selector-options')) {
@@ -743,15 +759,20 @@ const TradeofferWindow = {
 
         TradeofferWindow.selectorMenuSelect(selectorElem, optionElem);
 
-        quickSearchShortcuts.selectorApp.classList.remove('disabled');
-        quickSearchShortcuts.selectorApp.classList.remove('active');
+        quickSearchShortcuts.selectorApp.classList.remove('disabled', 'active');
+        quickSearchShortcuts.selectorApp.dataset.id = '-1';
         quickSearchShortcuts.selectorContext.classList.add('disabled');
         quickSearchShortcuts.selectorContext.classList.remove('active');
+        quickSearchShortcuts.selectorContext.dataset.id = '-1';
 
-        let selectorAppSelect = quickSearchShortcuts.selectorApp.querySelector('.main-control-selector-select');
-        selectorAppSelect.innerHTML = `<img src="${TradeofferWindow.selectorData.blankImg}">`
+        let selectorContextSelectElem = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-select');
+        selectorContextSelectElem.textContent = '';
+        selectorContextSelectElem.dataset.id = '-1';
+
+        let selectorAppSelectElem = quickSearchShortcuts.selectorApp.querySelector('.main-control-selector-select');
+        selectorAppSelectElem.innerHTML = `<img src="${TradeofferWindow.selectorData.blankImg}">`
           + 'Select App';
-        selectorAppSelect.dataset.id = '-1';
+        selectorAppSelectElem.dataset.id = '-1';
 
         let appOptions, appsData;
         if(selectorElem.dataset.id === unsafeWindow.UserYou.strSteamId) {
@@ -796,12 +817,12 @@ const TradeofferWindow = {
         TradeofferWindow.selectorMenuSelect(selectorElem, optionElem);
 
         quickSearchShortcuts.selectorProfile.classList.remove('active');
-        quickSearchShortcuts.selectorContext.classList.remove('disabled');
-        quickSearchShortcuts.selectorContext.classList.remove('active');
+        quickSearchShortcuts.selectorContext.classList.remove('disabled', 'active');
+        quickSearchShortcuts.selectorContext.dataset.id = '-1';
 
-        let selectorContextSelect = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-select');
-        selectorContextSelect.innerHTML = 'All';
-        selectorContextSelect.dataset.id = '0';
+        let selectorContextSelectElem = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-select');
+        selectorContextSelectElem.innerHTML = 'Select Category';
+        selectorContextSelectElem.dataset.id = '-1';
 
         let profileid = quickSearchShortcuts.selectorProfile.dataset.id;
         let appid = optionElem.dataset.id;
@@ -816,7 +837,7 @@ const TradeofferWindow = {
             throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): profile id is not user nor partner!?!?!';
         }
 
-        let newSelectorContextOptionsHTMLString = '';
+        let newSelectorContextOptionsHTMLString = 'Select app first';
         for(let contextid of contextOptions) {
             let contextInfo = contextsData[contextid];
             if(parseInt(contextid) === 0) {
@@ -889,8 +910,8 @@ const TradeofferWindow = {
                 let contextList = [];
                 for(let contextid in source[appid]) {
                     let contextData = source[appid][contextid];
-                    if(typeof contextData === 'object' && (contextData.asset_count !== 0 && contextData.trade_permissions !== 'NONE')) {
-                        contextList.push(contextData.id);
+                    if(typeof contextData === 'object' && contextData.asset_count !== 0) {
+                        contextList.push(String(contextData.id));
                     }
                 }
                 if(contextList.length) {
@@ -1002,7 +1023,7 @@ const TradeofferWindow = {
             }
         }
 
-        return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, { id: id, placeholderData: 0, placeholderText: 'All', width: 10, disabled: disabled });
+        return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, { id: id, placeholderData: 0, placeholderText: '', width: 10, disabled: disabled });
     },
     generateSelectorHTMLString: function(optionsHTMLString,
       { id, placeholderText = 'Select...', placeholderData = -1, placeholderImg, width, disabled } =
@@ -1105,7 +1126,7 @@ const TradeofferWindow = {
         }
 
         let filterData = {
-            id: String(appid),
+            id: appid,
             fetched: true,
             categories: Object.values(resdata.facets).map(categoryData => ({
                 id: categoryData.name,
@@ -1138,11 +1159,12 @@ const TradeofferWindow = {
 
             filterCategoryData.pOpened = configCategoryData.pOpened;
             filterCategoryData.qOpened = configCategoryData.qOpened;
-            for(let configTagData of configFilterData.tags) {
+            for(let configTagData of configCategoryData.tags) {
                 let filterTagData = filterCategoryData.tags.find(x => x.id === configTagData.id);
 
                 if(!filterTagData) {
                     filterCategoryData.tags.push(configTagData);
+                    continue;
                 }
 
                 filterTagData.excluded = configTagData.excluded;
