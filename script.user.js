@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Steam Tools (PLACEHOLDER)
 // @namespace    https://steamcommunity.com/id/KuroHoshiZ/
-// @version      2024-06-10
+// @version      2024-10-23
 // @description  Set of tools to help with Steam Community activities
 // @author       KurohoshiZ
 // @match        *://steamcommunity.com/*
@@ -25,12 +25,7 @@
 // https://stackoverflow.com/questions/72545851/how-to-make-userscript-auto-update-from-private-domain-github
 
 const globalSettings = {};
-const GLOBALSETTINGSDEFAULTS = {};
-const TOOLS_MENU = [
-    { name: 'Main Page', href: 'https://steamcommunity.com/groups/tradingcards/discussions/2/3201493200068346848/', htmlString: undefined, entryFn: undefined },
-    { name: 'Matcher', href: undefined, htmlString: undefined, entryFn: gotoMatcherConfigPage },
-    { name: 'Booster Crafter', href: 'https://steamcommunity.com/tradingcards/boostercreator/enhanced', htmlString: undefined, entryFn: undefined },
-];
+const TOOLS_MENU = [];
 const DB_OBJECTSTORE_CONFIGS = [
     { name: 'config', keypath: undefined, autoincr: undefined },
     { name: 'profiles', keypath: undefined, autoincr: undefined, indices: [
@@ -86,6 +81,9 @@ const steamToolsUtils = {
             }
         } return true;
     },
+    clamp(num, min, max) {
+        return Math.min(Math.max(num, min), max);
+    },
     isOutdatedDays(epochTime, days) {
         return epochTime < Date.now()-days*24*60*60*1000;
     },
@@ -110,8 +108,77 @@ const steamToolsUtils = {
         tmpElem.setAttribute('type', 'file');
         tmpElem.setAttribute('accept', 'application/json');
         return tmpElem;
+    },
+    debounceFunction(func, delay) {
+        let timeoutId = null;
+        return (...args) => {
+            unsafeWindow.clearTimeout(timeoutId);
+            timeoutId = unsafeWindow.setTimeout(() => {
+                func(...args);
+            }, delay);
+        };
+    },
+    createFetchQueue(urlList, maxFetches = 3, processData) {
+        // https://krasimirtsonev.com/blog/article/implementing-an-async-queue-in-23-lines-of-code
+
+        const controller = new AbortController();
+        const { signal } = controller;
+        let cancelled = false;
+
+        let numFetches = 0;
+        let urlIndex = 0;
+        let results = Array(urlList.length).fill(null);
+
+        return new Promise(done => {
+            const handleResponse = index => (response) => {
+                if(response.status !== 200) {
+                    results[index] = null;
+                    throw response;
+                }
+                return response.json();
+            };
+
+            const handleData = index => (result) => {
+                results[index] = processData ? processData(result, urlList[index]?.optionalInfo) : result;
+                numFetches--;
+                getNextFetch();
+            };
+
+            const handleError = (error) => {
+                if(error?.status === 429) {
+                    console.error('createFetchQueue(): Too many requests...');
+                    cancelled = true;
+                    controller.abort();
+                } else {
+                    console.log(error);
+                }
+            };
+
+            const getNextFetch = () => {
+                if(cancelled) {
+                    done(results);
+                    return;
+                }
+
+                if(numFetches<maxFetches && urlIndex<urlList.length) {
+                    fetch(urlList[urlIndex].url, { signal })
+                      .then(handleResponse(urlIndex))
+                      .then(handleData(urlIndex))
+                      .catch(handleError);
+                    numFetches++;
+                    urlIndex++;
+                    getNextFetch();
+                } else if(numFetches === 0 && urlIndex === urlList.length) {
+                    done(results);
+                }
+            };
+
+            getNextFetch();
+        });
     }
- };
+};
+
+
 const SteamToolsDbManager = {
     db: undefined,
     setup() {
@@ -1028,10 +1095,10 @@ class Profile {
         let last_itemType_index = Profile.ITEM_TYPE_ORDER[last_itemType] ?? Number.MAX_SAFE_INTEGER;
 
         do {
-            console.log(`getinventory(): Fetching inventory of ${this.id}, starting at ${counter}`);
-
             let targetDelayTime = (await this.isMe()) ? Profile.utils.INV_FETCH_DELAY1 : Profile.utils.INV_FETCH_DELAY2;
             await Profile.utils.sleep((this.lastRequestTime.inventory ?? 0)+targetDelayTime-Date.now());
+            console.log(`getinventory(): Fetching inventory of ${this.id}, starting at ${counter}`);
+
             let response = await fetch("https://steamcommunity.com/inventory/" + this.id + "/753/6?"
               + "l=" + Profile.utils.getSteamLanguage()
               + "&count=" + ( (count-counter < Profile.MAX_ITEM_COUNT) ? count-counter : Profile.MAX_ITEM_COUNT )
@@ -2061,1098 +2128,1143 @@ let Matcher = {
 }
 
 
-GLOBALSETTINGSDEFAULTS.matcherConfig = {
-    config: {
-        matchGroup: {
-            label: 'Match With',
-            id: 'matchgroup',
-            options: [
-                { name: 'friends', id: 'match-friends', label: 'Friends', value: true },
-                { name: 'asfAny', id: 'match-asf-bots-any', label: 'ASF Any Bots', value: true },
-                { name: 'asfFair', id: 'match-asf-bots-fair', label: 'ASF Fair Bots', value: false },
-                { name: 'custom', id: 'match-user-list', label: 'My List', value: true }
-            ]
+const SteamItemMatcher = {
+    SETTINGSDEFAULTS: {
+        config: {
+            matchGroup: {
+                label: 'Match With',
+                id: 'matchgroup',
+                options: [
+                    { name: 'friends', id: 'match-friends', label: 'Friends', value: true },
+                    { name: 'asfAny', id: 'match-asf-bots-any', label: 'ASF Any Bots', value: true },
+                    { name: 'asfFair', id: 'match-asf-bots-fair', label: 'ASF Fair Bots', value: false },
+                    { name: 'custom', id: 'match-user-list', label: 'My List', value: true }
+                ]
+            },
+            ignoreGroup: {
+                label: 'Ignore Profiles On',
+                id: 'ignoregroup',
+                options: [{ name: 'blacklist', id: 'match-ignore-blacklist', label: 'Blacklist', value: true }]
+            },
+            matchItemType: {
+                label: 'Match Item Types',
+                id: 'itemgroup',
+                options: [
+                    // { name: 'gem', id: 'match-gems', label: 'Gems', value: false },
+                    // { name: 'booster', id: 'match-booster', label: 'Booster Packs', value: false },
+                    { name: 'card', id: 'match-card', label: 'Trading Cards', value: true },
+                    { name: 'background', id: 'match-background', label: 'Backgrounds', value: true },
+                    { name: 'emoticon', id: 'match-emoticon', label: 'Emoticons', value: true },
+                    // { name: 'saleItem', id: 'match-sale-item', label: 'Sale Items', value: false }
+                ]
+            },
+            matchApp: {
+                label: 'Match Apps On',
+                id: 'appgroup',
+                options: [
+                    // { name: 'badgepage', id: 'match-badgepage', label: 'My Badge Page', value: false },
+                    { name: 'custom', id: 'match-user-app-list', label: 'My App List', value: false }
+                ]
+            }
         },
-        ignoreGroup: {
-            label: 'Ignore Profiles On',
-            id: 'ignoregroup',
-            options: [{ name: 'blacklist', id: 'match-ignore-blacklist', label: 'Blacklist', value: true }]
+        lists: {
+            matchlist: { label: 'Matchlist', data: [] },
+            blacklist: { label: 'Blacklist', data: [] },
+            applist: { label: 'Apps', data: [] }
         },
-        matchItemType: {
-            label: 'Match Item Types',
-            id: 'itemgroup',
-            options: [
-                // { name: 'gem', id: 'match-gems', label: 'Gems', value: false },
-                // { name: 'booster', id: 'match-booster', label: 'Booster Packs', value: false },
-                { name: 'card', id: 'match-card', label: 'Trading Cards', value: true },
-                { name: 'background', id: 'match-background', label: 'Backgrounds', value: true },
-                { name: 'emoticon', id: 'match-emoticon', label: 'Emoticons', value: true },
-                // { name: 'saleItem', id: 'match-sale-item', label: 'Sale Items', value: false }
-            ]
-        },
-        matchApp: {
-            label: 'Match Apps On',
-            id: 'appgroup',
-            options: [
-                // { name: 'badgepage', id: 'match-badgepage', label: 'My Badge Page', value: false },
-                { name: 'custom', id: 'match-user-app-list', label: 'My App List', value: false }
-            ]
-        }
+        currentTab: 'matchlist'
     },
-    lists: {
-        matchlist: { label: 'Matchlist', data: [] },
-        blacklist: { label: 'Blacklist', data: [] },
-        applist: { label: 'Apps', data: [] }
+
+    configShortcuts: {},
+    shortcuts: {},
+
+    setup: async function() {
+        const generateConfigHeaderString = (title) => `<div class="userscript-config-header"><span>${title}</span></div>`;
+        const generateConfigButtonString = (id, label) => `<div class="userscript-config-option"><input type="checkbox" class="button" id="${id}"><label for="${id}">${label}</label></div>`;
+        const generateConfigButtonsString = (checkList) => checkList.map(x => generateConfigButtonString(x.id, x.label)).join('');
+        const generateConfigButtonGroupString = () => Object.values(globalSettings.matcherConfig.config).map(x => {
+            return `<div class="userscript-config-group" data-id="${x.id}">${generateConfigHeaderString(x.label)}${generateConfigButtonsString(x.options)}</div>`
+        }).join('');
+        const generateConfigListTabs = (list) => {
+            let HTMLString = '';
+            for(let listGroup in list) {
+                HTMLString += `<div class="userscript-config-list-tab" data-list-name="${listGroup}">${list[listGroup].label}</div>`;
+            }
+            return HTMLString;
+        };
+        const generateConfigListGroups = (list) => {
+            let HTMLString = '';
+            for(let listGroup in list) {
+                HTMLString += `<div class="userscript-config-list-entry-group" data-list-name="${listGroup}"></div>`;
+            }
+            return HTMLString;
+        }
+
+        console.log('Setting up Matcher Configuration!');
+
+        SteamItemMatcher.configShortcuts.MAIN_ELEM = document.querySelector('#responsive_page_template_content');
+
+        if(!SteamItemMatcher.configShortcuts.MAIN_ELEM) {
+            alert('Main element no found, Matcher Configuration will not be set up');
+            console.warn('SteamItemMatcher.setup(): Main element no found, Matcher Configuration will not be set up!');
+            return;
+        }
+
+        // set up css styles for this feature
+        GM_addStyle(cssGlobal);
+
+        SteamItemMatcher.configShortcuts.MAIN_ELEM.innerHTML = '';
+        document.body.classList.remove('profile_page'); // profile page causes bg color to be black
+
+        let config = await SteamToolsDbManager.getToolConfig('matcherConfig');
+        if(config.matcherConfig) {
+            globalSettings.matcherConfig = config.matcherConfig;
+        } else {
+            globalSettings.matcherConfig = steamToolsUtils.deepClone(SteamItemMatcher.SETTINGSDEFAULTS);
+        }
+
+        addSvgBlock(SteamItemMatcher.configShortcuts.MAIN_ELEM);
+
+        let matcherConfigHTMLString = '<div class="userscript-config userscript-vars">'
+          +    '<div class="userscript-config-title"><span>Matcher Configuration</span></div>'
+          +    '<div class="userscript-options">'
+          +       generateConfigButtonGroupString()
+          +       '<div class="userscript-config-group">'
+          +          '<div class="userscript-config-header">'
+          +             '<span>Configuration Settings</span>'
+          +          '</div>'
+          +          '<div class="userscript-config-btn-group">'
+          +             '<button id="userscript-config-import" class="userscript-btn blue">Import</button>'
+          +             '<button id="userscript-config-export" class="userscript-btn blue">Export</button>'
+          +          '</div>'
+          +          '<div class="userscript-config-btn-group right">'
+          +             '<button id="userscript-config-reset" class="userscript-btn blue">Reload</button>'
+          +             '<button id="userscript-config-save" class="userscript-btn green">Save</button>'
+          +          '</div>'
+          +       '</div>'
+          +       '<div class="userscript-config-actions">'
+          +          '<div class="userscript-config-action">'
+          +             '<button id="userscript-config-match-full" class="userscript-btn purple max">Full Match</button>'
+          +          '</div>'
+          +          '<div class="h-break">OR</div>'
+          +          '<div class="userscript-config-action">'
+          +             '<input type="text" name="match-profileid" id="match-single-profile-profileid" placeholder="profileid/customUrlId">'
+          +             '<button id="userscript-config-match-one" class="userscript-btn purple">Match</button>'
+          +          '</div>'
+          +       '</div>'
+          +    '</div>'
+          +    '<div class="userscript-config-list">'
+          +       '<div class="userscript-config-list-header tabs">'
+          +          generateConfigListTabs(globalSettings.matcherConfig.lists)
+          +       '</div>'
+          +       '<div class="conf-list-entry-action add">'
+          +          '<div class="conf-list-entry-action-add">'
+          +             '<div id="entry-action-add" class="entry-action add"></div>'
+          +          '</div>'
+          +          '<div class="conf-list-entry-action-modify">'
+          +             '<div id="entry-action-del" class="userscript-bg-filtered delete"></div>'
+          +             '<div id="entry-action-edit" class="userscript-bg-filtered edit"></div>'
+          +          '</div>'
+          +          '<div class="userscript-overlay"></div>'
+          +       '</div>'
+          +       '<div class="userscript-config-list-list">'
+          +          '<div class="dialog-form-container">'
+          +             '<div class="dialog-form"></div>'
+          +          '</div>'
+          +          '<div class="userscript-overlay">'
+          +             '<div class="animated-bar-loader top"></div>'
+          +             '<div class="userscript-dialog">'
+          +                '<div class="userscript-dialog-container">'
+          +                   'Entry already exists, overwrite?'
+          +                '</div>'
+          +                '<div id="conf-list-entry-old" class="userscript-config-list-entry"></div>'
+          +                '<div class="userscript-dialog-container">'
+          +                   '<div class="dbl-arrows down"></div>'
+          +                '</div>'
+          +                '<div id="conf-list-entry-new" class="userscript-config-list-entry"></div>'
+          +                '<div class="userscript-dialog-container">'
+          +                   '<button id="userscript-dialog-cancel" class="userscript-btn red wide">No</button>'
+          +                   '<button id="userscript-dialog-confirm" class="userscript-btn green wide">Yes</button>'
+          +                '</div>'
+          +             '</div>'
+          +             '<div class="userscript-dialog-form">'
+          +                '<input type="text" id="entry-form-id" class="userscript-input" placeholder="profileid/customUrlid">'
+          +                '<textarea name="" id="entry-form-descript" class="userscript-input" placeholder="Note (Optional)" rows="5"></textarea>'
+          +                '<div class="userscript-dialog-container">'
+          +                   '<button id="dialog-form-cancel" class="userscript-btn red">Cancel</button>'
+          +                   '<button id="dialog-form-add" class="userscript-btn green">Add</button>'
+          +                '</div>'
+          +             '</div>'
+          +          '</div>'
+          +          '<div class="userscript-config-list-entries userscript-custom-scroll">'
+          +             generateConfigListGroups(globalSettings.matcherConfig.lists)
+          +          '</div>'
+          +       '</div>'
+          +    '</div>'
+          +    cssAddOverlay(cssAddThrobber(), {initialState: 'loading'})
+          + '</div>';
+
+        SteamItemMatcher.configShortcuts.MAIN_ELEM.insertAdjacentHTML("beforeend", matcherConfigHTMLString);
+
+        // element shortcuts
+        SteamItemMatcher.configShortcuts.configMenu = SteamItemMatcher.configShortcuts.MAIN_ELEM.querySelector('.userscript-config');
+        SteamItemMatcher.configShortcuts.listContainer = SteamItemMatcher.configShortcuts.MAIN_ELEM.querySelector('.userscript-config-list');
+        SteamItemMatcher.configShortcuts.listTabListElem = SteamItemMatcher.configShortcuts.listContainer.querySelector('.userscript-config-list-header.tabs');
+        SteamItemMatcher.configShortcuts.listActionBarElem = SteamItemMatcher.configShortcuts.listContainer.querySelector('.conf-list-entry-action');
+        SteamItemMatcher.configShortcuts.listContentsElem = SteamItemMatcher.configShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-list');
+        SteamItemMatcher.configShortcuts.listDialogElem = SteamItemMatcher.configShortcuts.listContentsElem.querySelector('.userscript-dialog');
+        SteamItemMatcher.configShortcuts.listFormElem = SteamItemMatcher.configShortcuts.listContentsElem.querySelector('.userscript-dialog-form');
+        SteamItemMatcher.configShortcuts.listElems = {};
+        for(let entryGroup in globalSettings.matcherConfig.lists) {
+            SteamItemMatcher.configShortcuts.listElems[entryGroup] = SteamItemMatcher.configShortcuts.MAIN_ELEM.querySelector(`.userscript-config-list-entry-group[data-list-name=${entryGroup}]`);
+        }
+
+        for(let buttonGroup of SteamItemMatcher.configShortcuts.MAIN_ELEM.querySelectorAll('.userscript-config-group')) {
+            buttonGroup.addEventListener('change', SteamItemMatcher.configUpdateChecklistListener);
+        }
+        document.getElementById('userscript-config-import').addEventListener('click', SteamItemMatcher.configImportListener);
+        document.getElementById('userscript-config-export').addEventListener('click', SteamItemMatcher.configExportListener);
+        document.getElementById('userscript-config-reset').addEventListener('click', SteamItemMatcher.configLoadListener);
+        document.getElementById('userscript-config-save').addEventListener('click', SteamItemMatcher.configSaveListener);
+        SteamItemMatcher.configShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-header').addEventListener('click', SteamItemMatcher.configSelectListTabListener);
+        document.getElementById('entry-action-add').addEventListener('click', SteamItemMatcher.configToggleEntryFormListener);
+        document.getElementById('entry-action-edit').addEventListener('click', SteamItemMatcher.configEditListEntryListener);
+        document.getElementById('entry-action-del').addEventListener('click', SteamItemMatcher.configDeleteListEntryListener);
+        SteamItemMatcher.configShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-entries').addEventListener('click', SteamItemMatcher.configSelectListEntryListener);
+        document.getElementById('userscript-dialog-cancel').addEventListener('click', SteamItemMatcher.configListDialogCancelListener);
+        document.getElementById('userscript-dialog-confirm').addEventListener('click', SteamItemMatcher.configListDialogConfirmListener);
+        document.getElementById('userscript-config-match-full').addEventListener('click', SteamItemMatcher.configFullMatchListener);
+        document.getElementById('userscript-config-match-one').addEventListener('click', SteamItemMatcher.configSingleMatchListener);
+
+        SteamItemMatcher.configShortcuts.matchSingleProfileProfileid = document.getElementById('match-single-profile-profileid');
+
+        SteamItemMatcher.configLoadUI();
     },
-    currentTab: 'matchlist'
-};
-const MatcherConfigShortcuts = {};
-const MatcherShortcuts = {};
 
-async function gotoMatcherConfigPage() {
-    const generateConfigHeaderString = (title) => `<div class="userscript-config-header"><span>${title}</span></div>`;
-    const generateConfigButtonString = (id, label) => `<div class="userscript-config-option"><input type="checkbox" class="button" id="${id}"><label for="${id}">${label}</label></div>`;
-    const generateConfigButtonsString = (checkList) => checkList.map(x => generateConfigButtonString(x.id, x.label)).join('');
-    const generateConfigButtonGroupString = () => Object.values(globalSettings.matcherConfig.config).map(x => {
-        return `<div class="userscript-config-group" data-id="${x.id}">${generateConfigHeaderString(x.label)}${generateConfigButtonsString(x.options)}</div>`
-    }).join('');
-    const generateConfigListTabs = (list) => {
-        let HTMLString = '';
-        for(let listGroup in list) {
-            HTMLString += `<div class="userscript-config-list-tab" data-list-name="${listGroup}">${list[listGroup].label}</div>`;
+    configLoadUI: async function() {
+        if(!SteamItemMatcher.configShortcuts.configMenu) {
+            console.warn('updateMatcherConfigUI(): Config menu not found, UI will not be updated');
+            return;
         }
-        return HTMLString;
-    };
-    const generateConfigListGroups = (list) => {
-        let HTMLString = '';
-        for(let listGroup in list) {
-            HTMLString += `<div class="userscript-config-list-entry-group" data-list-name="${listGroup}"></div>`;
-        }
-        return HTMLString;
-    }
 
-    console.log('Setting up Matcher Configuration!');
+        SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, true, 'loading');
 
-    MatcherConfigShortcuts.MAIN_ELEM = document.querySelector('#responsive_page_template_content');
-
-    if(!MatcherConfigShortcuts.MAIN_ELEM) {
-        alert('Main element no found, Matcher Configuration will not be set up');
-        console.warn('gotoMatcherConfigPage(): Main element no found, Matcher Configuration will not be set up!');
-        return;
-    }
-
-    // set up css styles for this feature
-    GM_addStyle(cssGlobal);
-
-    MatcherConfigShortcuts.MAIN_ELEM.innerHTML = '';
-    document.body.classList.remove('profile_page'); // profile page causes bg color to be black
-
-    let config = await SteamToolsDbManager.getToolConfig('matcherConfig');
-    if(config.matcherConfig) {
-        globalSettings.matcherConfig = config.matcherConfig;
-    } else {
-        globalSettings.matcherConfig = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcherConfig);
-    }
-
-    addSvgBlock(MatcherConfigShortcuts.MAIN_ELEM);
-
-    let matcherConfigHTMLString = '<div class="userscript-config userscript-vars">'
-      +    '<div class="userscript-config-title"><span>Matcher Configuration</span></div>'
-      +    '<div class="userscript-options">'
-      +       generateConfigButtonGroupString()
-      +       '<div class="userscript-config-group">'
-      +          '<div class="userscript-config-header">'
-      +             '<span>Configuration Settings</span>'
-      +          '</div>'
-      +          '<div class="userscript-config-btn-group">'
-      +             '<button id="userscript-config-import" class="userscript-btn blue">Import</button>'
-      +             '<button id="userscript-config-export" class="userscript-btn blue">Export</button>'
-      +          '</div>'
-      +          '<div class="userscript-config-btn-group right">'
-      +             '<button id="userscript-config-reset" class="userscript-btn blue">Reload</button>'
-      +             '<button id="userscript-config-save" class="userscript-btn green">Save</button>'
-      +          '</div>'
-      +       '</div>'
-      +       '<div class="userscript-config-actions">'
-      +          '<div class="userscript-config-action">'
-      +             '<button id="userscript-config-match-full" class="userscript-btn purple max">Full Match</button>'
-      +          '</div>'
-      +          '<div class="h-break">OR</div>'
-      +          '<div class="userscript-config-action">'
-      +             '<input type="text" name="match-profileid" id="match-single-profile-profileid" placeholder="profileid/customUrlId">'
-      +             '<button id="userscript-config-match-one" class="userscript-btn purple">Match</button>'
-      +          '</div>'
-      +       '</div>'
-      +    '</div>'
-      +    '<div class="userscript-config-list">'
-      +       '<div class="userscript-config-list-header tabs">'
-      +          generateConfigListTabs(globalSettings.matcherConfig.lists)
-      +       '</div>'
-      +       '<div class="conf-list-entry-action add">'
-      +          '<div class="conf-list-entry-action-add">'
-      +             '<div id="entry-action-add" class="entry-action add"></div>'
-      +          '</div>'
-      +          '<div class="conf-list-entry-action-modify">'
-      +             '<div id="entry-action-del" class="userscript-bg-filtered delete"></div>'
-      +             '<div id="entry-action-edit" class="userscript-bg-filtered edit"></div>'
-      +          '</div>'
-      +          '<div class="userscript-overlay"></div>'
-      +       '</div>'
-      +       '<div class="userscript-config-list-list">'
-      +          '<div class="dialog-form-container">'
-      +             '<div class="dialog-form"></div>'
-      +          '</div>'
-      +          '<div class="userscript-overlay">'
-      +             '<div class="animated-bar-loader top"></div>'
-      +             '<div class="userscript-dialog">'
-      +                '<div class="userscript-dialog-container">'
-      +                   'Entry already exists, overwrite?'
-      +                '</div>'
-      +                '<div id="conf-list-entry-old" class="userscript-config-list-entry"></div>'
-      +                '<div class="userscript-dialog-container">'
-      +                   '<div class="dbl-arrows down"></div>'
-      +                '</div>'
-      +                '<div id="conf-list-entry-new" class="userscript-config-list-entry"></div>'
-      +                '<div class="userscript-dialog-container">'
-      +                   '<button id="userscript-dialog-cancel" class="userscript-btn red wide">No</button>'
-      +                   '<button id="userscript-dialog-confirm" class="userscript-btn green wide">Yes</button>'
-      +                '</div>'
-      +             '</div>'
-      +             '<div class="userscript-dialog-form">'
-      +                '<input type="text" id="entry-form-id" class="userscript-input" placeholder="profileid/customUrlid">'
-      +                '<textarea name="" id="entry-form-descript" class="userscript-input" placeholder="Note (Optional)" rows="5"></textarea>'
-      +                '<div class="userscript-dialog-container">'
-      +                   '<button id="dialog-form-cancel" class="userscript-btn red">Cancel</button>'
-      +                   '<button id="dialog-form-add" class="userscript-btn green">Add</button>'
-      +                '</div>'
-      +             '</div>'
-      +          '</div>'
-      +          '<div class="userscript-config-list-entries userscript-custom-scroll">'
-      +             generateConfigListGroups(globalSettings.matcherConfig.lists)
-      +          '</div>'
-      +       '</div>'
-      +    '</div>'
-      +    cssAddOverlay(cssAddThrobber(), {initialState: 'loading'})
-      + '</div>';
-
-    MatcherConfigShortcuts.MAIN_ELEM.insertAdjacentHTML("beforeend", matcherConfigHTMLString);
-
-    // element shortcuts
-    MatcherConfigShortcuts.configMenu = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config');
-    MatcherConfigShortcuts.listContainer = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list');
-    MatcherConfigShortcuts.listTabListElem = MatcherConfigShortcuts.listContainer.querySelector('.userscript-config-list-header.tabs');
-    MatcherConfigShortcuts.listActionBarElem = MatcherConfigShortcuts.listContainer.querySelector('.conf-list-entry-action');
-    MatcherConfigShortcuts.listContentsElem = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-list');
-    MatcherConfigShortcuts.listDialogElem = MatcherConfigShortcuts.listContentsElem.querySelector('.userscript-dialog');
-    MatcherConfigShortcuts.listFormElem = MatcherConfigShortcuts.listContentsElem.querySelector('.userscript-dialog-form');
-    MatcherConfigShortcuts.listElems = {};
-    for(let entryGroup in globalSettings.matcherConfig.lists) {
-        MatcherConfigShortcuts.listElems[entryGroup] = MatcherConfigShortcuts.MAIN_ELEM.querySelector(`.userscript-config-list-entry-group[data-list-name=${entryGroup}]`);
-    }
-
-    for(let buttonGroup of MatcherConfigShortcuts.MAIN_ELEM.querySelectorAll('.userscript-config-group')) {
-        buttonGroup.addEventListener('change', matcherConfigUpdateChecklistListener);
-    }
-    document.getElementById('userscript-config-import').addEventListener('click', matcherConfigImportListener);
-    document.getElementById('userscript-config-export').addEventListener('click', matcherConfigExportListener);
-    document.getElementById('userscript-config-reset').addEventListener('click', matcherConfigLoadListener);
-    document.getElementById('userscript-config-save').addEventListener('click', matcherConfigSaveListener);
-    MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-header').addEventListener('click', matcherConfigSelectListTabListener);
-    document.getElementById('entry-action-add').addEventListener('click', matcherConfigToggleEntryFormListener);
-    document.getElementById('entry-action-edit').addEventListener('click', matcherConfigEditListEntryListener);
-    document.getElementById('entry-action-del').addEventListener('click', matcherConfigDeleteListEntryListener);
-    MatcherConfigShortcuts.MAIN_ELEM.querySelector('.userscript-config-list-entries').addEventListener('click', matcherConfigSelectListEntryListener);
-    document.getElementById('userscript-dialog-cancel').addEventListener('click', matcherConfigListDialogCancelListener);
-    document.getElementById('userscript-dialog-confirm').addEventListener('click', matcherConfigListDialogConfirmListener);
-    document.getElementById('userscript-config-match-full').addEventListener('click', matcherConfigFullMatchListener);
-    document.getElementById('userscript-config-match-one').addEventListener('click', matcherConfigSingleMatchListener);
-
-    MatcherConfigShortcuts.matchSingleProfileProfileid = document.getElementById('match-single-profile-profileid');
-
-    matcherConfigLoadUI();
-}
-
-async function matcherConfigLoadUI() {
-    if(!MatcherConfigShortcuts.configMenu) {
-        console.warn('updateMatcherConfigUI(): Config menu not found, UI will not be updated');
-        return;
-    }
-
-    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
-
-    for(let optionGroup of Object.values(globalSettings.matcherConfig.config)) {
-        for(let option of optionGroup.options) {
-            document.getElementById(option.id).checked = option.value;
-        }
-    }
-
-    // generate lists
-    for(let [listName, listGroup] of Object.entries(globalSettings.matcherConfig.lists)) {
-        let entryGroupElem = MatcherConfigShortcuts.listElems[listName];
-        let entriesHTMLString = [];
-        for(let data of listGroup.data) {
-            if(listName==='matchlist' || listName==='blacklist') {
-                let profile = await Profile.findProfile(data.profileid);
-                if(!profile) {
-                    console.warn('matcherConfigLoadUI(): No profile found, skipping this entry...');
-                    continue;
-                }
-
-                let tradeTokenWarning = listName === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
-                let entryHTMLString = `<div class="userscript-config-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
-                  +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar ${profile.getStateString()}">`
-                  +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
-                  +    '</a>'
-                  +    `<div class="conf-list-entry-name" title="${profile.name}" >${profile.name}</div>`
-                  +    `<div class="conf-list-entry-descript">${data.descript}</div>`
-                  + '</div>';
-
-                entriesHTMLString.push({ key1: profile.id, key2: null, string: entryHTMLString });
-            } else if(listName === 'applist') {
-                let entryHTMLString;
-                let appdata = await Profile.findAppMetaData(data.appid);
-                if(!appdata) {
-                    entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${data.appid}" data-name="">`
-                      +    '<a class="app-header">'
-                      +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
-                      +    '</a>'
-                      +    `<div class="conf-list-entry-profile">appid-${data.appid}</div>`
-                      +    `<div class="conf-list-entry-descript">${data.descript}</div>`
-                      + '</div>';
-                } else {
-                    entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${appdata.appid}" data-name="${appdata.name}">`
-                      +    `<a href="https://steamcommunity.com/my/gamecards/${appdata.appid}}/" target="_blank" rel="noopener noreferrer" class="app-header">`
-                      +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
-                      +    '</a>'
-                      +    `<div class="conf-list-entry-name">${appdata.name}</div>`
-                      +    `<div class="conf-list-entry-descript">${data.descript}</div>`
-                      + '</div>';
-                }
-
-
-                entriesHTMLString.push({ key1: appdata?.name, key2: data.appid, string: entryHTMLString });
-            } else {
-                console.warn('matcherConfigLoadUI(): HTML generation for a list not implemented, that list will be empty!');
-                break;
+        for(let optionGroup of Object.values(globalSettings.matcherConfig.config)) {
+            for(let option of optionGroup.options) {
+                document.getElementById(option.id).checked = option.value;
             }
         }
 
-        if(listName === 'applist') {
-            entriesHTMLString.sort((a, b) => !a.key1 ? a.key2-b.key2 : a.key1-b.key1);
-        }
+        // generate lists
+        for(let [listName, listGroup] of Object.entries(globalSettings.matcherConfig.lists)) {
+            let entryGroupElem = SteamItemMatcher.configShortcuts.listElems[listName];
+            let entriesHTMLString = [];
+            for(let data of listGroup.data) {
+                if(listName==='matchlist' || listName==='blacklist') {
+                    let profile = await Profile.findProfile(data.profileid);
+                    if(!profile) {
+                        console.warn('SteamItemMatcher.configLoadUI(): No profile found, skipping this entry...');
+                        continue;
+                    }
 
-        entryGroupElem.insertAdjacentHTML('afterbegin', entriesHTMLString.reduce((str, entry) => str+entry.string, ''));
-    }
-
-    // set active tab
-    if(globalSettings.matcherConfig.currentTab) {
-        matcherConfigSetListTab(globalSettings.matcherConfig.currentTab);
-    }
-
-    matcherConfigResetEntryForm();
-
-    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
-}
-
-function matcherConfigSetEntryActionBar(actionBarName) {
-    const validActions = ['add', 'modify'];
-    let listActionElem = MatcherConfigShortcuts.listActionBarElem;
-    if(validActions.includes(actionBarName)) {
-        listActionElem.className = 'conf-list-entry-action ' + actionBarName;
-    } else {
-        console.warn('matcherConfigSetEntryActionBar(): Action bar name not valid, nothing will change!');
-    }
-}
-
-function matcherConfigSelectListTabListener(event) {
-    console.log(event.target); // debugging
-    if(!event.target.matches('.userscript-config-list-tab') || event.target.matches('.active')) {
-        return;
-    }
-    matcherConfigSetListTab(event.target.dataset.listName);
-}
-
-function matcherConfigSetListTab(tabName) {
-    if(!Object.keys(globalSettings.matcherConfig.lists).includes(tabName)) {
-        console.error('matcherConfigSetListTab(): invalid tab name!');
-        return;
-    }
-
-    MatcherConfigShortcuts.listTabListElem.querySelector(`.userscript-config-list-tab.active`)?.classList.remove('active');
-    const target = MatcherConfigShortcuts.listTabListElem.querySelector(`.userscript-config-list-tab[data-list-name=${tabName}]`);
-    target.classList.add('active');
-    globalSettings.matcherConfig.currentTab = target.dataset.listName;
-    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
-
-    if(MatcherConfigShortcuts.selectedListEntryElem) {
-        matcherConfigSelectListEntry(MatcherConfigShortcuts.selectedListEntryElem, true);
-    }
-
-    matcherConfigResetEntryForm();
-    matcherConfigShowActiveList();
-}
-
-function matcherConfigResetEntryForm() {
-    let currentTab = globalSettings.matcherConfig.currentTab;
-
-    let entryFormElem = MatcherConfigShortcuts.listFormElem;
-    let currentFormType = entryFormElem.dataset.type;
-
-    if(currentFormType !== currentTab) {
-        // set innerHTML to wipe everything and change form
-        entryFormElem.innerHTML = '';
-        if(currentTab==='matchlist' || currentTab==='blacklist') {
-            entryFormElem.innerHTML = '<input type="text" id="entry-form-id" class="userscript-input" placeholder="profileid/customUrlid">'
-              + '<textarea name="" id="entry-form-descript" class="userscript-input" placeholder="Note (Optional)" rows="5"></textarea>';
-        } else if(currentTab === 'applist') {
-            entryFormElem.innerHTML = '<input type="text" id="entry-form-id" class="userscript-input" placeholder="appid">'
-              + '<textarea name="" id="entry-form-descript" class="userscript-input" placeholder="Note (Optional)" rows="5"></textarea>';
-        } else {
-            console.warn('matcherConfigResetEntryForm(): Tab reset not implemented, form will not be generated!');
-            return;
-        }
-
-        let entryFormActionHTMLString = '<div class="userscript-dialog-container">'
-          +    '<button id="dialog-form-cancel" class="userscript-btn red">Cancel</button>'
-          +    '<button id="dialog-form-add" class="userscript-btn green">Add</button>'
-          + '</div>';
-        entryFormElem.insertAdjacentHTML('beforeend', entryFormActionHTMLString);
-        document.getElementById('dialog-form-cancel').addEventListener('click', matcherConfigEntryFormCancelListener);
-        document.getElementById('dialog-form-add').addEventListener('click', matcherConfigEntryFormAddListener);
-
-        entryFormElem.dataset.type = currentTab;
-    } else {
-        // reset input values
-        if(currentTab === 'matchlist' || currentTab === 'blacklist') {
-            entryFormElem.querySelector('#entry-form-id').value = '';
-            entryFormElem.querySelector('#entry-form-descript').value = '';
-        } else if(currentTab === 'applist') {
-            entryFormElem.querySelector('#entry-form-id').value = '';
-            entryFormElem.querySelector('#entry-form-descript').value = '';
-        } else {
-            console.warn('matcherConfigResetEntryForm(): Tab reset not implemented, form will not be generated!');
-            return;
-        }
-    }
-}
-
-function matcherConfigShowActiveList() {
-    let currentTab = globalSettings.matcherConfig.currentTab;
-    for(let listGroup of Object.values(MatcherConfigShortcuts.listElems)) {
-        if(currentTab !== listGroup.dataset.listName) {
-            listGroup.classList.remove('active');
-        } else {
-            listGroup.classList.add('active');
-        }
-    }
-}
-
-function matcherConfigSelectListEntryListener(event) {
-    console.log(event.target);
-    let entryElem = event.target;
-    while(!entryElem.matches('.userscript-config-list-entries')) {
-        if(entryElem.matches('.userscript-config-list-entry')) {
-            break;
-        } else {
-            entryElem = entryElem.parentElement;
-        }
-    }
-    if(!entryElem.matches('.userscript-config-list-entry')) {
-        return;
-    }
-
-    matcherConfigSelectListEntry(entryElem);
-}
-
-function matcherConfigSelectListEntry(entryElem, toggle = true) {
-    if(!entryElem.classList.contains('selected')) {
-        if(MatcherConfigShortcuts.selectedListEntryElem) {
-            MatcherConfigShortcuts.selectedListEntryElem.classList.remove('selected');
-        }
-
-        MatcherConfigShortcuts.selectedListEntryElem = entryElem;
-        entryElem.classList.add('selected');
-        matcherConfigSetEntryActionBar('modify');
-    } else if(toggle) {
-        entryElem.classList.remove('selected');
-        MatcherConfigShortcuts.selectedListEntryElem = undefined;
-
-        matcherConfigResetEntryForm();
-        matcherConfigSetEntryActionBar('add');
-    }
-}
-
-function matcherConfigUpdateChecklistListener(event) {
-    console.log(event.currentTarget); // debugging
-    if(!event.target.matches('input')) {
-        return;
-    }
-    let groupId = event.currentTarget.dataset.id;
-    let optionId = event.target.id;
-
-    for(let group of Object.values(globalSettings.matcherConfig.config)) {
-        if(group.id === groupId) {
-            group.options.find(x => x.id === optionId).value = event.target.checked;
-            break;
-        }
-    }
-}
-
-function matcherConfigToggleEntryFormListener(event) {
-    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, !MatcherConfigShortcuts.listContentsElem.matches('.overlay'), 'form');
-}
-
-function matcherConfigEditListEntryListener(event) {
-    let currentTab = globalSettings.matcherConfig.currentTab;
-    if(MatcherConfigShortcuts.listContentsElem.matches('.overlay') && MatcherConfigShortcuts.listContentsElem.querySelector('> .userscript-overlay')?.matches('.form')) {
-        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
-        return;
-    }
-
-    if(!MatcherConfigShortcuts.selectedListEntryElem) {
-        console.log('matcherConfigEditListEntryListener(): No entry selected, nothing can be edited...');
-        return;
-    }
-
-    if(currentTab === 'matchlist' || currentTab === 'blacklist') {
-        MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = MatcherConfigShortcuts.selectedListEntryElem.dataset.profileid;
-        MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = MatcherConfigShortcuts.selectedListEntryElem.querySelector('.conf-list-entry-descript').textContent;
-    } else if(currentTab === 'applist') {
-        MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = MatcherConfigShortcuts.selectedListEntryElem.dataset.appid;
-        MatcherConfigShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = MatcherConfigShortcuts.selectedListEntryElem.querySelector('.conf-list-entry-descript').textContent;
-    } else {
-        console.warn('matcherConfigEditListEntryListener(): Entry edit prefill not implemented, form will not be prefilled!');
-        return;
-    }
-
-    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'form');
-}
-
-function matcherConfigDeleteListEntryListener(event) {
-    if(!MatcherConfigShortcuts.selectedListEntryElem) {
-        console.log('matcherConfigDeleteListEntryListener(): No entry selected, nothing will be removed...');
-        return;
-    }
-    let listGroup = MatcherConfigShortcuts.selectedListEntryElem.parentElement.dataset.listName;
-    if(!globalSettings.matcherConfig.lists[listGroup]) {
-        console.warn('matcherConfigDeleteListEntryListener(): List not found, something is wrong!');
-        return;
-    }
-
-    if(listGroup==='matchlist' || listGroup==='blacklist') {
-        let profileid = MatcherConfigShortcuts.selectedListEntryElem.dataset.profileid;
-        let selectedIndex = globalSettings.matcherConfig.lists[listGroup].data.findIndex(x => x.profileid === profileid);
-        if(selectedIndex === -1) {
-            console.warn('matcherConfigDeleteListEntryListener(): Profileid not found, which means list and data are not synced!');
-            return;
-        }
-        globalSettings.matcherConfig.lists[listGroup].data.splice(selectedIndex, 1);
-        MatcherConfigShortcuts.selectedListEntryElem.remove();
-        MatcherConfigShortcuts.selectedListEntryElem = undefined;
-        matcherConfigSetEntryActionBar('add');
-    } else if(listGroup === 'applist') {
-        let appid = MatcherConfigShortcuts.selectedListEntryElem.dataset.appid;
-        let selectedIndex = globalSettings.matcherConfig.lists[listGroup].data.findIndex(x => x.appid === appid);
-        if(selectedIndex === -1) {
-            console.warn('matcherConfigDeleteListEntryListener(): Appid not found, which means list and data are not synced!');
-            return;
-        }
-        globalSettings.matcherConfig.lists[listGroup].data.splice(selectedIndex, 1);
-        MatcherConfigShortcuts.selectedListEntryElem.remove();
-        MatcherConfigShortcuts.selectedListEntryElem = undefined;
-        matcherConfigSetEntryActionBar('add');
-    } else {
-        console.warn('matcherConfigDeleteListEntryListener(): List deletion not implemented, nothing will be changed!');
-    }
-}
-
-async function matcherConfigEntryFormAddListener(event) {
-    let currentTab = globalSettings.matcherConfig.currentTab;
-
-    if(currentTab==='matchlist' || currentTab==='blacklist') {
-        MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
-        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
-
-        const formElem = MatcherConfigShortcuts.listFormElem;
-        let profileValue = formElem.querySelector('#entry-form-id').value;
-        let description = formElem.querySelector('#entry-form-descript').value;
-        let profileEntry;
-
-        if(steamToolsUtils.isSteamId64Format(profileValue)) {
-            profileEntry = globalSettings.matcherConfig.lists[currentTab].data.find(x => x.profileid === profileValue);
-        }
-
-        if(profileEntry) {
-            // app found: prompt user if they want to overwrite existing data
-            let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`[data-profileid="${profileEntry.profileid}"]`);
-            MatcherConfigShortcuts.entryEditOld = profileEntry;
-            MatcherConfigShortcuts.entryEditNew = { descript: description };
-            matcherConfigSelectListEntry(selectedEntryElem, false);
-            document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
-            document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
-            document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
-            matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading dialog');
-            return;
-        } else {
-            let profile = await Profile.findProfile(profileValue);
-            if(profile) {
-                profileEntry = globalSettings.matcherConfig.lists[currentTab].data.find(x => x.profileid === profile.id);
-                if(profileEntry) {
-                    // app found: prompt user if they want to overwrite existing data
-                    let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`[data-profileid="${profileEntry.profileid}"]`);
-                    MatcherConfigShortcuts.entryEditOld = profileEntry;
-                    MatcherConfigShortcuts.entryEditNew = { descript: description };
-                    matcherConfigSelectListEntry(selectedEntryElem, false);
-                    document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
-                    document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
-                    document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
-                    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading dialog');
-                    return;
-                } else {
-                    let entryGroupElem = MatcherConfigShortcuts.listElems[currentTab];
-                    let tradeTokenWarning = currentTab === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
+                    let tradeTokenWarning = listName === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
                     let entryHTMLString = `<div class="userscript-config-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
                       +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar ${profile.getStateString()}">`
                       +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
                       +    '</a>'
                       +    `<div class="conf-list-entry-name" title="${profile.name}" >${profile.name}</div>`
+                      +    `<div class="conf-list-entry-descript">${data.descript}</div>`
+                      + '</div>';
+
+                    entriesHTMLString.push({ key1: profile.id, key2: null, string: entryHTMLString });
+                } else if(listName === 'applist') {
+                    let entryHTMLString;
+                    let appdata = await Profile.findAppMetaData(data.appid);
+                    if(!appdata) {
+                        entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${data.appid}" data-name="">`
+                          +    '<a class="app-header">'
+                          +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
+                          +    '</a>'
+                          +    `<div class="conf-list-entry-profile">appid-${data.appid}</div>`
+                          +    `<div class="conf-list-entry-descript">${data.descript}</div>`
+                          + '</div>';
+                    } else {
+                        entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${appdata.appid}" data-name="${appdata.name}">`
+                          +    `<a href="https://steamcommunity.com/my/gamecards/${appdata.appid}}/" target="_blank" rel="noopener noreferrer" class="app-header">`
+                          +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
+                          +    '</a>'
+                          +    `<div class="conf-list-entry-name">${appdata.name}</div>`
+                          +    `<div class="conf-list-entry-descript">${data.descript}</div>`
+                          + '</div>';
+                    }
+
+
+                    entriesHTMLString.push({ key1: appdata?.name, key2: data.appid, string: entryHTMLString });
+                } else {
+                    console.warn('SteamItemMatcher.configLoadUI(): HTML generation for a list not implemented, that list will be empty!');
+                    break;
+                }
+            }
+
+            if(listName === 'applist') {
+                entriesHTMLString.sort((a, b) => !a.key1 ? a.key2-b.key2 : a.key1-b.key1);
+            }
+
+            entryGroupElem.insertAdjacentHTML('afterbegin', entriesHTMLString.reduce((str, entry) => str+entry.string, ''));
+        }
+
+        // set active tab
+        if(globalSettings.matcherConfig.currentTab) {
+            SteamItemMatcher.configSetListTab(globalSettings.matcherConfig.currentTab);
+        }
+
+        SteamItemMatcher.configResetEntryForm();
+
+        SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, false);
+    },
+
+    configSetEntryActionBar: function(actionBarName) {
+        const validActions = ['add', 'modify'];
+        let listActionElem = SteamItemMatcher.configShortcuts.listActionBarElem;
+        if(validActions.includes(actionBarName)) {
+            listActionElem.className = 'conf-list-entry-action ' + actionBarName;
+        } else {
+            console.warn('SteamItemMatcher.configSetEntryActionBar(): Action bar name not valid, nothing will change!');
+        }
+    },
+
+    configSelectListTabListener: function(event) {
+        console.log(event.target); // debugging
+        if(!event.target.matches('.userscript-config-list-tab') || event.target.matches('.active')) {
+            return;
+        }
+        SteamItemMatcher.configSetListTab(event.target.dataset.listName);
+    },
+
+    configSetListTab: function(tabName) {
+        if(!Object.keys(globalSettings.matcherConfig.lists).includes(tabName)) {
+            console.error('SteamItemMatcher.configSetListTab(): invalid tab name!');
+            return;
+        }
+
+        SteamItemMatcher.configShortcuts.listTabListElem.querySelector(`.userscript-config-list-tab.active`)?.classList.remove('active');
+        const target = SteamItemMatcher.configShortcuts.listTabListElem.querySelector(`.userscript-config-list-tab[data-list-name=${tabName}]`);
+        target.classList.add('active');
+        globalSettings.matcherConfig.currentTab = target.dataset.listName;
+        SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, false);
+
+        if(SteamItemMatcher.configShortcuts.selectedListEntryElem) {
+            SteamItemMatcher.configSelectListEntry(SteamItemMatcher.configShortcuts.selectedListEntryElem, true);
+        }
+
+        SteamItemMatcher.configResetEntryForm();
+        SteamItemMatcher.configShowActiveList();
+    },
+
+    configResetEntryForm: function() {
+        let currentTab = globalSettings.matcherConfig.currentTab;
+
+        let entryFormElem = SteamItemMatcher.configShortcuts.listFormElem;
+        let currentFormType = entryFormElem.dataset.type;
+
+        if(currentFormType !== currentTab) {
+            // set innerHTML to wipe everything and change form
+            entryFormElem.innerHTML = '';
+            if(currentTab==='matchlist' || currentTab==='blacklist') {
+                entryFormElem.innerHTML = '<input type="text" id="entry-form-id" class="userscript-input" placeholder="profileid/customUrlid">'
+                  + '<textarea name="" id="entry-form-descript" class="userscript-input" placeholder="Note (Optional)" rows="5"></textarea>';
+            } else if(currentTab === 'applist') {
+                entryFormElem.innerHTML = '<input type="text" id="entry-form-id" class="userscript-input" placeholder="appid">'
+                  + '<textarea name="" id="entry-form-descript" class="userscript-input" placeholder="Note (Optional)" rows="5"></textarea>';
+            } else {
+                console.warn('SteamItemMatcher.configResetEntryForm(): Tab reset not implemented, form will not be generated!');
+                return;
+            }
+
+            let entryFormActionHTMLString = '<div class="userscript-dialog-container">'
+              +    '<button id="dialog-form-cancel" class="userscript-btn red">Cancel</button>'
+              +    '<button id="dialog-form-add" class="userscript-btn green">Add</button>'
+              + '</div>';
+            entryFormElem.insertAdjacentHTML('beforeend', entryFormActionHTMLString);
+            document.getElementById('dialog-form-cancel').addEventListener('click', SteamItemMatcher.configEntryFormCancelListener);
+            document.getElementById('dialog-form-add').addEventListener('click', SteamItemMatcher.configEntryFormAddListener);
+
+            entryFormElem.dataset.type = currentTab;
+        } else {
+            // reset input values
+            if(currentTab === 'matchlist' || currentTab === 'blacklist') {
+                entryFormElem.querySelector('#entry-form-id').value = '';
+                entryFormElem.querySelector('#entry-form-descript').value = '';
+            } else if(currentTab === 'applist') {
+                entryFormElem.querySelector('#entry-form-id').value = '';
+                entryFormElem.querySelector('#entry-form-descript').value = '';
+            } else {
+                console.warn('SteamItemMatcher.configResetEntryForm(): Tab reset not implemented, form will not be generated!');
+                return;
+            }
+        }
+    },
+
+    configShowActiveList: function() {
+        let currentTab = globalSettings.matcherConfig.currentTab;
+        for(let listGroup of Object.values(SteamItemMatcher.configShortcuts.listElems)) {
+            if(currentTab !== listGroup.dataset.listName) {
+                listGroup.classList.remove('active');
+            } else {
+                listGroup.classList.add('active');
+            }
+        }
+    },
+
+    configSelectListEntryListener: function(event) {
+        console.log(event.target);
+        let entryElem = event.target;
+        while(!entryElem.matches('.userscript-config-list-entries')) {
+            if(entryElem.matches('.userscript-config-list-entry')) {
+                break;
+            } else {
+                entryElem = entryElem.parentElement;
+            }
+        }
+        if(!entryElem.matches('.userscript-config-list-entry')) {
+            return;
+        }
+
+        SteamItemMatcher.configSelectListEntry(entryElem);
+    },
+
+    configSelectListEntry: function(entryElem, toggle = true) {
+        if(!entryElem.classList.contains('selected')) {
+            if(SteamItemMatcher.configShortcuts.selectedListEntryElem) {
+                SteamItemMatcher.configShortcuts.selectedListEntryElem.classList.remove('selected');
+            }
+
+            SteamItemMatcher.configShortcuts.selectedListEntryElem = entryElem;
+            entryElem.classList.add('selected');
+            SteamItemMatcher.configSetEntryActionBar('modify');
+        } else if(toggle) {
+            entryElem.classList.remove('selected');
+            SteamItemMatcher.configShortcuts.selectedListEntryElem = undefined;
+
+            SteamItemMatcher.configResetEntryForm();
+            SteamItemMatcher.configSetEntryActionBar('add');
+        }
+    },
+
+    configUpdateChecklistListener: function(event) {
+        console.log(event.currentTarget); // debugging
+        if(!event.target.matches('input')) {
+            return;
+        }
+        let groupId = event.currentTarget.dataset.id;
+        let optionId = event.target.id;
+
+        for(let group of Object.values(globalSettings.matcherConfig.config)) {
+            if(group.id === groupId) {
+                group.options.find(x => x.id === optionId).value = event.target.checked;
+                break;
+            }
+        }
+    },
+
+    // add new config list entry, populated input values persist when form is minimized
+    configToggleEntryFormListener: function(event) {
+        SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, !SteamItemMatcher.configShortcuts.listContentsElem.matches('.overlay'), 'form');
+    },
+
+    // edit selected entry, prefilled with selected entry info
+    configEditListEntryListener: function(event) {
+        let currentTab = globalSettings.matcherConfig.currentTab;
+        if(SteamItemMatcher.configShortcuts.listContentsElem.matches('.overlay') && SteamItemMatcher.configShortcuts.listContentsElem.querySelector('> .userscript-overlay')?.matches('.form')) {
+            SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, false);
+            return;
+        }
+
+        if(!SteamItemMatcher.configShortcuts.selectedListEntryElem) {
+            console.log('SteamItemMatcher.configEditListEntryListener(): No entry selected, nothing can be edited...');
+            return;
+        }
+
+        if(currentTab === 'matchlist' || currentTab === 'blacklist') {
+            SteamItemMatcher.configShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = SteamItemMatcher.configShortcuts.selectedListEntryElem.dataset.profileid;
+            SteamItemMatcher.configShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = SteamItemMatcher.configShortcuts.selectedListEntryElem.querySelector('.conf-list-entry-descript').textContent;
+        } else if(currentTab === 'applist') {
+            SteamItemMatcher.configShortcuts.MAIN_ELEM.querySelector('#entry-form-id').value = SteamItemMatcher.configShortcuts.selectedListEntryElem.dataset.appid;
+            SteamItemMatcher.configShortcuts.MAIN_ELEM.querySelector('#entry-form-descript').value = SteamItemMatcher.configShortcuts.selectedListEntryElem.querySelector('.conf-list-entry-descript').textContent;
+        } else {
+            console.warn('SteamItemMatcher.configEditListEntryListener(): Entry edit prefill not implemented, form will not be prefilled!');
+            return;
+        }
+
+        SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, true, 'form');
+    },
+
+    // remove selected entry
+    configDeleteListEntryListener: function(event) {
+        if(!SteamItemMatcher.configShortcuts.selectedListEntryElem) {
+            console.log('SteamItemMatcher.configDeleteListEntryListener(): No entry selected, nothing will be removed...');
+            return;
+        }
+        let listGroup = SteamItemMatcher.configShortcuts.selectedListEntryElem.parentElement.dataset.listName;
+        if(!globalSettings.matcherConfig.lists[listGroup]) {
+            console.warn('SteamItemMatcher.configDeleteListEntryListener(): List not found, something is wrong!');
+            return;
+        }
+
+        if(listGroup==='matchlist' || listGroup==='blacklist') {
+            let profileid = SteamItemMatcher.configShortcuts.selectedListEntryElem.dataset.profileid;
+            let selectedIndex = globalSettings.matcherConfig.lists[listGroup].data.findIndex(x => x.profileid === profileid);
+            if(selectedIndex === -1) {
+                console.warn('SteamItemMatcher.configDeleteListEntryListener(): Profileid not found, which means list and data are not synced!');
+                return;
+            }
+            globalSettings.matcherConfig.lists[listGroup].data.splice(selectedIndex, 1);
+            SteamItemMatcher.configShortcuts.selectedListEntryElem.remove();
+            SteamItemMatcher.configShortcuts.selectedListEntryElem = undefined;
+            SteamItemMatcher.configSetEntryActionBar('add');
+        } else if(listGroup === 'applist') {
+            let appid = SteamItemMatcher.configShortcuts.selectedListEntryElem.dataset.appid;
+            let selectedIndex = globalSettings.matcherConfig.lists[listGroup].data.findIndex(x => x.appid === appid);
+            if(selectedIndex === -1) {
+                console.warn('SteamItemMatcher.configDeleteListEntryListener(): Appid not found, which means list and data are not synced!');
+                return;
+            }
+            globalSettings.matcherConfig.lists[listGroup].data.splice(selectedIndex, 1);
+            SteamItemMatcher.configShortcuts.selectedListEntryElem.remove();
+            SteamItemMatcher.configShortcuts.selectedListEntryElem = undefined;
+            SteamItemMatcher.configSetEntryActionBar('add');
+        } else {
+            console.warn('SteamItemMatcher.configDeleteListEntryListener(): List deletion not implemented, nothing will be changed!');
+        }
+    },
+
+    configEntryFormAddListener: async function(event) {
+        let currentTab = globalSettings.matcherConfig.currentTab;
+
+        if(currentTab==='matchlist' || currentTab==='blacklist') {
+            SteamItemMatcher.configShortcuts.listActionBarElem.classList.add('disabled');
+            SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, true, 'loading');
+
+            const formElem = SteamItemMatcher.configShortcuts.listFormElem;
+            let profileValue = formElem.querySelector('#entry-form-id').value;
+            let description = formElem.querySelector('#entry-form-descript').value;
+            let profileEntry;
+
+            if(steamToolsUtils.isSteamId64Format(profileValue)) {
+                profileEntry = globalSettings.matcherConfig.lists[currentTab].data.find(x => x.profileid === profileValue);
+            }
+
+            if(profileEntry) {
+                // app found: prompt user if they want to overwrite existing data
+                let selectedEntryElem = SteamItemMatcher.configShortcuts.listElems[currentTab].querySelector(`[data-profileid="${profileEntry.profileid}"]`);
+                SteamItemMatcher.configShortcuts.entryEditOld = profileEntry;
+                SteamItemMatcher.configShortcuts.entryEditNew = { descript: description };
+                SteamItemMatcher.configSelectListEntry(selectedEntryElem, false);
+                document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
+                document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
+                document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
+                SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, true, 'loading dialog');
+                return;
+            } else {
+                let profile = await Profile.findProfile(profileValue);
+                if(profile) {
+                    profileEntry = globalSettings.matcherConfig.lists[currentTab].data.find(x => x.profileid === profile.id);
+                    if(profileEntry) {
+                        // app found: prompt user if they want to overwrite existing data
+                        let selectedEntryElem = SteamItemMatcher.configShortcuts.listElems[currentTab].querySelector(`[data-profileid="${profileEntry.profileid}"]`);
+                        SteamItemMatcher.configShortcuts.entryEditOld = profileEntry;
+                        SteamItemMatcher.configShortcuts.entryEditNew = { descript: description };
+                        SteamItemMatcher.configSelectListEntry(selectedEntryElem, false);
+                        document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
+                        document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
+                        document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
+                        SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, true, 'loading dialog');
+                        return;
+                    } else {
+                        let entryGroupElem = SteamItemMatcher.configShortcuts.listElems[currentTab];
+                        let tradeTokenWarning = currentTab === 'blacklist' || Profile.me?.isFriend(profile) || profile.tradeToken;
+                        let entryHTMLString = `<div class="userscript-config-list-entry${tradeTokenWarning ? '' : ' warn'}" data-profileid="${profile.id}" ${profile.url ? `data-url="${profile.url}"` : ''} data-name="${profile.name}">`
+                          +    `<a href="https://steamcommunity.com/${profile.url ? `id/${profile.url}` : `profiles/${profile.id}`}/" target="_blank" rel="noopener noreferrer" class="avatar ${profile.getStateString()}">`
+                          +       `<img src="https://avatars.akamai.steamstatic.com/${profile.pfp}.jpg" alt="">`
+                          +    '</a>'
+                          +    `<div class="conf-list-entry-name" title="${profile.name}" >${profile.name}</div>`
+                          +    `<div class="conf-list-entry-descript">${description}</div>`
+                          + '</div>';
+
+                        entryGroupElem.insertAdjacentHTML('afterbegin', entryHTMLString);
+                        globalSettings.matcherConfig.lists[currentTab].data.push({ profileid: profile.id, descript: description });
+                    }
+                } else {
+                    alert('No valid profile found. Data will not be added!');
+                }
+            }
+
+            SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, false);
+            SteamItemMatcher.configShortcuts.listActionBarElem.classList.remove('disabled');
+        } else if(currentTab === 'applist') {
+            SteamItemMatcher.configShortcuts.listActionBarElem.classList.add('disabled');
+            SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, true, 'loading');
+
+            const formElem = SteamItemMatcher.configShortcuts.listFormElem;
+            let appid = parseInt(formElem.querySelector('#entry-form-id').value);
+            let description = formElem.querySelector('#entry-form-descript').value;
+            let appidEntry = globalSettings.matcherConfig.lists[currentTab].data.find(x => x.appid === appid);
+
+            if(appidEntry) {
+                // app found: prompt user if they want to overwrite existing data
+                let selectedEntryElem = SteamItemMatcher.configShortcuts.listElems[currentTab].querySelector(`.userscript-config-list-entry[data-appid="${appidEntry.appid}"]`);
+                SteamItemMatcher.configShortcuts.entryEditOld = appidEntry;
+                SteamItemMatcher.configShortcuts.entryEditNew = { descript: description };
+                SteamItemMatcher.configSelectListEntry(selectedEntryElem, false);
+                document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
+                document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
+                document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
+                SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, true, 'loading dialog');
+                return;
+            } else {
+                let appdata = await Profile.findAppMetaData(appid);
+                if(!appdata) {
+                    // no appdata exists, could possibly mean that community data was nuked (eg 梦中女孩) even if the items still exist
+                    // therefore don't reject entry submission and add entry
+                    let entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${appid}" data-name="">`
+                      +    `<a class="app-header">`
+                      +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
+                      +    '</a>'
+                      +    `<div class="conf-list-entry-profile">${appid}</div>`
                       +    `<div class="conf-list-entry-descript">${description}</div>`
                       + '</div>';
 
-                    entryGroupElem.insertAdjacentHTML('afterbegin', entryHTMLString);
-                    globalSettings.matcherConfig.lists[currentTab].data.push({ profileid: profile.id, descript: description });
-                }
-            } else {
-                alert('No valid profile found. Data will not be added!');
-            }
-        }
-
-        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
-        MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
-    } else if(currentTab === 'applist') {
-        MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
-        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
-
-        const formElem = MatcherConfigShortcuts.listFormElem;
-        let appid = parseInt(formElem.querySelector('#entry-form-id').value);
-        let description = formElem.querySelector('#entry-form-descript').value;
-        let appidEntry = globalSettings.matcherConfig.lists[currentTab].data.find(x => x.appid === appid);
-
-        if(appidEntry) {
-            // app found: prompt user if they want to overwrite existing data
-            let selectedEntryElem = MatcherConfigShortcuts.listElems[currentTab].querySelector(`.userscript-config-list-entry[data-appid="${appidEntry.appid}"]`);
-            MatcherConfigShortcuts.entryEditOld = appidEntry;
-            MatcherConfigShortcuts.entryEditNew = { descript: description };
-            matcherConfigSelectListEntry(selectedEntryElem, false);
-            document.getElementById('conf-list-entry-old').innerHTML = selectedEntryElem.innerHTML;
-            document.getElementById('conf-list-entry-new').innerHTML = selectedEntryElem.innerHTML;
-            document.getElementById('conf-list-entry-new').querySelector('.conf-list-entry-descript').textContent = description;
-            matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading dialog');
-            return;
-        } else {
-            let appdata = await Profile.findAppMetaData(appid);
-            if(!appdata) {
-                // no appdata exists, could possibly mean that community data was nuked (eg 梦中女孩) even if the items still exist
-                // therefore don't reject entry submission and add entry
-                let entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${appid}" data-name="">`
-                  +    `<a class="app-header">`
-                  +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
-                  +    '</a>'
-                  +    `<div class="conf-list-entry-profile">${appid}</div>`
-                  +    `<div class="conf-list-entry-descript">${description}</div>`
-                  + '</div>';
-
-                MatcherConfigShortcuts.listElems[currentTab].insertAdjacentHTML('beforeend', entryHTMLString);
-                globalSettings.matcherConfig.lists[currentTab].data.push({ appid: appid, descript: description });
-            } else {
-                let insertBeforeThisEntry;
-                for(let entryElem of MatcherConfigShortcuts.listElems[currentTab].querySelectorAll(`.userscript-config-list-entry`)) {
-                    if(entryElem.dataset.name && appdata.name.localeCompare(entryElem.dataset.name) < 0) {
-                        insertBeforeThisEntry = entryElem;
-                        break;
-                    }
-                }
-                let entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${appdata.appid}" data-name="${appdata.name}">`
-                  +    `<a href="https://steamcommunity.com/my/gamecards/${appdata.appid}}/" target="_blank" rel="noopener noreferrer" class="app-header">`
-                  +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
-                  +    '</a>'
-                  +    `<div class="conf-list-entry-name">${appdata.name}</div>`
-                  +    `<div class="conf-list-entry-descript">${description}</div>`
-                  + '</div>';
-
-                if(insertBeforeThisEntry) {
-                    insertBeforeThisEntry.insertAdjacentHTML('beforebegin', entryHTMLString);
+                    SteamItemMatcher.configShortcuts.listElems[currentTab].insertAdjacentHTML('beforeend', entryHTMLString);
+                    globalSettings.matcherConfig.lists[currentTab].data.push({ appid: appid, descript: description });
                 } else {
-                    MatcherConfigShortcuts.listElems[currentTab].insertAdjacentHTML('afterbegin', entryHTMLString);
+                    let insertBeforeThisEntry;
+                    for(let entryElem of SteamItemMatcher.configShortcuts.listElems[currentTab].querySelectorAll(`.userscript-config-list-entry`)) {
+                        if(entryElem.dataset.name && appdata.name.localeCompare(entryElem.dataset.name) < 0) {
+                            insertBeforeThisEntry = entryElem;
+                            break;
+                        }
+                    }
+                    let entryHTMLString = `<div class="userscript-config-list-entry" data-appid="${appdata.appid}" data-name="${appdata.name}">`
+                      +    `<a href="https://steamcommunity.com/my/gamecards/${appdata.appid}}/" target="_blank" rel="noopener noreferrer" class="app-header">`
+                      +       `<img src="https://cdn.cloudflare.steamstatic.com/steam/apps/${appdata.appid}/header.jpg" alt="">`
+                      +    '</a>'
+                      +    `<div class="conf-list-entry-name">${appdata.name}</div>`
+                      +    `<div class="conf-list-entry-descript">${description}</div>`
+                      + '</div>';
+
+                    if(insertBeforeThisEntry) {
+                        insertBeforeThisEntry.insertAdjacentHTML('beforebegin', entryHTMLString);
+                    } else {
+                        SteamItemMatcher.configShortcuts.listElems[currentTab].insertAdjacentHTML('afterbegin', entryHTMLString);
+                    }
+                    let entryIndex = globalSettings.matcherConfig.lists[currentTab].data.findIndex(x => x.appid === parseInt(insertBeforeThisEntry.dataset.appid));
+                    globalSettings.matcherConfig.lists[currentTab].data.splice(entryIndex - 1, 0, { appid: appdata.appid, descript: description });
                 }
-                let entryIndex = globalSettings.matcherConfig.lists[currentTab].data.findIndex(x => x.appid === parseInt(insertBeforeThisEntry.dataset.appid));
-                globalSettings.matcherConfig.lists[currentTab].data.splice(entryIndex - 1, 0, { appid: appdata.appid, descript: description });
+
+                SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, false);
+                SteamItemMatcher.configShortcuts.listActionBarElem.classList.remove('disabled');
             }
-
-            matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
-            MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
+        } else {
+            console.warn('SteamItemMatcher.configEntryFormAddListener(): Tab entry submission not implemented, no entry modified/added!');
         }
-    } else {
-        console.warn('matcherConfigEntryFormAddListener(): Tab entry submission not implemented, no entry modified/added!');
-    }
-}
+    },
 
-function matcherConfigEntryFormCancelListener(event) {
-    let currentTab = globalSettings.matcherConfig.currentTab;
-    if(currentTab === 'matchlist' || currentTab === 'blacklist') {
-        MatcherConfigShortcuts.listContainer.querySelector('#entry-form-id').value = '';
-        MatcherConfigShortcuts.listContainer.querySelector('#entry-form-descript').value = '';
-    } else if(currentTab === 'applist') {
-        MatcherConfigShortcuts.listContainer.querySelector('#entry-form-id').value = '';
-        MatcherConfigShortcuts.listContainer.querySelector('#entry-form-descript').value = '';
-    } else {
-        console.warn('matcherConfigEntryFormCancelListener(): Entry form cancel not implemented, form will not be cleared!');
-    }
-
-    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
-}
-
-function matcherConfigListDialogCancelListener(event) {
-    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'form');
-    document.getElementById('conf-list-entry-old').innerHTML = '';
-    document.getElementById('conf-list-entry-new').innerHTML = '';
-    MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
-    MatcherConfigShortcuts.entryEditOld = undefined;
-    MatcherConfigShortcuts.entryEditNew = undefined;
-}
-
-function matcherConfigListDialogConfirmListener(event) {
-    Object.assign(MatcherConfigShortcuts.entryEditOld, MatcherConfigShortcuts.entryEditNew);
-    MatcherConfigShortcuts.selectedListEntryElem.innerHTML = document.getElementById('conf-list-entry-new').innerHTML;
-    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
-    document.getElementById('conf-list-entry-old').innerHTML = '';
-    document.getElementById('conf-list-entry-new').innerHTML = '';
-    MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
-    matcherConfigResetEntryForm();
-    MatcherConfigShortcuts.entryEditOld = undefined;
-    MatcherConfigShortcuts.entryEditNew = undefined;
-}
-
-async function matcherConfigImportListener() {
-    const isValidConfigObject = obj => {
-        if(obj.config && !steamToolsUtils.isSimplyObject(obj.config)) {
-            return false;
+    configEntryFormCancelListener: function(event) {
+        let currentTab = globalSettings.matcherConfig.currentTab;
+        if(currentTab === 'matchlist' || currentTab === 'blacklist') {
+            SteamItemMatcher.configShortcuts.listContainer.querySelector('#entry-form-id').value = '';
+            SteamItemMatcher.configShortcuts.listContainer.querySelector('#entry-form-descript').value = '';
+        } else if(currentTab === 'applist') {
+            SteamItemMatcher.configShortcuts.listContainer.querySelector('#entry-form-id').value = '';
+            SteamItemMatcher.configShortcuts.listContainer.querySelector('#entry-form-descript').value = '';
+        } else {
+            console.warn('SteamItemMatcher.configEntryFormCancelListener(): Entry form cancel not implemented, form will not be cleared!');
         }
-        for(let optionGroup of Object.values(obj.config)) {
-            if(!steamToolsUtils.isSimplyObject(optionGroup) || !Array.isArray(optionGroup.options)) {
+
+        SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, false);
+    },
+
+    configListDialogCancelListener: function(event) {
+        SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, true, 'form');
+        document.getElementById('conf-list-entry-old').innerHTML = '';
+        document.getElementById('conf-list-entry-new').innerHTML = '';
+        SteamItemMatcher.configShortcuts.listActionBarElem.classList.remove('disabled');
+        SteamItemMatcher.configShortcuts.entryEditOld = undefined;
+        SteamItemMatcher.configShortcuts.entryEditNew = undefined;
+    },
+
+    configListDialogConfirmListener: function(event) {
+        Object.assign(SteamItemMatcher.configShortcuts.entryEditOld, SteamItemMatcher.configShortcuts.entryEditNew);
+        SteamItemMatcher.configShortcuts.selectedListEntryElem.innerHTML = document.getElementById('conf-list-entry-new').innerHTML;
+        SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, false);
+        document.getElementById('conf-list-entry-old').innerHTML = '';
+        document.getElementById('conf-list-entry-new').innerHTML = '';
+        SteamItemMatcher.configShortcuts.listActionBarElem.classList.remove('disabled');
+        SteamItemMatcher.configResetEntryForm();
+        SteamItemMatcher.configShortcuts.entryEditOld = undefined;
+        SteamItemMatcher.configShortcuts.entryEditNew = undefined;
+    },
+
+    configImportListener: async function() {
+        const isValidConfigObject = obj => {
+            if(obj.config && !steamToolsUtils.isSimplyObject(obj.config)) {
                 return false;
             }
-            for(let option of optionGroup.options) {
-                if(typeof option.name !== 'string' || typeof option.id !== 'string' || typeof option.label !== 'string' || typeof option.value !== 'boolean') {
+            for(let optionGroup of Object.values(obj.config)) {
+                if(!steamToolsUtils.isSimplyObject(optionGroup) || !Array.isArray(optionGroup.options)) {
+                    return false;
+                }
+                for(let option of optionGroup.options) {
+                    if(typeof option.name !== 'string' || typeof option.id !== 'string' || typeof option.label !== 'string' || typeof option.value !== 'boolean') {
+                        return false;
+                    }
+                }
+            }
+
+            if(obj.lists && !steamToolsUtils.isSimplyObject(obj.lists)) {
+                return false;
+            }
+            for(let list of Object.values(obj.lists)) {
+                if(!steamToolsUtils.isSimplyObject(list) || !Array.isArray(list.data)) {
                     return false;
                 }
             }
+
+            return true;
         }
 
-        if(obj.lists && !steamToolsUtils.isSimplyObject(obj.lists)) {
-            return false;
+        let importedConfig = await importConfig('matcher');
+        if(!isValidConfigObject(importedConfig)) {
+            throw 'SteamItemMatcher.configImportListener(): Invalid imported config!';
         }
-        for(let list of Object.values(obj.lists)) {
-            if(!steamToolsUtils.isSimplyObject(list) || !Array.isArray(list.data)) {
+
+        globalSettings.matcherConfig = importedConfig;
+        SteamItemMatcher.configLoadUI();
+    },
+
+    configExportListener: async function() {
+        exportConfig('matcher', 'SteamMatcherConfig');
+    },
+
+    configSaveListener: async function() {
+        await SteamToolsDbManager.setToolConfig('matcherConfig');
+    },
+
+    configLoadListener: async function() {
+        let config = await SteamToolsDbManager.getToolConfig('matcherConfig');
+        if(config.matcherConfig) {
+            globalSettings.matcherConfig = config.matcherConfig;
+            SteamItemMatcher.configLoadUI();
+        }
+    },
+
+    configResetDefaultListener: function() {
+        let promptInput = prompt('WARNING: This will reset all config options back to default and all the lists will be earased. Proceed? (y/n)');
+        if(promptInput.toLowerCase().startsWith('y')) {
+            globalSettings.matcherConfig = steamToolsUtils.deepClone(SteamItemMatcher.SETTINGSDEFAULTS.matcherConfig);
+            SteamItemMatcher.configLoadUI();
+        }
+    },
+
+    configFullMatchListener: async function() {
+        SteamItemMatcher.configShortcuts.listActionBarElem.classList.add('disabled');
+        SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, true, 'loading');
+
+        let settings = globalSettings.matcherConfig.config;
+        let blacklist = settings.ignoreGroup.options.find(x => x.name==='blacklist').value
+          ? globalSettings.matcherConfig.lists.blacklist.data
+          : [];
+        let profileGroups = [];
+        let asfBots; // save in iDB, include match priority ranking
+
+        for(let matchGroup of settings.matchGroup.options) {
+            if(!matchGroup.value) {
+                continue;
+            }
+
+            let groupProfiles = { name: matchGroup.name, list: [] };
+            profileGroups.push(groupProfiles);
+
+            if(matchGroup.name === 'friends') {
+                if(!Profile.me) {
+                    await Profile.findProfile(steamToolsUtils.getMySteamId());
+                }
+                if(!Profile.me.friends || !Profile.me.friends.length) {
+                    await Profile.me.getFriends();
+                }
+                for(let profileString of Profile.me.friends) {
+                    groupProfiles.list.push(profileString.replace(/(id|profiles)\//g,''));
+                }
+            } else if(matchGroup.name === 'asfAny') {
+                asfBots ??= await SteamItemMatcher.getASFProfiles();
+                for(let botEntry of asfBots) {
+                    if(!botEntry.matchAny) {
+                        continue;
+                    }
+
+                    Profile.addTradeURL({ partner: botEntry.id, token: botEntry.tradeToken });
+                    groupProfiles.list.push(botEntry.id);
+                }
+            } else if(matchGroup.name === 'asfFair') {
+                asfBots ??= await SteamItemMatcher.getASFProfiles();
+                for(let botEntry of asfBots) {
+                    if(botEntry.matchAny) {
+                        continue;
+                    }
+
+                    Profile.addTradeURL({ partner: botEntry.id, token: botEntry.tradeToken });
+                    groupProfiles.list.push(botEntry.id);
+                }
+            } else if(matchGroup.name === 'custom') {
+                for(let profileEntry of globalSettings.matcherConfig.lists.matchlist.data) {
+                    groupProfiles.list.push(profileEntry.profileid);
+                }
+            } else {
+                console.warn(`SteamItemMatcher.configFullMatchListener(): Match Group '${matchGroup.name}' profile list processing not implemented, skipped!`);
+            }
+        }
+
+        SteamItemMatcher.shortcuts.data ??= {};
+        SteamItemMatcher.shortcuts.data.matchProfileGroups = profileGroups;
+
+        await SteamItemMatcher.startMatching();
+    },
+
+    configSingleMatchListener: async function() {
+        SteamItemMatcher.configShortcuts.listActionBarElem.classList.add('disabled');
+        SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, true, 'loading');
+
+        SteamItemMatcher.configShortcuts.matchSingleProfileProfileid.value = SteamItemMatcher.configShortcuts.matchSingleProfileProfileid.value.trim();
+        let profile = await Profile.findProfile(SteamItemMatcher.configShortcuts.matchSingleProfileProfileid.value);
+        if(!profile || (await profile.isMe())) {
+            alert('Invalid profile!');
+            SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, false);
+            SteamItemMatcher.configShortcuts.listActionBarElem.classList.remove('disabled');
+            return;
+        }
+
+        if( !(await SteamItemMatcher.verifyConfigSave()) ) {
+            return;
+        }
+
+        SteamItemMatcher.shortcuts.data ??= {};
+        SteamItemMatcher.shortcuts.data.matchProfileGroups = [{ name: 'single', list: [profile.id] }];
+
+        await SteamItemMatcher.startMatching();
+    },
+
+    verifyConfigSave: async function() {
+        let savedConfig = await SteamToolsDbManager.getToolConfig('matcherConfig');
+        if(JSON.stringify(globalSettings.matcherConfig) !== JSON.stringify(savedConfig.matcherConfig)) {
+            let userPrompt = prompt('WARNING: Settings have not been saved! Save now? (y/n/cancel)');
+            if(!userPrompt[0].localeCompare('y', 'en', { sensitivity: 'base' })) {
+                await SteamToolsDbManager.setToolConfig('matcherConfig');
+                console.log('SteamItemMatcher.configSingleMatchListener(): Saved Settings. Continuing to matching process...');
+            } else if(!userPrompt[0].localeCompare('n', 'en', { sensitivity: 'base' })) {
+                console.log('SteamItemMatcher.configSingleMatchListener(): Settings will not be saved. Continuing to matching process...');
+            } else {
+                if(!userPrompt[0].localeCompare('c', 'en', { sensitivity: 'base' })) {
+                    console.log('SteamItemMatcher.configSingleMatchListener(): Cancelled. Matching will not continue...');
+                } else {
+                    console.log('matcherconfigsinglematchlistener(): invalid input. matching will not continue...');
+                }
+                SteamItemMatcher.setOverlay(SteamItemMatcher.configShortcuts.listContentsElem, false);
+                SteamItemMatcher.configShortcuts.listActionBarElem.classList.remove('disabled');
                 return false;
             }
         }
 
         return true;
-    }
+    },
 
-    let importedConfig = await importConfig('matcher');
-    if(!isValidConfigObject(importedConfig)) {
-        throw 'matcherConfigImportListener(): Invalid imported config!';
-    }
+    startMatching: async function() {
 
-    globalSettings.matcherConfig = importedConfig;
-    matcherConfigLoadUI();
-}
+        GM_addStyle(cssMatcher);
 
-async function matcherConfigExportListener() {
-    exportConfig('matcher', 'SteamMatcherConfig');
-}
-
-async function matcherConfigSaveListener() {
-    await SteamToolsDbManager.setToolConfig('matcherConfig');
-}
-
-async function matcherConfigLoadListener() {
-    let config = await SteamToolsDbManager.getToolConfig('matcherConfig');
-    if(config.matcherConfig) {
-        globalSettings.matcherConfig = config.matcherConfig;
-        matcherConfigLoadUI();
-    }
-}
-
-function matcherConfigResetDefaultListener() {
-    let promptInput = prompt('WARNING: This will reset all config options back to default and all the lists will be earased. Proceed? (y/n)');
-    if(promptInput.toLowerCase().startsWith('y')) {
-        globalSettings.matcherConfig = steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.matcherConfig);
-        matcherConfigLoadUI();
-    }
-}
-
-async function matcherConfigFullMatchListener() {
-    MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
-    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
-
-    let settings = globalSettings.matcherConfig.config;
-    let blacklist = settings.ignoreGroup.options.find(x => x.name==='blacklist').value
-      ? globalSettings.matcherConfig.lists.blacklist.data
-      : [];
-    let profileGroups = [];
-    let asfBots; // save in iDB, include match priority ranking
-
-    for(let matchGroup of settings.matchGroup.options) {
-        if(!matchGroup.value) {
-            continue;
-        }
-
-        let groupProfiles = { name: matchGroup.name, list: [] };
-        profileGroups.push(groupProfiles);
-
-        if(matchGroup.name === 'friends') {
-            if(!Profile.me) {
-                await Profile.findProfile(steamToolsUtils.getMySteamId());
-            }
-            if(!Profile.me.friends || !Profile.me.friends.length) {
-                await Profile.me.getFriends();
-            }
-            for(let profileString of Profile.me.friends) {
-                groupProfiles.list.push(profileString.replace(/(id|profiles)\//g,''));
-            }
-        } else if(matchGroup.name === 'asfAny') {
-            asfBots ??= await getASFProfiles();
-            for(let botEntry of asfBots) {
-                if(!botEntry.matchAny) {
-                    continue;
-                }
-
-                Profile.addTradeURL({ partner: botEntry.id, token: botEntry.tradeToken });
-                groupProfiles.list.push(botEntry.id);
-            }
-        } else if(matchGroup.name === 'asfFair') {
-            asfBots ??= await getASFProfiles();
-            for(let botEntry of asfBots) {
-                if(botEntry.matchAny) {
-                    continue;
-                }
-
-                Profile.addTradeURL({ partner: botEntry.id, token: botEntry.tradeToken });
-                groupProfiles.list.push(botEntry.id);
-            }
-        } else if(matchGroup.name === 'custom') {
-            for(let profileEntry of globalSettings.matcherConfig.lists.matchlist.data) {
-                groupProfiles.list.push(profileEntry.profileid);
-            }
-        } else {
-            console.warn(`matcherConfigFullMatchListener(): Match Group '${matchGroup.name}' profile list processing not implemented, skipped!`);
-        }
-    }
-
-    MatcherShortcuts.data ??= {};
-    MatcherShortcuts.data.matchProfileGroups = profileGroups;
-
-    await matcherStartMatching();
-}
-
-async function matcherConfigSingleMatchListener() {
-    MatcherConfigShortcuts.listActionBarElem.classList.add('disabled');
-    matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, true, 'loading');
-
-    MatcherConfigShortcuts.matchSingleProfileProfileid.value = MatcherConfigShortcuts.matchSingleProfileProfileid.value.trim();
-    let profile = await Profile.findProfile(MatcherConfigShortcuts.matchSingleProfileProfileid.value);
-    if(!profile || (await profile.isMe())) {
-        alert('Invalid profile!');
-        matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
-        MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
-        return;
-    }
-
-    if( !(await matcherVerifyConfigSave()) ) {
-        return;
-    }
-
-    MatcherShortcuts.data ??= {};
-    MatcherShortcuts.data.matchProfileGroups = [{ name: 'single', list: [profile.id] }];
-
-    await matcherStartMatching();
-}
-
-async function matcherVerifyConfigSave() {
-    let savedConfig = await SteamToolsDbManager.getToolConfig('matcherConfig');
-    if(JSON.stringify(globalSettings.matcherConfig) !== JSON.stringify(savedConfig.matcherConfig)) {
-        let userPrompt = prompt('WARNING: Settings have not been saved! Save now? (y/n/cancel)');
-        if(!userPrompt[0].localeCompare('y', 'en', { sensitivity: 'base' })) {
-            await SteamToolsDbManager.setToolConfig('matcherConfig');
-            console.log('matcherConfigSingleMatchListener(): Saved Settings. Continuing to matching process...');
-        } else if(!userPrompt[0].localeCompare('n', 'en', { sensitivity: 'base' })) {
-            console.log('matcherConfigSingleMatchListener(): Settings will not be saved. Continuing to matching process...');
-        } else {
-            if(!userPrompt[0].localeCompare('c', 'en', { sensitivity: 'base' })) {
-                console.log('matcherConfigSingleMatchListener(): Cancelled. Matching will not continue...');
-            } else {
-                console.log('matcherconfigsinglematchlistener(): invalid input. matching will not continue...');
-            }
-            matcherSetOverlay(MatcherConfigShortcuts.listContentsElem, false);
-            MatcherConfigShortcuts.listActionBarElem.classList.remove('disabled');
-            return false;
-        }
-    }
-
-    return true;
-}
-
-async function matcherStartMatching() {
-
-    GM_addStyle(cssMatcher);
-
-    console.warn('matcherStartMatching(): Not Implemented Yet!');
-    // UI setup (remove tool supernav)
-    Object.keys(MatcherConfigShortcuts).forEach(key => (key === 'MAIN_ELEM') || delete MatcherConfigShortcuts[key]);
-    MatcherConfigShortcuts.MAIN_ELEM.innerHTML = '<div class="match-results">'
-      + '</div>';
-
-    MatcherShortcuts.results = MatcherConfigShortcuts.MAIN_ELEM.querySelector('.match-results');
-    MatcherShortcuts.resultGroups = {};
-
-    if(!Profile.me) {
-        await Profile.findProfile(steamToolsUtils.getMySteamId());
-    }
-
-    for(let group of MatcherShortcuts.data.matchProfileGroups) {
-        await matcherMatchProfileGroup(group);
-    }
-
-    // friend group matching
-    //    generate match block on document
-    //    check against blacklist
-    //    begin matching (no trade token is necessary)
-    // asf group matching
-    //    generate match block on document
-    //    grab asf profile from the asf api if needed
-    //    check for any/fair group selection from config
-    //    check against blacklist
-    //    find asf profiles and add their trade tokens as well
-    //    begin matching (trade token should already be auto added from the asf data)
-    // custom list
-    //    generate match block on document
-    //    check against blacklist
-    //    begin matching (trade token should be provided by the user)
-
-    // finish matching process here
-}
-
-async function matcherMatchProfileGroup(matchGroup) {
-    const generateMatchGroupString = (groupName) => `<div class="match-group" data-group="${groupName}"></div>`;
-
-    if(!matchGroup.list.length) {
-        return;
-    }
-
-    MatcherShortcuts.results.insertAdjacentHTML('beforeend', generateMatchGroupString(matchGroup.name));
-    MatcherShortcuts.resultGroups[matchGroup.name] = MatcherShortcuts.results.querySelector(`[data-group="${matchGroup.name}"]`);
-
-    for(let profileData of matchGroup.list) {
-        let profile = (profileData instanceof Profile)
-          ? profileData
-          : (await Profile.findProfile(profileData));
-
-        if(!profile) {
-            console.warn(`matcherStartMatching(): Profile data ${profileData} is not valid!`);
-        }
-
-        await matcherMatchProfile(matchGroup.name, profile);
-    }
-}
-
-async function matcherMatchProfile(groupName, profile) {
-    const generateItemTypeContainerString = (itemType) => `<div class="match-item-type" data-type="${itemType}"></div>`;
-    const generateRarityContainerString = (rarity) => `<div class="match-item-rarity" data-rarity="${rarity}"></div>`;
-    const generateAppContainerString = (appid) => `<div class="match-item-app" data-appid="${appid}"></div>`;
-    const generateItemListContainerString = (itemType, rarity, appid, swapList) => {
-        return '<div class="match-item-list left">'
-          +    generateAppItemsString(itemType, rarity, appid, swapList, true)
-          + '</div>'
-          + '<div class="match-item-action trade"></div>'
-          + '<div class="match-item-list right">'
-          +    generateAppItemsString(itemType, rarity, appid, swapList, false)
+        console.warn('SteamItemMatcher.startMatching(): Not Implemented Yet!');
+        // UI setup (remove tool supernav)
+        Object.keys(SteamItemMatcher.configShortcuts).forEach(key => (key === 'MAIN_ELEM') || delete SteamItemMatcher.configShortcuts[key]);
+        SteamItemMatcher.configShortcuts.MAIN_ELEM.innerHTML = '<div class="match-results">'
           + '</div>';
-    };
-    const generateAppItemsString = (itemType, rarity, appid, swapList, leftSide = true) => {
-        const getClassid = (index) => matchResult.inventory1.data[itemType][rarity][appid][index].classid;
-        const generateAppItemString = (qty, i) => {
-            let itemClassid = getClassid(i);
-            let itemDescription = Profile.itemDescriptions[itemClassid];
-            return `<div class="match-item" data-classid="${itemClassid}" data-qty="${Math.abs(qty)}" title="${itemDescription.name}">`
-              +    `<img src="${'https://community.cloudflare.steamstatic.com/economy/image/' + itemDescription.icon_url + '/96fx96f?allow_animated=1'}" alt="${itemDescription.name}">`
-              +    `<div class="match-item-name">${itemDescription.name}</div>`
-              + '</div>';
-        };
 
-        return swapList.map((swapAmount, index) =>
-            leftSide ? (swapAmount < 0 ? generateAppItemString(swapAmount, index) : '') : (swapAmount > 0 ? generateAppItemString(swapAmount, index) : '')
-        ).join('');
-    }
+        SteamItemMatcher.shortcuts.results = SteamItemMatcher.configShortcuts.MAIN_ELEM.querySelector('.match-results');
+        SteamItemMatcher.shortcuts.resultGroups = {};
 
-    MatcherShortcuts.resultGroups[groupName].insertAdjacentHTML('beforeend', matcherGenerateMatchProfileContainer(Profile.me, profile));
-    let matchContainer = MatcherShortcuts.resultGroups[groupName].querySelector('.match-container-outer.loading > .match-container');
-    let shortcuts = {};
-
-    let matchResult = await Matcher.matchInv(Profile.me, profile);
-
-    if(!matchResult || steamToolsUtils.isEmptyObject(matchResult.results)) {
-        console.warn('matcherMatchProfile(): No results to be rendered!');
-        matchContainer.parentElement.remove();
-        return;
-    }
-
-    for(let result in matchResult.results) {
-        let [itemType, rarity, appid] = result.split('_');
-
-        shortcuts[itemType] ??= { elem: null, rarities: {} };
-        if(!shortcuts[itemType].elem) {
-            matchContainer.insertAdjacentHTML('beforeend', generateItemTypeContainerString(itemType));
-            shortcuts[itemType].elem = matchContainer.querySelector(`[data-type="${itemType}"]`);
-        }
-        shortcuts[itemType].rarities[rarity] ??= { elem: null, appids: {} };
-        if(!shortcuts[itemType].rarities[rarity].elem) {
-            shortcuts[itemType].elem.insertAdjacentHTML('beforeend', generateRarityContainerString(rarity));
-            shortcuts[itemType].rarities[rarity].elem = shortcuts[itemType].elem.querySelector(`[data-rarity="${rarity}"]`);
-        }
-        shortcuts[itemType].rarities[rarity].appids[appid] ??= { elem: null };
-        if(!shortcuts[itemType].rarities[rarity].appids[appid].elem) {
-            shortcuts[itemType].rarities[rarity].elem.insertAdjacentHTML('beforeend', generateAppContainerString(appid));
-            shortcuts[itemType].rarities[rarity].appids[appid].elem = shortcuts[itemType].rarities[rarity].elem.querySelector(`[data-appid="${appid}"]`);
-        }
-        shortcuts[itemType].rarities[rarity].appids[appid].elem.insertAdjacentHTML('beforeend', generateItemListContainerString(itemType, rarity, appid, matchResult.results[result].swap));
-    }
-
-    console.log(matchResult);
-    console.log(Profile.itemDescriptions)
-
-    matchContainer.parentElement.classList.remove('loading');
-}
-
-function matcherGenerateMatchProfileContainer(profile1, profile2) {
-    const generateMatchNameHeaderString = (prof, reverseDirection = false) => {
-        return `<div class="match-name${reverseDirection ? ' align-right' : ''}">`
-          +    `<a href="https://steamcommunity.com/${prof.url ? `id/${prof.url}/` : `profiles/${prof.id}/`}" class="avatar ${prof.getStateString()}">`
-          +       `<img src="https://avatars.akamai.steamstatic.com/${prof.pfp}.jpg" alt="">`
-          +    '</a>'
-          +    prof.name
-          + '</div>'
-    };
-    const generateMatchContainerString = (prof1, prof2) => {
-        return '<div class="match-container-outer loading">'
-          +    `<div class="match-container grid" data-profileid1="${prof1.id}" data-profileid2="${prof2.id}">`
-          +       '<div class="match-header">'
-          +          generateMatchNameHeaderString(prof1, true)
-          +          '<div class="match-item-action trade"></div>'
-          +          generateMatchNameHeaderString(prof2)
-          +       '</div>'
-          +    '</div>'
-          +    cssAddOverlay(cssAddThrobber())
-          + '</div>'
-    };
-
-    return generateMatchContainerString(profile1, profile2);
-}
-
-function matcherSetOverlay(overlayParentElem, overlayEnable, overlayState) {
-    if(overlayEnable) {
-        overlayParentElem.classList.add('overlay');
-    } else {
-        overlayParentElem.classList.remove('overlay');
-    }
-
-    if(typeof overlayState === 'string') {
-        let overlayElem;
-        for(let childElem of overlayParentElem.children) {
-            if(childElem.matches('.userscript-overlay')) {
-                if(overlayElem) {
-                    console.warn('matcherSetOverlay(): Multiple overlay elements detected on same parent!');
-                }
-                overlayElem = childElem;
-            }
+        if(!Profile.me) {
+            await Profile.findProfile(steamToolsUtils.getMySteamId());
         }
 
-        if(!overlayElem) {
-            console.warn('matcherSetOverlay(): No overlay element found in immediate children!');
+        for(let group of SteamItemMatcher.shortcuts.data.matchProfileGroups) {
+            await SteamItemMatcher.matchProfileGroup(group);
+        }
+
+        // friend group matching
+        //    generate match block on document
+        //    check against blacklist
+        //    begin matching (no trade token is necessary)
+        // asf group matching
+        //    generate match block on document
+        //    grab asf profile from the asf api if needed
+        //    check for any/fair group selection from config
+        //    check against blacklist
+        //    find asf profiles and add their trade tokens as well
+        //    begin matching (trade token should already be auto added from the asf data)
+        // custom list
+        //    generate match block on document
+        //    check against blacklist
+        //    begin matching (trade token should be provided by the user)
+
+        // finish matching process here
+    },
+
+    matchProfileGroup: async function(matchGroup) {
+        const generateMatchGroupString = (groupName) => `<div class="match-group" data-group="${groupName}"></div>`;
+
+        if(!matchGroup.list.length) {
             return;
         }
 
-        overlayElem.className = 'userscript-overlay ' + overlayState;
-    }
-}
+        SteamItemMatcher.shortcuts.results.insertAdjacentHTML('beforeend', generateMatchGroupString(matchGroup.name));
+        SteamItemMatcher.shortcuts.resultGroups[matchGroup.name] = SteamItemMatcher.shortcuts.results.querySelector(`[data-group="${matchGroup.name}"]`);
 
-async function getASFProfiles() {
-    const REQUEST_URL = 'https://asf.justarchi.net/Api/Listing/Bots';
-    const MATCHABLE_TYPES = {
-        "2": 'emoticon',
-        "3": 'card',
-        "4": 'background',
-        "5": 'card'
-    }
+        for(let profileData of matchGroup.list) {
+            let profile = (profileData instanceof Profile)
+              ? profileData
+              : (await Profile.findProfile(profileData));
 
-    let result = await new Promise((resolve, reject) => {
-        const resolveError = (mssg) => {
-            console.error(mssg);
-            resolve();
+            if(!profile) {
+                console.warn(`SteamItemMatcher.startMatching(): Profile data ${profileData} is not valid!`);
+            }
+
+            await SteamItemMatcher.matchProfile(matchGroup.name, profile);
+        }
+    },
+
+    matchProfile: async function(groupName, profile) {
+        const generateItemTypeContainerString = (itemType) => `<div class="match-item-type" data-type="${itemType}"></div>`;
+        const generateRarityContainerString = (rarity) => `<div class="match-item-rarity" data-rarity="${rarity}"></div>`;
+        const generateAppContainerString = (appid) => `<div class="match-item-app" data-appid="${appid}"></div>`;
+        const generateItemListContainerString = (itemType, rarity, appid, swapList) => {
+            return '<div class="match-item-list left">'
+              +    generateAppItemsString(itemType, rarity, appid, swapList, true)
+              + '</div>'
+              + '<div class="match-item-action trade"></div>'
+              + '<div class="match-item-list right">'
+              +    generateAppItemsString(itemType, rarity, appid, swapList, false)
+              + '</div>';
+        };
+        const generateAppItemsString = (itemType, rarity, appid, swapList, leftSide = true) => {
+            const getClassid = (index) => matchResult.inventory1.data[itemType][rarity][appid][index].classid;
+            const generateAppItemString = (qty, i) => {
+                let itemClassid = getClassid(i);
+                let itemDescription = Profile.itemDescriptions[itemClassid];
+                return `<div class="match-item" data-classid="${itemClassid}" data-qty="${Math.abs(qty)}" title="${itemDescription.name}">`
+                  +    `<img src="${'https://community.cloudflare.steamstatic.com/economy/image/' + itemDescription.icon_url + '/96fx96f?allow_animated=1'}" alt="${itemDescription.name}">`
+                  +    `<div class="match-item-name">${itemDescription.name}</div>`
+                  + '</div>';
+            };
+
+            return swapList.map((swapAmount, index) =>
+                leftSide ? (swapAmount < 0 ? generateAppItemString(swapAmount, index) : '') : (swapAmount > 0 ? generateAppItemString(swapAmount, index) : '')
+            ).join('');
+        }
+
+        SteamItemMatcher.shortcuts.resultGroups[groupName].insertAdjacentHTML('beforeend', SteamItemMatcher.generateMatchProfileContainer(Profile.me, profile));
+        let matchContainer = SteamItemMatcher.shortcuts.resultGroups[groupName].querySelector('.match-container-outer.loading > .match-container');
+        let shortcuts = {};
+
+        let matchResult = await Matcher.matchInv(Profile.me, profile);
+
+        if(!matchResult || steamToolsUtils.isEmptyObject(matchResult.results)) {
+            console.warn('SteamItemMatcher.matchProfile(): No results to be rendered!');
+            matchContainer.parentElement.remove();
+            return;
+        }
+
+        for(let result in matchResult.results) {
+            let [itemType, rarity, appid] = result.split('_');
+
+            shortcuts[itemType] ??= { elem: null, rarities: {} };
+            if(!shortcuts[itemType].elem) {
+                matchContainer.insertAdjacentHTML('beforeend', generateItemTypeContainerString(itemType));
+                shortcuts[itemType].elem = matchContainer.querySelector(`[data-type="${itemType}"]`);
+            }
+            shortcuts[itemType].rarities[rarity] ??= { elem: null, appids: {} };
+            if(!shortcuts[itemType].rarities[rarity].elem) {
+                shortcuts[itemType].elem.insertAdjacentHTML('beforeend', generateRarityContainerString(rarity));
+                shortcuts[itemType].rarities[rarity].elem = shortcuts[itemType].elem.querySelector(`[data-rarity="${rarity}"]`);
+            }
+            shortcuts[itemType].rarities[rarity].appids[appid] ??= { elem: null };
+            if(!shortcuts[itemType].rarities[rarity].appids[appid].elem) {
+                shortcuts[itemType].rarities[rarity].elem.insertAdjacentHTML('beforeend', generateAppContainerString(appid));
+                shortcuts[itemType].rarities[rarity].appids[appid].elem = shortcuts[itemType].rarities[rarity].elem.querySelector(`[data-appid="${appid}"]`);
+            }
+            shortcuts[itemType].rarities[rarity].appids[appid].elem.insertAdjacentHTML('beforeend', generateItemListContainerString(itemType, rarity, appid, matchResult.results[result].swap));
+        }
+
+        console.log(matchResult);
+        console.log(Profile.itemDescriptions)
+
+        matchContainer.parentElement.classList.remove('loading');
+    },
+
+    generateMatchProfileContainer: function(profile1, profile2) {
+        const generateMatchNameHeaderString = (prof, reverseDirection = false) => {
+            return `<div class="match-name${reverseDirection ? ' align-right' : ''}">`
+              +    `<a href="https://steamcommunity.com/${prof.url ? `id/${prof.url}/` : `profiles/${prof.id}/`}" class="avatar ${prof.getStateString()}">`
+              +       `<img src="https://avatars.akamai.steamstatic.com/${prof.pfp}.jpg" alt="">`
+              +    '</a>'
+              +    prof.name
+              + '</div>'
+        };
+        const generateMatchContainerString = (prof1, prof2) => {
+            return '<div class="match-container-outer loading">'
+              +    `<div class="match-container grid" data-profileid1="${prof1.id}" data-profileid2="${prof2.id}">`
+              +       '<div class="match-header">'
+              +          generateMatchNameHeaderString(prof1, true)
+              +          '<div class="match-item-action trade"></div>'
+              +          generateMatchNameHeaderString(prof2)
+              +       '</div>'
+              +    '</div>'
+              +    cssAddOverlay(cssAddThrobber())
+              + '</div>'
         };
 
-        GM_xmlhttpRequest({
-            method: 'GET',
-            url: REQUEST_URL,
-            onload(response) {
-                if(response.status !== 200) {
-                    resolveError('getASFProfiles(): Status code ' + response.status);
-                }
+        return generateMatchContainerString(profile1, profile2);
+    },
 
-                // NOTE: avoid using 'SteamID' property (always exceeds MAX_SAFE_INTEGER, therefore incorrect value)
-                let datalist = JSON.parse(response.response);
-                if(!datalist.Success) {
-                    resolveError('getASFProfiles(): Response object not successful!');
-                }
-                datalist = datalist.Result;
-                for(let i=0; i<datalist.length; ++i) {
-                    let profileData = datalist[i];
-                    let cardTypes = (profileData.MatchableTypes.includes(5) ? 1 : 0)
-                      + (profileData.MatchableTypes.includes(3) ? 2 : 0)
+    setOverlay: function(overlayParentElem, overlayEnable, overlayState) {
+        if(overlayEnable) {
+            overlayParentElem.classList.add('overlay');
+        } else {
+            overlayParentElem.classList.remove('overlay');
+        }
 
-                    datalist[i] = {
-                        id: profileData.SteamIDText,
-                        name: profileData.Nickname,
-                        pfp: profileData.AvatarHash,
-                        tradeToken: profileData.TradeToken,
-                        matchTypes: profileData.MatchableTypes.map(x => MATCHABLE_TYPES[x]),
-                        matchAny: profileData.MatchEverything,
-                        matchTradeholdMax: profileData.MaxTradeHoldDuration,
-                        matchCardTypes: cardTypes,
-                        countGame: profileData.TotalGamesCount,
-                        countInventory: profileData.TotalInventoryCount,
-                        countTradables: profileData.TotalItemsCount
+        if(typeof overlayState === 'string') {
+            let overlayElem;
+            for(let childElem of overlayParentElem.children) {
+                if(childElem.matches('.userscript-overlay')) {
+                    if(overlayElem) {
+                        console.warn('SteamItemMatcher.setOverlay(): Multiple overlay elements detected on same parent!');
                     }
+                    overlayElem = childElem;
                 }
-
-                resolve(datalist);
-            },
-            onerror(response) {
-                resolveError('getASFProfiles(): Error requesting ASF profiles!');
-            },
-            onabort(response) {
-                resolveError('getASFProfiles(): Aborted!');
-            },
-            ontimeout(response) {
-                resolveError('getASFProfiles(): Request timeout!');
             }
-        });
-    });
 
-    return result;
-}
+            if(!overlayElem) {
+                console.warn('SteamItemMatcher.setOverlay(): No overlay element found in immediate children!');
+                return;
+            }
+
+            overlayElem.className = 'userscript-overlay ' + overlayState;
+        }
+    },
+
+    getASFProfiles: async function() {
+        const REQUEST_URL = 'https://asf.justarchi.net/Api/Listing/Bots';
+        const MATCHABLE_TYPES = {
+            "2": 'emoticon',
+            "3": 'card',
+            "4": 'background',
+            "5": 'card'
+        }
+
+        let result = await new Promise((resolve, reject) => {
+            const resolveError = (mssg) => {
+                console.error(mssg);
+                resolve();
+            };
+
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: REQUEST_URL,
+                onload(response) {
+                    if(response.status !== 200) {
+                        resolveError('SteamItemMatcher.getASFProfiles(): Status code ' + response.status);
+                    }
+
+                    // NOTE: avoid using 'SteamID' property (always exceeds MAX_SAFE_INTEGER, therefore incorrect value)
+                    let datalist = JSON.parse(response.response);
+                    if(!datalist.Success) {
+                        resolveError('SteamItemMatcher.getASFProfiles(): Response object not successful!');
+                    }
+                    datalist = datalist.Result;
+                    for(let i=0; i<datalist.length; ++i) {
+                        let profileData = datalist[i];
+                        let cardTypes = (profileData.MatchableTypes.includes(5) ? 1 : 0)
+                          + (profileData.MatchableTypes.includes(3) ? 2 : 0)
+
+                        datalist[i] = {
+                            id: profileData.SteamIDText,
+                            name: profileData.Nickname,
+                            pfp: profileData.AvatarHash,
+                            tradeToken: profileData.TradeToken,
+                            matchTypes: profileData.MatchableTypes.map(x => MATCHABLE_TYPES[x]),
+                            matchAny: profileData.MatchEverything,
+                            matchTradeholdMax: profileData.MaxTradeHoldDuration,
+                            matchCardTypes: cardTypes,
+                            countGame: profileData.TotalGamesCount,
+                            countInventory: profileData.TotalInventoryCount,
+                            countTradables: profileData.TotalItemsCount
+                        }
+                    }
+
+                    resolve(datalist);
+                },
+                onerror(response) {
+                    resolveError('SteamItemMatcher.getASFProfiles(): Error requesting ASF profiles!');
+                },
+                onabort(response) {
+                    resolveError('SteamItemMatcher.getASFProfiles(): Aborted!');
+                },
+                ontimeout(response) {
+                    resolveError('SteamItemMatcher.getASFProfiles(): Request timeout!');
+                }
+            });
+        });
+
+        return result;
+    }
+};
+
+const BadgepageExtras = {
+    setup: function() {
+        let badgepageUrl = document.querySelector('.profile_small_header_text').lastElementChild.href
+        let appid = badgepageUrl.match(/\d+(?=\/$)/g)[0];
+        if(!appid) {
+            throw 'BadgepageForumButton.setup(): appid not found?';
+        }
+
+        // Add forum button link
+        let badgepageButtonsElem = document.querySelector('.gamecards_inventorylink');
+        if(!badgepageButtonsElem) {
+            throw 'BadgepageForumButton.setup(): buttons list not found?';
+        }
+
+        let htmlStringList = [];
+
+        let forumButtonHTMLString = `<a target="_blank" class="btn_grey_grey btn_medium" href="https://steamcommunity.com/app/${appid}/tradingforum">`
+          +     '<span>Visit Trade Forum</span>'
+          + '</a>';
+        htmlStringList.push(forumButtonHTMLString);
+
+        // Add foil/normal badgepage button link
+        let isFoilPage = window.location.search.includes('border=1');
+        let badgepageUrlString = badgepageUrl;
+        if(!isFoilPage) {
+            badgepageUrlString += '?border=1';
+        }
+        let foilToggleButtonHTMLString = `<a class="btn_grey_grey btn_medium" href="${badgepageUrlString}">`
+          +     `<span>${isFoilPage ? 'Normal' : 'Foil'} Badge Page</span>`
+          + '</a>';
+        htmlStringList.push(foilToggleButtonHTMLString);
+
+        badgepageButtonsElem.insertAdjacentHTML('afterbegin', htmlStringList.join(' '));
+
+        // Optional: delete other trade forum buttons in the friends with cards section
+        // WARNING: May or may not break other modules that might use these buttons
+    }
+};
 
 const DataCollectors = {};
 DataCollectors.scrapePage = async function() {
@@ -3319,2303 +3431,4746 @@ DataCollectors.scrapeTradeTokens = async function() {
     }
 }
 
-GLOBALSETTINGSDEFAULTS.boosterCrafter = {
-    lists: {
-        favorites: {},
-        crafting: {}
-    },
-    stats: {
-        crafts: {
-            // object of apps, integer values
+const BoosterCrafter = {
+    SETTINGSDEFAULTS: {
+        lists: {
+            favorites: {},
+            crafting: {}
         },
-        drops: {
-            // object of apps, object of imgUrls
-        }
-    }
-}
-const boosterCrafterShortcuts = {};
-const boosterCrafterData = {};
-
-async function setupBoosterCrafter() {
-    // resize
-    for(let minioption of document.getElementsByClassName('minioption')) {
-        minioption.style.width = '150px';
-        minioption.style.marginBottom = '40px';
-    }
-    document.querySelector('.booster_creator_right').style.width = '480px';
-    document.querySelector('.booster_creator_left').style.marginBottom = '0';
-    document.querySelector('.booster_creator_left').style.marginRight = '60px';
-
-    // set up css styles for this feature
-    GM_addStyle(cssGlobal);
-    GM_addStyle(cssEnhanced);
-
-    let config = await SteamToolsDbManager.getToolConfig('boosterCrafter');
-
-    globalSettings.boosterCrafter = config.boosterCrafter ?? steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.boosterCrafter);
-
-    addSvgBlock(document.querySelector('.booster_creator_area'));
-
-    // insert new elements (add loading elements?)
-    const generateGooStatusSectionHTMLString = (tradableString, itemString) => {
-        return `<div class="enhanced-goostatus-section" data-type="${itemString}">`
-          +    `<div id="goostatus-${itemString}-${tradableString}" class="enhanced-goostatus-text">0</div>`
-          + '</div>';
-    };
-    const generateGooStatusRowHTMLString = (tradableString) => {
-        return `<div class="enhanced-goostatus-row" data-type="${tradableString}">`
-          +    generateGooStatusSectionHTMLString(tradableString, 'sack')
-          +    `<button id="goostatus-unpack-${tradableString}" class="enhanced-action">>></button>`
-          +    generateGooStatusSectionHTMLString(tradableString, 'goo')
-          + '</div>';
-    };
-    document.querySelector('.booster_creator_goostatus').style.display = 'none';
-    const gooStatusDialogHTMLString = '<div class="userscript-dialog">'
-      +    '<div>'
-      +       'Unpack <input type="number" id="goostatus-unpack-text" class="userscript-input" min="0"> sacks'
-      +    '</div>'
-      +    '<input type="range" name="unpack-amount" id="goostatus-unpack-slider" class="userscript-input" list="goostatus-unpack-datalist" min="0">'
-      +    '<div class="userscript-dialog-container">'
-      +       '<button id="goostatus-unpack-cancel" class="userscript-btn red wide">Cancel</button>'
-      +       '<button id="goostatus-unpack-confirm" class="userscript-btn green wide">Unpack</button>'
-      +    '</div>'
-      +    '<datalist id="goostatus-unpack-datalist"></datalist>'
-      + '</div>';
-    let gooStatusHTMLString = '<div class="enhanced-goostatus-container userscript-vars">'
-      +    '<div class="enhanced-goostatus overlay">'
-      +       generateGooStatusRowHTMLString('tradable')
-      +       generateGooStatusRowHTMLString('nontradable')
-      +       cssAddOverlay(cssAddThrobber(), gooStatusDialogHTMLString, { initialState: 'loading' })
-      +    '</div>'
-      + '</div>';
-    document.querySelector('.booster_creator_goostatus').insertAdjacentHTML('afterend', gooStatusHTMLString);
-
-    let boosterSelectorHTMLString = '<div class="enhanced-options userscript-vars">'
-      +    '<button id="selector-add-favorites" class="userscript-btn purple wide">Add to Favorites</button>'
-      +    '<button id="selector-add-craft" class="userscript-btn purple wide">Add to List</button>'
-      + '</div>';
-    document.querySelector('.booster_game_selector').insertAdjacentHTML('afterend', boosterSelectorHTMLString);
-
-    const favoritesListDialogHTMLString = '<div class="userscript-dialog">'
-      +    '<input type="text" name="app-search" id="app-search-text-input" class="userscript-input" placeholder="Search title/appid">'
-      +    '<div id="app-search-results" class="userscript-dialog-container full"></div>'
-      +    '<div class="userscript-dialog-container">'
-      +       '<button id="app-search-close" class="userscript-btn red wide">Close</button>'
-      +    '</div>'
-      + '</div>';
-    const craftListLoaderHTMLString = '<div class="userscript-loader">'
-      +    cssAddThrobber()
-      +    '<div class="userscript-dialog-container">'
-      +       '<span><span id="craft-list-progress">0</span>/<span id="craft-list-progress-total">0</span></span>'
-      +    '</div>'
-      + '</div>';
-    const craftListDialogHTMLString = '<div class="userscript-dialog">'
-      +    '<div>Craft the following boosters?</div>'
-      +    '<div class="userscript-dialog-table-container userscript-custom-scroll">'
-      +       '<table class="userscript-dialog-table">'
-      +          '<thead>'
-      +             '<tr>'
-      +                '<th>Name</th>'
-      +                '<th>Cost</th>'
-      +             '</tr>'
-      +          '</thead>'
-      +          '<tbody id="craft-dialog-table-body">'
-      +          '</tbody>'
-      +       '</table>'
-      +    '</div>'
-      +    '<div class="userscript-dialog-container">'
-      +       '<span>Total Boosters: <span id="craft-total-boosters-text">0</span></span>'
-      +    '</div>'
-      +    '<div class="userscript-dialog-container">'
-      +       '<span>Total Cost: <span id="craft-total-cost-text">0</span></span>'
-      +    '</div>'
-      +    '<div class="userscript-dialog-container">'
-      +       '<button id="craft-dialog-cancel" class="userscript-btn red wide">No</button>'
-      +       '<button id="craft-dialog-confirm" class="userscript-btn green wide">Yes</button>'
-      +    '</div>'
-      + '</div>';
-    const openerListLoaderHTMLString = '<div class="userscript-loader">'
-      +    cssAddThrobber()
-      +    '<div class="userscript-dialog-container">'
-      +       '<span><span id="opener-list-progress">0</span>/<span id="opener-list-progress-total">0</span></span>'
-      +    '</div>'
-      + '</div>';
-    const openerListDialogHTMLString = '<div class="userscript-dialog">'
-      +    '<div>Open the following boosters?</div>'
-      +    '<div class="userscript-dialog-table-container userscript-custom-scroll">'
-      +       '<table class="userscript-dialog-table">'
-      +          '<thead>'
-      +             '<tr>'
-      +                '<th>Name</th>'
-      +                '<th>⏳</th>'
-      +                '<th>✅</th>'
-      +             '</tr>'
-      +          '</thead>'
-      +          '<tbody id="opener-dialog-table-body">'
-      +          '</tbody>'
-      +       '</table>'
-      +    '</div>'
-      +    '<div class="userscript-dialog-container">'
-      +       '<button id="opener-dialog-cancel" class="userscript-btn red wide">No</button>'
-      +       '<button id="opener-dialog-confirm" class="userscript-btn green wide">Yes</button>'
-      +    '</div>'
-      + '</div>';
-    let enhancedBoosterHTMLString = '<div class="enhanced-area userscript-vars">'
-      +    '<div class="userscript-config-list enhanced-list-container" data-list-type="favorites">'
-      +       '<div class="userscript-config-list-header"><span class="userscript-config-list-title">Favorites</span></div>'
-      +       '<div class="conf-list-entry-action modify">'
-      +          '<div class="conf-list-entry-action-modify">'
-      +             '<div class="entry-action">'
-      +                '<div class="userscript-bg-filtered delete"></div>'
-      +             '</div>'
-      +             '<div id="config-import" class="entry-action" title="import config file">'
-      +                '<div class="userscript-bg-filtered upload"></div>'
-      +             '</div>'
-      +             '<div id="config-export" class="entry-action" title="export config file">'
-      +                '<div class="userscript-bg-filtered download"></div>'
-      +             '</div>'
-      +             '<div id="app-search" class="entry-action">'
-      +                '<div class="userscript-bg-filtered search"></div>'
-      +             '</div>'
-      +          '</div>'
-      +          '<div class="userscript-overlay"></div>'
-      +       '</div>'
-      +       '<div class="userscript-config-list-list overlay">'
-      +          '<div class="userscript-config-list-entries tile userscript-custom-scroll"></div>'
-      +          cssAddOverlay(cssAddThrobber(), favoritesListDialogHTMLString, { initialState: 'loading' })
-      +       '</div>'
-      +    '</div>'
-      +    '<button id="add-craft" class="userscript-btn enhanced-action purple">'
-      +       '>><br>Add'
-      +    '</button>'
-      +    '<div class="userscript-config-list enhanced-list-container" data-list-type="craft">'
-      +       '<div class="userscript-config-list-header">'
-      +          '<span class="userscript-config-list-title">Craft List</span>'
-      +       '</div>'
-      +       '<div class="conf-list-entry-action modify disabled">'
-      +          '<div class="conf-list-entry-action-modify">'
-      +             '<div class="entry-action">'
-      +                '<div class="userscript-bg-filtered delete"></div>'
-      +             '</div>'
-      +             '<div id="craft-cost" class="conf-list-text gem-amount" data-qty="0"></div>'
-      +             '<div id="craft-boosters" class="entry-action">Craft</div>'
-      +          '</div>'
-      +          '<div class="userscript-overlay"></div>'
-      +       '</div>'
-      +       '<div class="userscript-config-list-list overlay">'
-      +          '<div class="userscript-config-list-entries tile userscript-custom-scroll"></div>'
-      +          cssAddOverlay(craftListLoaderHTMLString, craftListDialogHTMLString, { initialState: 'loading' })
-      +       '</div>'
-      +    '</div>'
-      +    '<div class="userscript-config-list enhanced-list-container" data-list-type="inventory">'
-      +       '<div class="userscript-config-list-header">'
-      +          '<span class="userscript-config-list-title">Available Boosters</span>'
-      +       '</div>'
-      +       '<div class="conf-list-entry-action modify">'
-      +          '<div class="conf-list-entry-action-modify">'
-      +             '<div id="inventory-reload" class="entry-action">'
-      +                '<div class="userscript-bg-filtered reload"></div>'
-      +             '</div>'
-      +          '</div>'
-      +          '<div class="userscript-overlay"></div>'
-      +       '</div>'
-      +       '<div class="userscript-config-list-list overlay">'
-      +          '<div class="userscript-config-list-entries tile userscript-custom-scroll"></div>'
-      +          cssAddOverlay(cssAddThrobber(), { initialState: 'loading' })
-      +       '</div>'
-      +    '</div>'
-      +    '<button id="add-opener" class="userscript-btn enhanced-action purple">'
-      +       '>><br>Add'
-      +    '</button>'
-      +    '<div class="userscript-config-list enhanced-list-container" data-list-type="opener">'
-      +       '<div class="userscript-config-list-header">'
-      +          '<span class="userscript-config-list-title">Boosters to Open</span>'
-      +       '</div>'
-      +       '<div class="conf-list-entry-action modify">'
-      +          '<div class="conf-list-entry-action-modify">'
-      +             '<div class="entry-action">'
-      +                '<div class="userscript-bg-filtered delete"></div>'
-      +             '</div>'
-      +             '<div id="open-boosters" class="entry-action">Open</div>'
-      +             '<div id="decr-opener" class="entry-action">-</div>'
-      +             '<div id="incr-opener" class="entry-action">+</div>'
-      +          '</div>'
-      +          '<div class="userscript-overlay"></div>'
-      +       '</div>'
-      +       '<div class="userscript-config-list-list">'
-      +       '<div class="userscript-config-list-entries tile userscript-custom-scroll"></div>'
-      +       cssAddOverlay(openerListLoaderHTMLString, openerListDialogHTMLString, { initialState: 'loading' })
-      +       '</div>'
-      +    '</div>'
-      +    '<div class="userscript-config-list enhanced-list-container wide" data-list-type="card">'
-      +       '<div class="userscript-config-list-header">'
-      +          '<span class="userscript-config-list-title">Card Drops</span>'
-      +       '</div>'
-      +       '<div class="conf-list-entry-action text">'
-      +          '<div class="conf-list-texts">'
-      +             '<div class="conf-list-text">Normal: <span id="text-normal-cards">0</span></div>'
-      +             '<div class="conf-list-text">Foil: <span id="text-foil-cards">0</span></div>'
-      +          '</div>'
-      +       '</div>'
-      +       '<div class="userscript-config-list-list">'
-      +          '<div class="userscript-config-list-entries tile userscript-custom-scroll"></div>'
-      +       '</div>'
-      +    '</div>'
-      + '</div>';
-    document.querySelector('.booster_creator_area').insertAdjacentHTML('afterend', enhancedBoosterHTMLString);
-
-    // element shortcuts
-    boosterCrafterShortcuts.gooStatus = document.querySelector('.enhanced-goostatus');
-    boosterCrafterShortcuts.lists = {};
-    for(let listContainerElem of document.querySelectorAll('.enhanced-area [data-list-type]')) {
-        boosterCrafterShortcuts.lists[listContainerElem.dataset.listType] = {
-            main: listContainerElem,
-            action: listContainerElem.querySelector('.conf-list-entry-action'),
-            list: listContainerElem.querySelector('.userscript-config-list-list'),
-        };
-    }
-    for(let gooItemType of ['sack', 'goo']) {
-        for(let tradability of ['tradable', 'nontradable']) {
-            let goostatusKey = `goostatus${gooItemType[0].toUpperCase() + gooItemType.slice(1)}${tradability[0].toUpperCase() + tradability.slice(1)}`;
-            boosterCrafterShortcuts[goostatusKey] = document.getElementById(`goostatus-${gooItemType}-${tradability}`);
-        }
-    }
-    boosterCrafterShortcuts.craftCost = document.getElementById('craft-cost');
-    boosterCrafterShortcuts.unpackTradableGooButton = document.getElementById('goostatus-unpack-tradable');
-    boosterCrafterShortcuts.unpackNontradableGooButton = document.getElementById('goostatus-unpack-nontradable');
-    boosterCrafterShortcuts.unpackGooText = document.getElementById('goostatus-unpack-text');
-    boosterCrafterShortcuts.unpackGooSlider = document.getElementById('goostatus-unpack-slider');
-    boosterCrafterShortcuts.SelectorAddFavoritesButton = document.getElementById('selector-add-favorites');
-    boosterCrafterShortcuts.SelectorAddCraftButton = document.getElementById('selector-add-craft');
-    boosterCrafterShortcuts.addCraftButton = document.getElementById('add-craft');
-    boosterCrafterShortcuts.addOpenerButton = document.getElementById('add-opener');
-    boosterCrafterShortcuts.normalCardCount = document.getElementById('text-normal-cards');
-    boosterCrafterShortcuts.foilCardCount = document.getElementById('text-foil-cards');
-
-    // event listeners
-    document.getElementById('goostatus-unpack-tradable').addEventListener('click', boosterCrafterUnpackGooSackListener);
-    document.getElementById('goostatus-unpack-nontradable').addEventListener('click', boosterCrafterUnpackGooSackListener);
-    document.getElementById('goostatus-unpack-text').addEventListener('input', boosterCrafterGooUpdateTextListener);
-    document.getElementById('goostatus-unpack-slider').addEventListener('input', boosterCrafterGooUpdateSliderListener);
-    document.getElementById('goostatus-unpack-cancel').addEventListener('click', boosterCrafterGooUnpackCancelListener);
-    document.getElementById('goostatus-unpack-confirm').addEventListener('click', boosterCrafterGooUnpackConfirmListener);
-
-    document.getElementById('selector-add-favorites').addEventListener('click', boosterCrafterFavoritesListAddListener);
-    document.getElementById('selector-add-craft').addEventListener('click', boosterCrafterCraftListAddListener);
-
-    document.getElementById('config-import').addEventListener('click', boosterCrafterConfigImportListener);
-    document.getElementById('config-export').addEventListener('click', boosterCrafterConfigExportListener);
-    document.getElementById('app-search').addEventListener('click', boosterCrafterAppSearchListener);
-    document.getElementById('app-search-text-input').addEventListener('input', boosterCrafterAppSearchTextInputListener);
-    document.getElementById('app-search-results').addEventListener('click', boosterCrafterAppSearchAddFavoritesListener);
-    document.getElementById('app-search-close').addEventListener('click', boosterCrafterAppSearchCloseListener);
-    document.getElementById('add-craft').addEventListener('click', boosterCrafterCraftListAddFavoritesListener);
-
-    document.getElementById('craft-boosters').addEventListener('click', boosterCrafterCraftListCraftListener);
-    document.getElementById('craft-dialog-cancel').addEventListener('click', boosterCrafterCraftListCraftCancelListener);
-    document.getElementById('craft-dialog-confirm').addEventListener('click', boosterCrafterCraftListCraftConfirmListener);
-
-    document.getElementById('inventory-reload').addEventListener('click', boosterCrafterInventoryListReloadListener);
-
-    document.getElementById('add-opener').addEventListener('click', boosterCrafterOpenerListAddListener);
-    document.getElementById('incr-opener').addEventListener('click', boosterCrafterOpenerListIncrementListener);
-    document.getElementById('decr-opener').addEventListener('click', boosterCrafterOpenerListDecrementListener);
-    document.getElementById('open-boosters').addEventListener('click', boosterCrafterOpenerListOpenListener);
-    document.getElementById('opener-dialog-cancel').addEventListener('click', boosterCrafterOpenerListOpenCancelListener);
-    document.getElementById('opener-dialog-confirm').addEventListener('click', boosterCrafterOpenerListOpenConfirmListener);
-
-    for(let listElem of document.querySelectorAll('.userscript-config-list-list')) {
-        listElem.addEventListener('click', boosterCrafterSelectEntriesListener);
-    }
-    for(let removeButtonElem of document.querySelectorAll('.enhanced-list-container .entry-action > .delete')) {
-        removeButtonElem.parentElement.addEventListener('click', boosterCrafterListRemoveListener);
-    }
-
-    boosterCrafterData.openerList = {};
-    boosterCrafterData.lastSelected = {};
-    boosterCrafterData.craftCost = { amount: 0, max: 0 };
-    boosterCrafterData.currentDropStats = {};
-
-    boosterCrafterData.gems = null; // gems data structure is sloppy
-    boosterCrafterData.boosters = null;
-    boosterCrafterData.cooldownList = {};
-    boosterCrafterData.craftQueue = [];
-    boosterCrafterData.appSearch = {
-        timeout: null,
-        prevInput: '',
-        prevResults: {
-            appids: [],
-            names: []
-        }
-    };
-
-    // save and modify booster selector list from the page
-    boosterCrafterData.boosterDataList = unsafeWindow.CBoosterCreatorPage.sm_rgBoosterData;
-    for(let appid in boosterCrafterData.boosterDataList) {
-        let appEntry = boosterCrafterData.boosterDataList[appid];
-        if(appEntry.unavailable) {
-            appEntry.cooldownDate = boosterCrafterParseCooldownDate(appEntry.available_at_time);
-        }
-    }
-
-
-
-    // load crafting lists, set up desync detector, start cooldown timer, and load gem and booster data from inventory
-    boosterCrafterLoadConfig();
-    boosterCrafterData.lastSyncTime = Date.now();
-    setInterval(boosterCrafterCheckDesync, 1500);
-    boosterCrafterBoosterCooldownUpdateDisplay();
-    setInterval(boosterCrafterBoosterCooldownUpdateTimer, 1000);
-    boosterCrafterLoadData();
-}
-
-function boosterCrafterCheckDesync() {
-    let desyncTimeTrigger = 5000;
-
-    if(Date.now() - boosterCrafterData.lastSyncTime > desyncTimeTrigger) {
-        console.log('resetting cooldown timers!')
-        for(let appid in boosterCrafterData.cooldownList) {
-            boosterCrafterBoosterCooldownSetTimer(appid);
-        }
-    }
-
-    boosterCrafterData.lastSyncTime = Date.now();
-    boosterCrafterUpdateBoosterCost();
-}
-async function boosterCrafterLoadConfig() {
-    let favoritesActionElem = boosterCrafterShortcuts.lists.favorites.action;
-    let favoritesListElem = boosterCrafterShortcuts.lists.favorites.list;
-    let favoritesListEntriesElem = favoritesListElem.querySelector('.userscript-config-list-entries');
-    let craftActionElem = boosterCrafterShortcuts.lists.craft.action;
-    let craftListElem = boosterCrafterShortcuts.lists.craft.list;
-    let craftListEntriesElem = craftListElem.querySelector('.userscript-config-list-entries');
-
-    favoritesActionElem.classList.add('disabled');
-    boosterCrafterSetOverlay(favoritesListElem, true, '');
-    craftActionElem.classList.add('disabled');
-    boosterCrafterSetOverlay(craftListElem, true, '');
-
-    // populate favorites list
-    favoritesListEntriesElem.innerHTML = '';
-    let favoritesEntriesHTMLString = '';
-    for(let appid in globalSettings.boosterCrafter.lists.favorites) {
-        let boosterData = boosterCrafterData.boosterDataList[appid];
-
-        if(!boosterData) {
-            continue;
-        }
-
-        favoritesEntriesHTMLString += boosterCrafterGenerateBoosterListEntry(boosterData);
-        boosterCrafterBoosterCooldownAddTimer(appid);
-    }
-    favoritesListEntriesElem.insertAdjacentHTML('beforeend', favoritesEntriesHTMLString);
-
-    // populate craft list
-    craftListEntriesElem.innerHTML = '';
-    let craftEntriesHTMLString = '';
-    for(let appid in globalSettings.boosterCrafter.lists.crafting) {
-        let boosterData = boosterCrafterData.boosterDataList[appid];
-
-        if(!boosterData) {
-            continue;
-        }
-
-        craftEntriesHTMLString += boosterCrafterGenerateBoosterListEntry(boosterData);
-        boosterCrafterBoosterCooldownAddTimer(appid);
-    }
-    craftListEntriesElem.insertAdjacentHTML('beforeend', craftEntriesHTMLString);
-    boosterCrafterUpdateBoosterCost();
-
-    // tally up historical card drops
-    let normalCardCount = 0;
-    let foilCardCount = 0;
-    for(let appid in globalSettings.boosterCrafter.stats.drops) {
-        for(let item in globalSettings.boosterCrafter.stats.drops[appid]) {
-            let itemData = globalSettings.boosterCrafter.stats.drops[appid][item];
-            if(itemData.foil) {
-                foilCardCount += itemData.count;
-            } else {
-                normalCardCount += itemData.count;
-            }
-        }
-    }
-    boosterCrafterShortcuts.normalCardCount.innerHTML = normalCardCount;
-    boosterCrafterShortcuts.foilCardCount.innerHTML = foilCardCount;
-
-    favoritesActionElem.classList.remove('disabled');
-    boosterCrafterSetOverlay(favoritesListElem, false);
-    craftActionElem.classList.remove('disabled');
-    boosterCrafterSetOverlay(craftListElem, false);
-}
-async function boosterCrafterLoadData() {
-    const getArraySum = (arr) => {
-        let sum = 0;
-        for(let i=0; i<arr.length; i++) {
-            sum += arr[i].count;
-        }
-        return sum;
-    };
-
-    // enable overlays
-    let craftActionElem = boosterCrafterShortcuts.lists.craft.action;
-    let inventoryActionElem = boosterCrafterShortcuts.lists.inventory.action;
-    let inventoryListElem = boosterCrafterShortcuts.lists.inventory.list;
-    let openerActionElem = boosterCrafterShortcuts.lists.opener.action;
-    let openerListElem = boosterCrafterShortcuts.lists.opener.list;
-
-    boosterCrafterSetOverlay(boosterCrafterShortcuts.gooStatus, true, 'loading');
-    craftActionElem.classList.add('disabled');
-    inventoryActionElem.classList.add('disabled');
-    boosterCrafterSetOverlay(inventoryListElem, true, 'loading');
-    // disable add button?
-    openerActionElem.classList.add('disabled');
-    boosterCrafterSetOverlay(openerListElem, true, '');
-
-    let inventoryEntriesElem = inventoryListElem.querySelector('.userscript-config-list-entries');
-
-    await Profile.findProfile(steamToolsUtils.getMySteamId());
-    await Profile.me.getInventory('booster');
-
-    // if inventory fails, then alert user of failure here
-
-    boosterCrafterData.gems = steamToolsUtils.deepClone(Profile.me.inventory.data.gem[0]['753']);
-    for(let itemClass of boosterCrafterData.gems) {
-        if(itemClass.classid === '667924416') { // gems
-            boosterCrafterShortcuts.goostatusGooTradable.innerHTML = getArraySum(itemClass.tradables).toLocaleString();
-            boosterCrafterShortcuts.goostatusGooNontradable.innerHTML = getArraySum(itemClass.nontradables).toLocaleString();
-        } else if(itemClass.classid === '667933237') { // sacks
-            let sumTradables = getArraySum(itemClass.tradables);
-            let sumNonradables = getArraySum(itemClass.nontradables);
-            boosterCrafterShortcuts.goostatusSackTradable.innerHTML = sumTradables.toLocaleString();
-            boosterCrafterShortcuts.goostatusSackNontradable.innerHTML = sumNonradables.toLocaleString();
-            boosterCrafterShortcuts.unpackTradableGooButton.disabled = !sumTradables ? true : false;
-            boosterCrafterShortcuts.unpackNontradableGooButton.disabled = !sumNonradables ? true : false;
-        } else {
-            console.warn('boosterCrafterLoadData(): Unknown item Class detected in gem itemType!');
-        }
-        itemClass.tradables.sort((a, b) => a.count - b.count);
-        itemClass.nontradables.sort((a, b) => a.count - b.count);
-    }
-
-    boosterCrafterData.boosters = {};
-
-    inventoryEntriesElem.innerHTML = '';
-    let boosterDataList = Profile.me.inventory.data.booster[0];
-    for(let appid in Profile.me.inventory.data.booster[0]) {
-        boosterCrafterData.boosters[appid] = steamToolsUtils.deepClone(boosterDataList[appid][0]);
-
-        let boosterEntry = boosterCrafterData.boosters[appid];
-        boosterEntry.tradableCount = boosterEntry.tradables.reduce((sum, x) => sum + x.count, 0);
-        boosterEntry.nontradableCount = boosterEntry.nontradables.reduce((sum, x) => sum + x.count, 0);
-
-        let entryElem = inventoryEntriesElem.querySelector(`.userscript-config-list-entry[data-appid="${appid}"]`);
-        if(entryElem) {
-            entryElem.dataset.qtyTradable = boosterEntry.tradableCount;
-            entryElem.dataset.qtyNontradable = boosterEntry.nontradableCount;
-        } else {
-            let appData = await Profile.findAppMetaData(appid);
-            // let HTMLString = `<div class="userscript-config-list-entry booster" data-appid="${appid}" data-qty-tradable="${boosterEntry.tradableCount}" data-qty-nontradable="${boosterEntry.nontradableCount}" title="${appData.name}">`
-            // +    `<img src="https://community.cloudflare.steamstatic.com/economy/boosterpack/${appid}?l=english&single=1&v=2&size=75x" alt="">`
-            // + '</div>';
-            inventoryEntriesElem.insertAdjacentHTML('beforeend', boosterCrafterGenerateBoosterListEntry({ appid: appid, tradableCount: boosterEntry.tradableCount, nontradableCount: boosterEntry.nontradableCount, name: appData.name }));
-        }
-    }
-
-    // disable overlays
-    boosterCrafterSetOverlay(boosterCrafterShortcuts.gooStatus, false);
-    craftActionElem.classList.remove('disabled');
-    inventoryActionElem.classList.remove('disabled');
-    boosterCrafterSetOverlay(inventoryListElem, false);
-    // enable add button?
-    openerActionElem.classList.remove('disabled');
-    boosterCrafterSetOverlay(openerListElem, false);
-}
-function boosterCrafterUpdateBoosterCost() {
-    let allTotal = 0;
-    let selectedTotal = 0;
-    for(let entryElem of boosterCrafterShortcuts.lists.craft.list.querySelectorAll('.userscript-config-list-entry')) {
-        if(Object.hasOwn(entryElem.dataset, 'cooldownTimer')) {
-            continue;
-        }
-
-        allTotal += parseInt(entryElem.dataset.cost);
-        if(entryElem.matches('.selected')) {
-            selectedTotal += parseInt(entryElem.dataset.cost);
-        }
-    }
-
-    boosterCrafterData.craftCost.max = allTotal;
-    boosterCrafterData.craftCost.amount = selectedTotal || allTotal;
-    if(boosterCrafterData.craftCost.amount > boosterCrafterData.craftCost.max) {
-        throw 'boosterCrafterUpdateBoosterCost(): craft cost amount exceeds max! Investigate!';
-    }
-    boosterCrafterShortcuts.craftCost.dataset.qty = boosterCrafterData.craftCost.amount.toLocaleString();
-}
-function boosterCrafterInventoryListReloadListener() {
-    boosterCrafterLoadData();
-}
-
-function boosterCrafterAppSearchListener() {
-    let favoritesActionElem = boosterCrafterShortcuts.lists.favorites.action;
-    let favoritesListElem = boosterCrafterShortcuts.lists.favorites.list;
-
-    favoritesActionElem.classList.add('disabled');
-    boosterCrafterSetOverlay(favoritesListElem, true, 'dialog');
-}
-function boosterCrafterAppSearchTextInputListener(event) {
-    clearTimeout(boosterCrafterData.appSearch.timeout);
-    boosterCrafterData.appSearch.timeout = setTimeout(boosterCrafterAppSearchTextInput, 500, event.target.value);
-}
-function boosterCrafterAppSearchTextInput(inputStr) {
-    const generateSearchResultRowHTMLString = (data) => `<div class="app-list-row" data-appid="${data.appid}">`
-      +    `<img class="app-header" src="https://cdn.cloudflare.steamstatic.com/steam/apps/${data.appid}/header.jpg" alt="">`
-      +    `<span class="app-name">${data.name}</span>`
-      + '</div>';
-    let searchResultsElem = document.getElementById('app-search-results');
-
-    let searchResults = { appids: [], names: [] };
-
-    if(!inputStr.length) {
-        // empty string
-    } else if(boosterCrafterData.appSearch.prevInput.length && inputStr.includes(boosterCrafterData.appSearch.prevInput)) {
-        let prevSearchResults = boosterCrafterData.appSearch.prevResults;
-        for(let app of prevSearchResults.appids) {
-            if(app.appid.toString().includes(inputStr)) {
-                searchResults.appids.push(app);
-            }
-        }
-        for(let app of prevSearchResults.names) {
-            if(app.name.toLowerCase().includes(inputStr)) {
-                searchResults.names.push(app);
-            }
-        }
-    } else {
-        let isNumber = /^\d+$/.test(inputStr);
-        for(let appid in boosterCrafterData.boosterDataList) {
-            let entry = boosterCrafterData.boosterDataList[appid];
-            if(isNumber && entry.appid.toString().includes(inputStr)) {
-                searchResults.appids.push(boosterCrafterData.boosterDataList[appid]);
-            } else if(entry.name.toLowerCase().includes(inputStr)) {
-                searchResults.names.push(boosterCrafterData.boosterDataList[appid]);
-            }
-        }
-    }
-
-    // order the results from best to worst good matches (just sort by string length?)
-
-    searchResultsElem.innerHTML = '';
-    let appSearchHTMLString = '';
-    let listingCounter = 0;
-    for(let entry of searchResults.appids) {
-        appSearchHTMLString += generateSearchResultRowHTMLString(entry);
-        if(++listingCounter === 3) {
-            break;
-        }
-    }
-    for(let entry of searchResults.names) {
-        appSearchHTMLString += generateSearchResultRowHTMLString(entry);
-        if(++listingCounter === 6) {
-            break;
-        }
-    }
-    searchResultsElem.insertAdjacentHTML('beforeend', appSearchHTMLString);
-
-    boosterCrafterData.appSearch.prevInput = inputStr;
-    boosterCrafterData.appSearch.prevResults = searchResults;
-}
-function boosterCrafterAppSearchAddFavoritesListener(event) {
-    let currentEntryElem = event.target;
-    while (!currentEntryElem.matches('.app-list-row')) {
-        if(currentEntryElem.matches('#app-search-results')) {
-            return;
-        }
-        currentEntryElem = currentEntryElem.parentElement;
-    }
-
-    let appid = currentEntryElem.dataset.appid;
-    let boosterData = boosterCrafterData.boosterDataList[appid];
-    let favoritesList = globalSettings.boosterCrafter.lists.favorites;
-    let favoritesActionElem = boosterCrafterShortcuts.lists.favorites.action;
-    let favoritesListElem = boosterCrafterShortcuts.lists.favorites.list;
-    let favoritesListEntriesElem = boosterCrafterShortcuts.lists.favorites.list.querySelector('.userscript-config-list-entries');
-
-    if(!Object.hasOwn(favoritesList, appid)) {
-        favoritesList[appid] = { appid: boosterData.appid };
-        favoritesListEntriesElem.insertAdjacentHTML('beforeend', boosterCrafterGenerateBoosterListEntry(boosterData));
-    }
-
-    boosterCrafterConfigSave();
-
-    favoritesActionElem.classList.remove('disabled');
-    boosterCrafterSetOverlay(favoritesListElem, false);
-}
-function boosterCrafterAppSearchCloseListener() {
-    let favoritesActionElem = boosterCrafterShortcuts.lists.favorites.action;
-    let favoritesListElem = boosterCrafterShortcuts.lists.favorites.list;
-
-    favoritesActionElem.classList.remove('disabled');
-    boosterCrafterSetOverlay(favoritesListElem, false);
-}
-
-function boosterCrafterBoosterCooldownSetTimer(appid, craftedNow = false) {
-    let cooldownTimer = !craftedNow
-      ? Math.ceil((boosterCrafterData.boosterDataList[appid].cooldownDate.valueOf() - Date.now()) / 1000)
-      : 24 * 60 * 60;
-    let timerSeconds = cooldownTimer % 60;
-    let timerMinutes = Math.floor(cooldownTimer / 60) % 60;
-    let timerHours = Math.floor(cooldownTimer / (60 * 60));
-    boosterCrafterData.cooldownList[appid] = [timerHours, timerMinutes, timerSeconds];
-}
-function boosterCrafterBoosterCooldownAddTimer(appid, craftedNow = false) {
-    if((!boosterCrafterData.boosterDataList[appid].unavailable && !craftedNow) || Object.hasOwn(boosterCrafterData.cooldownList, appid)) {
-        return;
-    }
-
-    boosterCrafterBoosterCooldownSetTimer(appid, craftedNow);
-    boosterCrafterBoosterCooldownUpdateDisplay();
-}
-function boosterCrafterBoosterCooldownUpdateTimer() {
-    for(let appid in boosterCrafterData.cooldownList) {
-        let timer = boosterCrafterData.cooldownList[appid];
-        if(timer[2] === 0) {
-            if(timer[1] === 0) {
-                if(timer[0] === 0) {
-                    delete boosterCrafterData.cooldownList[appid];
-                    continue;
-                }
-                timer[0]--;
-                timer[1] = 59;
-            } else {
-                timer[1]--;
-            }
-            timer[2] = 59;
-        } else {
-            timer[2]--;
-        }
-    }
-
-    boosterCrafterBoosterCooldownUpdateDisplay();
-}
-function boosterCrafterBoosterCooldownUpdateDisplay(entryElemArg) {
-    const stringifyTimer = (timerArr) => timerArr[0] + ':' + timerArr[1].toString().padStart(2, '0') + ':' + timerArr[2].toString().padStart(2, '0');
-    const updateTimer = (elem) => {
-        let appid = elem.dataset.appid;
-        let timer = boosterCrafterData.cooldownList[appid];
-        if(!timer) {
-            if(elem.dataset.cooldownTimer) {
-                delete elem.dataset.cooldownTimer;
-                delete boosterCrafterData.boosterDataList[appid].unavailable;
-            }
-        } else {
-            elem.dataset.cooldownTimer = stringifyTimer(timer);
-        }
-    };
-
-    if(entryElemArg) {
-        updateTimer(entryElemArg);
-        return;
-    }
-
-    for(let entryElem of boosterCrafterShortcuts.lists.favorites.list.querySelectorAll('.userscript-config-list-entry')) {
-        updateTimer(entryElem);
-    }
-    for(let entryElem of boosterCrafterShortcuts.lists.craft.list.querySelectorAll('.userscript-config-list-entry')) {
-        updateTimer(entryElem);
-    }
-}
-
-function boosterCrafterUnpackGooSackListener(event) {
-    let rowElem = event.target;
-    while (!rowElem.matches('.enhanced-goostatus-row')) {
-        if(rowElem.matches('.enhanced-goostatus')) {
-            throw 'boosterCrafterUnpackGooSackListener(): No row container found! Was the document structured correctly?';
-        }
-        rowElem = rowElem.parentElement;
-    }
-
-    let sacksData = boosterCrafterData.gems.find(x => x.classid === '667933237');
-    if(!sacksData) {
-        console.error('boosterCrafterUnpackGooSackListener(): No sacks found! Were the buttons properly disabled?');
-        return;
-    }
-
-    let tradableType = rowElem.dataset.type;
-    let dataset;
-    if(tradableType === 'tradable') {
-        dataset = steamToolsUtils.deepClone(sacksData.tradables);
-    } else if(tradableType === 'nontradable') {
-        dataset = steamToolsUtils.deepClone(sacksData.nontradables);
-    } else {
-        throw 'boosterCrafterUnpackGooSackListener(): TradableType is neither tradable nor nontradable???';
-    }
-
-    if(!dataset.length) {
-        console.error('boosterCrafterUnpackGooSackListener(): Selected dataset has no entries!');
-        return;
-    }
-    boosterCrafterData.unpackList = dataset;
-
-    let gooDatalistElem = document.getElementById('goostatus-unpack-datalist');
-    let gooMax = 0;
-    let datalistHTMLString = '';
-    for(let i=0; i<dataset.length; i++) {
-        gooMax += dataset[i].count;
-        if(i < dataset.length-1) {
-            datalistHTMLString += `<option value="${gooMax}"></option>`
-        }
-    }
-
-    boosterCrafterShortcuts.unpackGooText.max = gooMax;
-    boosterCrafterShortcuts.unpackGooSlider.max = gooMax;
-    gooDatalistElem.innerHTML = datalistHTMLString;
-
-    boosterCrafterShortcuts.unpackGooText.value = 0;
-    boosterCrafterShortcuts.unpackGooSlider.value = 0;
-
-    boosterCrafterSetOverlay(boosterCrafterShortcuts.gooStatus, true, 'dialog');
-}
-function boosterCrafterGooUpdateTextListener(event) {
-    boosterCrafterShortcuts.unpackGooSlider.value = event.target.value;
-}
-function boosterCrafterGooUpdateSliderListener(event) {
-    boosterCrafterShortcuts.unpackGooText.value = event.target.value;
-}
-function boosterCrafterGooUnpackCancelListener(event) {
-    boosterCrafterSetOverlay(boosterCrafterShortcuts.gooStatus, false);
-}
-async function boosterCrafterGooUnpackConfirmListener(event) {
-    let unpackTotalAmount = parseInt(boosterCrafterShortcuts.unpackGooSlider.value); // shouldn't overflow the max amount
-    if(unpackTotalAmount === 0) {
-        boosterCrafterSetOverlay(boosterCrafterShortcuts.gooStatus, false);
-        return;
-    }
-
-    let craftActionElem = boosterCrafterShortcuts.lists.craft.action;
-    let craftListElem = boosterCrafterShortcuts.lists.craft.list;
-    let openerActionElem = boosterCrafterShortcuts.lists.opener.action;
-    let openerListElem = boosterCrafterShortcuts.lists.opener.list;
-
-    boosterCrafterSetOverlay(boosterCrafterShortcuts.gooStatus, true, 'loading');
-    boosterCrafterShortcuts.SelectorAddCraftButton.disabled = false;
-    boosterCrafterShortcuts.addCraftButton.disabled = false;
-    craftActionElem.classList.add('disabled');
-    boosterCrafterSetOverlay(craftListElem, false);
-    boosterCrafterShortcuts.addOpenerButton.disabled = false;
-    openerActionElem.classList.add('disabled');
-    boosterCrafterSetOverlay(openerListElem, false);
-
-    let requestBody = new URLSearchParams({
-        sessionid: steamToolsUtils.getSessionId(),
-        appid: '753',
-        goo_denomination_in: '1000',
-        goo_denomination_out: '1'
-    });
-    let urlString = `https://steamcommunity.com/profiles/${steamToolsUtils.getMySteamId()}/ajaxexchangegoo/`;
-    let refererString = `https://steamcommunity.com/profiles/${steamToolsUtils.getMySteamId()}/inventory/`;
-
-    while (unpackTotalAmount > 0) {
-        let sackItem = boosterCrafterData.unpackList[0];
-        let unpackItemAmount = Math.min(sackItem.count, unpackTotalAmount);
-
-        requestBody.set('assetid', sackItem.assetid);
-        requestBody.set('goo_amount_in', unpackItemAmount.toString());
-        requestBody.set('goo_amount_out_expected', (unpackItemAmount * 1000).toString());
-
-        let response = await fetch(urlString, {
-            method: 'POST',
-            body: requestBody,
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+        stats: {
+            crafts: {
+                // object of apps, integer values
             },
-            referer: refererString
-        });
-
-        try {
-            // throws error in the event that request is redirected to a steam webpage instead of giving a response
-            response = await response.json();
-            if(response.success !== 1) {
-                throw 'boosterCrafterUnpackConfirmListener(): Unpacking sack failed!';
-            }
-        } catch (err) {
-            console.error(err);
-            break;
-        }
-
-        unpackTotalAmount -= unpackItemAmount;
-        if(unpackItemAmount === sackItem.count) {
-            boosterCrafterData.unpackList.shift();
-        } else {
-            sackItem.count -= unpackItemAmount;
-        }
-    }
-
-    // update sm goo amount and stuff here
-    // rather than executing load data, update gem data here
-
-    craftActionElem.classList.remove('disabled');
-    openerActionElem.classList.remove('disabled');
-    boosterCrafterSetOverlay(boosterCrafterShortcuts.gooStatus, false);
-    boosterCrafterLoadData();
-}
-
-function boosterCrafterGetListContainerElem(elem) {
-    let containerElem = elem;
-    while (!containerElem.matches('.enhanced-list-container')) {
-        if(containerElem.matches('body')) {
-            throw 'boosterCrafterListRemoveListener(): container not found!';
-        }
-        containerElem = containerElem.parentElement;
-    }
-    return containerElem;
-}
-function boosterCrafterSelectEntriesListener(event) {
-    let currentEntryElem = event.target;
-    while (!currentEntryElem.matches('.userscript-config-list-entry')) {
-        if(currentEntryElem.matches('.userscript-config-list-list')) {
-            return;
-        }
-        currentEntryElem = currentEntryElem.parentElement;
-    }
-
-    let listType = boosterCrafterGetListContainerElem(event.currentTarget).dataset.listType;
-    if(listType === 'card') {
-        return;
-    }
-
-    if(!event.shiftKey && !event.ctrlKey) {
-        let selectedList = event.currentTarget.querySelectorAll('.selected');
-        for(let selectedEntryElem of selectedList) {
-            selectedEntryElem.classList.remove('selected');
-        }
-
-        if(selectedList.length !== 1 || currentEntryElem.dataset.appid !== boosterCrafterData.lastSelected[listType]?.dataset?.appid) {
-            currentEntryElem.classList.add('selected');
-        }
-    } else if(event.shiftKey) {
-        let prevIndex, currIndex;
-        let entries = event.currentTarget.querySelectorAll('.userscript-config-list-entry');
-        for(let i=0; i<entries.length; i++) {
-            if(entries[i].dataset.appid === boosterCrafterData.lastSelected[listType]?.dataset?.appid) {
-                prevIndex = i;
-                if(currIndex !== undefined) {
-                    break;
-                }
-            }
-            if(entries[i].dataset.appid === currentEntryElem.dataset.appid) {
-                currIndex = i;
-                if(prevIndex !== undefined) {
-                    break;
-                }
+            drops: {
+                // object of apps, object of imgUrls
             }
         }
-
-        if(prevIndex === currIndex) {
-            return;
-        }
-
-        let minIndex = prevIndex<currIndex ? prevIndex : currIndex;
-        let maxIndex = prevIndex<currIndex ? currIndex : prevIndex;
-        for(let i=minIndex+1; i<maxIndex; i++) {
-            entries[i].classList.add('selected');
-        }
-        entries[currIndex].classList.add('selected');
-    } else if(event.ctrlKey) {
-        currentEntryElem.classList.toggle('selected');
-    }
-    boosterCrafterData.lastSelected[listType] = currentEntryElem;
-
-    if(listType === 'craft') {
-        boosterCrafterUpdateBoosterCost();
-    }
-}
-function boosterCrafterListRemoveListener(event) {
-    console.log('removing selected elements...');
-    let containerElem = event.target;
-    while (!containerElem.matches('.enhanced-list-container')) {
-        if(containerElem.matches('body')) {
-            throw 'boosterCrafterListRemoveListener(): container not found!';
-        }
-        containerElem = containerElem.parentElement;
-    }
-    let listType = containerElem.dataset.listType;
-
-    let lists = globalSettings.boosterCrafter.lists;
-    for(let selectedEntryElem of boosterCrafterShortcuts.lists[listType].list.querySelectorAll('.selected')) {
-        if(listType === 'favorites') {
-            delete lists.favorites[selectedEntryElem.dataset.appid];
-        } else if(listType === 'craft') {
-            delete lists.crafting[selectedEntryElem.dataset.appid];
-        } else if(listType === 'opener') {
-            delete boosterCrafterData.openerList[selectedEntryElem.dataset.appid]
-        } else {
-            throw 'boosterCrafterListRemoveListener(): Container entry deletion not implemented!';
-        }
-
-        console.log('removing element...')
-        selectedEntryElem.remove();
-    }
-
-    boosterCrafterData.lastSelected[listType] = null;
-    boosterCrafterConfigSave();
-    if(listType === 'craft') {
-        boosterCrafterUpdateBoosterCost();
-    }
-}
-
-function boosterCrafterFavoritesListAddListener() {
-    let selectedAppid = document.getElementById('booster_game_selector').value;
-    if(isNaN(parseInt(selectedAppid))) {
-        console.log('boosterCrafterFavoritesListAddListener(): No app selected, no boosters will be added');
-        return;
-    }
-
-    let favoritesList = globalSettings.boosterCrafter.lists.favorites;
-    let favoritesListElem = boosterCrafterShortcuts.lists.favorites.list.querySelector('.userscript-config-list-entries');
-
-    if(Object.hasOwn(favoritesList, selectedAppid)) {
-        return;
-    }
-    let boosterData = unsafeWindow.CBoosterCreatorPage.sm_rgBoosterData[selectedAppid];
-    favoritesList[selectedAppid] = { appid: boosterData.appid }; // add more data here
-
-    // let favoritesEntryHTMLString = `<div class="userscript-config-list-entry booster" data-appid="${boosterData.appid}" data-cost="${boosterData.price}" title="${boosterData.name}">`
-    // +    `<img src="https://community.cloudflare.steamstatic.com/economy/boosterpack/${boosterData.appid}?l=english&single=1&v=2&size=75x" alt="">`
-    // + '</div>';
-    favoritesListElem.insertAdjacentHTML('beforeend', boosterCrafterGenerateBoosterListEntry(boosterData));
-    boosterCrafterBoosterCooldownAddTimer(boosterData.appid);
-
-    boosterCrafterConfigSave();
-}
-function boosterCrafterCraftListAddListener() {
-    let selectedAppid = document.getElementById('booster_game_selector').value;
-    if(isNaN(parseInt(selectedAppid))) {
-        console.log('boosterCrafterCraftListAddListener(): No app selected, no boosters will be added');
-        return;
-    }
-    boosterCrafterCraftListAdd([selectedAppid]);
-}
-function boosterCrafterCraftListAddFavoritesListener() {
-    let containerElem = boosterCrafterShortcuts.lists.favorites.list;
-    let appids = [];
-    for(let selectedEntryElem of containerElem.querySelectorAll('.selected')) {
-        appids.push(selectedEntryElem.dataset.appid);
-        selectedEntryElem.classList.remove('selected');
-    }
-
-    boosterCrafterCraftListAdd(appids);
-}
-function boosterCrafterCraftListAdd(appids) {
-    let craftList = globalSettings.boosterCrafter.lists.crafting;
-    let craftListElem = boosterCrafterShortcuts.lists.craft.list.querySelector('.userscript-config-list-entries');
-    for(let i=0; i<appids.length; i++) {
-        if(Object.hasOwn(craftList, appids[i])) {
-            continue;
-        }
-        let boosterData = boosterCrafterData.boosterDataList[appids[i]];
-        craftList[appids[i]] = { appid: boosterData.appid }; // add more data here
-
-        // let craftEntryHTMLString = `<div class="userscript-config-list-entry booster" data-appid="${boosterData.appid}" data-cost="${boosterData.price}" title="${boosterData.name}">`
-        // +    `<img src="https://community.cloudflare.steamstatic.com/economy/boosterpack/${boosterData.appid}?l=english&single=1&v=2&size=75x" alt="">`
-        // + '</div>';
-        craftListElem.insertAdjacentHTML('beforeend', boosterCrafterGenerateBoosterListEntry(boosterData));
-        boosterCrafterBoosterCooldownAddTimer(boosterData.appid);
-    }
-
-    boosterCrafterConfigSave();
-    boosterCrafterUpdateBoosterCost();
-}
-function boosterCrafterCraftListCraftListener(event) {
-    let selectedCount = 0;
-    let selectedTotalCost = 0;
-    let selectedEntries = boosterCrafterShortcuts.lists.craft.list.querySelectorAll('.selected');
-    if(!selectedEntries.length) {
-        selectedEntries = boosterCrafterShortcuts.lists.craft.list.querySelectorAll('.userscript-config-list-entry');
-    }
-
-    let stopFlag = true;
-    let tableBodyElem = document.getElementById('craft-dialog-table-body');
-    tableBodyElem.innerHTML = '';
-    boosterCrafterData.craftQueue = [];
-
-    for(let entryElem of selectedEntries) {
-        if(Object.hasOwn(entryElem.dataset, 'cooldownTimer')) {
-            continue;
-        }
-        let appid = entryElem.dataset.appid;
-        let boosterData = boosterCrafterData.boosterDataList[appid];
-        if(!boosterData) {
-            console.warn(`boosterCrafterCraftListCraftListener(): booster data for appid ${appid} not found!`);
-        }
-
-        let tableRow = tableBodyElem.insertRow();
-        tableRow.insertCell(0).innerHTML = boosterData.name;
-        tableRow.insertCell(1).innerHTML = boosterData.price;
-
-        selectedCount++;
-        selectedTotalCost += parseInt(boosterData.price);
-
-        boosterCrafterData.craftQueue.push(entryElem);
-        stopFlag = false;
-    }
-    if(stopFlag) {
-        return;
-    }
-    document.getElementById('craft-total-boosters-text').innerHTML = selectedCount;
-    document.getElementById('craft-total-cost-text').innerHTML = selectedTotalCost.toLocaleString();
-
-    let craftActionElem = boosterCrafterShortcuts.lists.craft.action;
-    let craftListElem = boosterCrafterShortcuts.lists.craft.list;
-
-    boosterCrafterShortcuts.SelectorAddCraftButton.disabled = true;
-    boosterCrafterShortcuts.addCraftButton.disabled = true;
-    craftActionElem.classList.add('disabled');
-    boosterCrafterSetOverlay(craftListElem, true, 'dialog');
-}
-function boosterCrafterCraftListCraftCancelListener() {
-    let craftActionElem = boosterCrafterShortcuts.lists.craft.action;
-    let craftListElem = boosterCrafterShortcuts.lists.craft.list;
-
-    boosterCrafterShortcuts.SelectorAddCraftButton.disabled = false;
-    boosterCrafterShortcuts.addCraftButton.disabled = false;
-    craftActionElem.classList.remove('disabled');
-    boosterCrafterSetOverlay(craftListElem, false);
-}
-async function boosterCrafterCraftListCraftConfirmListener() {
-    let craftLoaderProgressElem = document.getElementById('craft-list-progress');
-    let craftActionElem = boosterCrafterShortcuts.lists.craft.action;
-    let craftListElem = boosterCrafterShortcuts.lists.craft.list;
-    let openerActionElem = boosterCrafterShortcuts.lists.opener.action;
-    let openerListElem = boosterCrafterShortcuts.lists.opener.list;
-
-    craftLoaderProgressElem.innerHTML = '0';
-    document.getElementById('craft-list-progress-total').innerHTML = document.getElementById('craft-total-boosters-text').innerHTML;
-    boosterCrafterSetOverlay(boosterCrafterShortcuts.gooStatus, false);
-    boosterCrafterShortcuts.unpackTradableGooButton.disabled = true;
-    boosterCrafterShortcuts.unpackNontradableGooButton.disabled = true;
-    boosterCrafterSetOverlay(craftListElem, true, 'loading');
-    boosterCrafterShortcuts.addOpenerButton.disabled = false;
-    openerActionElem.classList.add('disabled');
-    boosterCrafterSetOverlay(openerListElem, false);
-
-    let craftCostAmount = boosterCrafterData.craftCost.amount;
-    let gems = boosterCrafterData.gems.find(x => x.classid === '667924416');
-    if(!gems || gems.count<craftCostAmount) {
-        let sacks = boosterCrafterData.gems.find(x => x.classid === '667933237');
-        if(!sacks || (sacks.count*1000)+gems.count<craftCostAmount) {
-            alert('Not enough gems. Try making less boosters?');
-        } else {
-            alert('Not enough gems. Try unpacking some sacks of gems or making less boosters?');
-        }
-    } else {
-        let gemsTradableAmount = gems.tradables.reduce((sum, x) => sum + x.count, 0);
-        if(gemsTradableAmount < craftCostAmount) {
-            let userResponse = prompt('Not enough tradable gems. Some nontradable gems will be used. Proceed? (y/n)');
-            if(userResponse.toLowerCase().startsWith('y')) {
-                await boosterCrafterCraftBoosters();
-            }
-        } else {
-            await boosterCrafterCraftBoosters();
-        }
-    }
-
-
-    if(document.getElementById('goostatus-sack-tradable').textContent !== '0') {
-        boosterCrafterShortcuts.unpackTradableGooButton.disabled = false;
-    }
-    if(document.getElementById('goostatus-sack-nontradable').textContent !== '0') {
-        boosterCrafterShortcuts.unpackNontradableGooButton.disabled = false;
-    }
-    boosterCrafterShortcuts.SelectorAddCraftButton.disabled = false;
-    boosterCrafterShortcuts.addCraftButton.disabled = false;
-    craftActionElem.classList.remove('disabled');
-    boosterCrafterSetOverlay(craftListElem, false);
-    openerActionElem.classList.remove('disabled');
-}
-async function boosterCrafterCraftBoosters() {
-    let craftLoaderProgressElem = document.getElementById('craft-list-progress');
-    let progressCounter = 0;
-    let tradableGems = unsafeWindow.CBoosterCreatorPage.sm_flUserTradableGooAmount;
-    let nontradableGems = unsafeWindow.CBoosterCreatorPage.sm_flUserUntradableGooAmount;
-    let craftStats = globalSettings.boosterCrafter.stats.crafts;
-    let tradabilityPreference = 2;
-
-    let requestBody = new URLSearchParams({
-        sessionid: steamToolsUtils.getSessionId()
-    });
-    let urlString = 'https://steamcommunity.com/tradingcards/ajaxcreatebooster/';
-
-    while(boosterCrafterData.craftQueue.length) {
-        let entryElem = boosterCrafterData.craftQueue[boosterCrafterData.craftQueue.length - 1];
-        let appid = entryElem.dataset.appid;
-        let boosterData = boosterCrafterData.boosterDataList[appid];
-        boosterCrafterData.boosters[appid] ??= { tradables: [], nontradables: [], count: 0, tradableCount: 0, nontradableCount: 0 };
-        let boosterListEntry = boosterCrafterData.boosters[appid];
-        let openerListEntry = boosterCrafterData.openerList[appid];
-        tradabilityPreference = tradableGems >= parseInt(entryElem.dataset.cost) ? 1 : 3;
-
-        requestBody.set('appid', boosterData.appid);
-        requestBody.set('series', boosterData.series);
-        requestBody.set('tradability_preference', tradabilityPreference);
-
-
-        let response = await fetch(urlString, {
-            method: 'POST',
-            body: requestBody,
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-            }
-        });
-
-        let responseData = await response.json();
-
-        // let responseData = {
-        //     "purchase_result": {
-        //         "communityitemid": "00000000000",
-        //         "appid": 000000,
-        //         "item_type": 00,
-        //         "purchaseid": "00000000",
-        //         "success": 1,
-        //         "rwgrsn": -2
-        //     },
-        //     "goo_amount": "000000",
-        //     "tradable_goo_amount": "000000",
-        //     "untradable_goo_amount": "0000"
-        // };
-
-        boosterCrafterBoosterCooldownAddTimer(appid, true);
-        entryElem.classList.remove('selected');
-
-        boosterData.unavailable = true;
-        boosterData.cooldownDate = new Date();
-        boosterData.cooldownDate.setDate(boosterData.cooldownDate.getDate() + 1);
-        if(boosterData.$Option) {
-            unsafeWindow.CBoosterCreatorPage.ToggleActionButton(boosterData.$Option);
-        }
-        if(boosterData.$MiniOption) {
-            unsafeWindow.CBoosterCreatorPage.ToggleActionButton(boosterData.$MiniOption);
-        }
-        unsafeWindow.CBoosterCreatorPage.RefreshSelectOptions();
-
-        unsafeWindow.CBoosterCreatorPage.UpdateGooDisplay(responseData.goo_amount, responseData.tradable_goo_amount, responseData.untradable_goo_amount);
-        boosterCrafterShortcuts.goostatusGooTradable.innerHTML = parseInt(responseData.tradable_goo_amount).toLocaleString();
-        boosterCrafterShortcuts.goostatusGooNontradable.innerHTML = parseInt(responseData.untradable_goo_amount).toLocaleString();
-        let gems = boosterCrafterData.gems.find(x => x.classid === '667924416');
-
-        // NOTE: Change gemsDiff if a predictable behaviour can be concluded
-        let gemsTradableDiff = gems.tradables.reduce((sum, x) => sum + x.count, 0) - parseInt(responseData.tradable_goo_amount);
-        while (gemsTradableDiff > 0) {
-            let lastAsset = gems.tradables[gems.tradables.length - 1];
-            if(lastAsset.count < gemsTradableDiff) {
-                gemsTradableDiff -= lastAsset.count;
-                gems.tradables.pop();
-            } else {
-                lastAsset.count -= gemsTradableDiff;
-                gemsTradableDiff = 0;
-            }
-        }
-        let gemsNontradableDiff = gems.nontradables.reduce((sum, x) => sum + x.count, 0) - parseInt(responseData.untradable_goo_amount);
-        let boosterTradability = !!gemsNontradableDiff;
-        while (gemsNontradableDiff > 0) {
-            let lastAsset = gems.nontradables[gems.nontradables.length - 1];
-            if(lastAsset.count < gemsNontradableDiff) {
-                gemsNontradableDiff -= lastAsset.count;
-                gems.nontradables.pop();
-            } else {
-                lastAsset.count -= gemsNontradableDiff;
-                gemsNontradableDiff = 0;
-            }
-        }
-        gems.count = parseInt(responseData.goo_amount);
-
-        if(boosterTradability) {
-            boosterListEntry.nontradables.push({ assetid: responseData.purchase_result.communityitemid, count: 1 });
-            boosterListEntry.nontradableCount++;
-            if(openerListEntry) {
-                openerListEntry.maxNontradable++;
-            }
-        } else {
-            boosterListEntry.tradables.push({ assetid: responseData.purchase_result.communityitemid, count: 1 });
-            boosterListEntry.tradableCount++;
-            if(openerListEntry) {
-                openerListEntry.maxTradable++;
-            }
-        }
-        boosterListEntry.count++;
-
-        let invEntryElem = boosterCrafterShortcuts.lists.inventory.list.querySelector(`[data-appid="${appid}"]`);
-        if(invEntryElem) {
-            if(boosterTradability) {
-                invEntryElem.dataset.qtyNontradable = boosterListEntry.nontradableCount;
-            } else {
-                invEntryElem.dataset.qtyTradable = boosterListEntry.tradableCount;
-            }
-        } else {
-            let invEntriesElem = boosterCrafterShortcuts.lists.inventory.list.querySelector('.userscript-config-list-entries');
-            let HTMLString = boosterCrafterGenerateBoosterListEntry({ appid: appid, name: boosterData.name, tradableCount: boosterListEntry.tradableCount, nontradableCount: boosterListEntry.nontradableCount });
-            invEntriesElem.insertAdjacentHTML('beforeend', HTMLString);
-        }
-
-        if(!Object.hasOwn(craftStats, appid)) {
-            craftStats[appid] = 0;
-        }
-        craftStats[appid]++;
-        await boosterCrafterConfigSave();
-
-        craftLoaderProgressElem.innerHTML = ++progressCounter;
-        boosterCrafterData.craftQueue.pop();
-    }
-
-    boosterCrafterUpdateBoosterCost();
-}
-
-function boosterCrafterOpenerListAddListener() {
-    let openerListElem = boosterCrafterShortcuts.lists.opener.list.querySelector('.userscript-config-list-entries');
-    for(let selectedElem of boosterCrafterShortcuts.lists.inventory.list.querySelectorAll('.selected')) {
-        let appid = selectedElem.dataset.appid;
-        if(boosterCrafterData.openerList[appid]) {
-            continue;
-        }
-
-        let qtyTradable = parseInt(selectedElem.dataset.qtyTradable);
-        let qtyNontradable = parseInt(selectedElem.dataset.qtyNontradable);
-        let name = selectedElem.title;
-        boosterCrafterData.openerList[appid] = {
-            qtyTradable: qtyTradable,
-            maxTradable: qtyTradable,
-            qtyNontradable: qtyNontradable,
-            maxNontradable: qtyNontradable,
-            name: name
-        };
-
-        // let openerEntryHTMLString = `<div class="userscript-config-list-entry booster" data-appid="${appid}" data-qty-tradable="${qtyTradable}" data-qty-nontradable="${qtyNontradable}" title="${name}">`
-        // +    `<img src="https://community.cloudflare.steamstatic.com/economy/boosterpack/${appid}?l=english&single=1&v=2&size=75x" alt="">` // TODO: change language dynamically?
-        // + '</div>';
-        openerListElem.insertAdjacentHTML('beforeend', boosterCrafterGenerateBoosterListEntry({ appid: appid, tradableCount: qtyTradable, nontradableCount: qtyNontradable, name: name }));
-
-        selectedElem.classList.remove('selected');
-    }
-}
-function boosterCrafterOpenerListIncrementListener() {
-    boosterCrafterOpenerListChangeValue(1);
-}
-function boosterCrafterOpenerListDecrementListener() {
-    boosterCrafterOpenerListChangeValue(-1);
-}
-function boosterCrafterOpenerListChangeValue(value) {
-    if(typeof value !== 'number') {
-        return;
-    }
-
-    for(let selectedElem of boosterCrafterShortcuts.lists.opener.list.querySelectorAll('.selected')) {
-        let appid = selectedElem.dataset.appid;
-        if(!boosterCrafterData.openerList[appid]) {
-            console.warn('boosterCrafterOpenerListIncrementListener(): invalid appid somehow, something is wrong!');
-            continue;
-        }
-
-        let dataEntry = boosterCrafterData.openerList[appid];
-
-        if(dataEntry.qtyTradable === dataEntry.maxTradable) {
-            let newQty = dataEntry.qtyNontradable + value;
-            if(newQty > dataEntry.maxNontradable) {
-                dataEntry.qtyTradable = Math.min(newQty - dataEntry.maxNontradable, dataEntry.maxTradable);
-                dataEntry.qtyNontradable = 0;
-            } else if(newQty < 0) {
-                dataEntry.qtyTradable = Math.max(dataEntry.maxTradable + newQty, 1);
-                dataEntry.qtyNontradable = 0;
-            } else {
-                dataEntry.qtyNontradable = newQty;
-            }
-        } else {
-            let newQty = dataEntry.qtyTradable + value;
-            if(newQty > dataEntry.maxTradable) {
-                dataEntry.qtyTradable = dataEntry.maxTradable;
-                dataEntry.qtyNontradable = Math.min(newQty - dataEntry.maxTradable, dataEntry.maxNontradable);
-            } else if(newQty < 1) {
-                dataEntry.qtyTradable = dataEntry.maxTradable;
-                dataEntry.qtyNontradable = Math.max(dataEntry.maxNontradable + newQty, 0);
-            } else {
-                dataEntry.qtyTradable = newQty;
-            }
-        }
-
-        selectedElem.dataset.qtyTradable = dataEntry.qtyTradable;
-        selectedElem.dataset.qtyNontradable = dataEntry.qtyNontradable;
-    }
-}
-function boosterCrafterOpenerListOpenListener() {
-    let selectedEntries = boosterCrafterShortcuts.lists.opener.list.querySelectorAll('.selected');
-    if(!selectedEntries.length) {
-        selectedEntries = boosterCrafterShortcuts.lists.opener.list.querySelectorAll('.userscript-config-list-entry');
-    }
-    if(!selectedEntries.length) {
-        return;
-    }
-    let tableBodyElem = document.getElementById('opener-dialog-table-body');
-    tableBodyElem.innerHTML = '';
-    for(let entryElem of selectedEntries) {
-        let name = entryElem.title;
-        let tradableCount = entryElem.dataset.qtyTradable;
-        let nontradableCount = entryElem.dataset.qtyNontradable;
-
-
-        let tableRow = tableBodyElem.insertRow();
-        tableRow.insertCell(0).innerHTML = name;
-        tableRow.insertCell(1).innerHTML = nontradableCount;
-        tableRow.insertCell(2).innerHTML = tradableCount;
-    }
-
-    let openerActionElem = boosterCrafterShortcuts.lists.opener.action;
-    let openerListElem = boosterCrafterShortcuts.lists.opener.list;
-
-    boosterCrafterShortcuts.addOpenerButton.disabled = true;
-    openerActionElem.classList.add('disabled');
-    boosterCrafterSetOverlay(openerListElem, true, 'dialog');
-}
-function boosterCrafterOpenerListOpenCancelListener() {
-    let openerActionElem = boosterCrafterShortcuts.lists.opener.action;
-    let openerListElem = boosterCrafterShortcuts.lists.opener.list;
-
-    boosterCrafterShortcuts.addOpenerButton.disabled = false;
-    openerActionElem.classList.remove('disabled');
-    boosterCrafterSetOverlay(openerListElem, false);
-}
-async function boosterCrafterOpenerListOpenConfirmListener() {
-    const tallyOpenerBoosters = () => {
-        let total = 0;
-        for(let appid in boosterCrafterData.openerList) {
-            let entry = boosterCrafterData.openerList[appid];
-            total += entry.qtyTradable + entry.qtyNontradable;
-        }
-        return total;
-    };
-
-    let openerLoaderProgressElem = document.getElementById('opener-list-progress');
-    let craftActionElem = boosterCrafterShortcuts.lists.craft.action;
-    let craftListElem = boosterCrafterShortcuts.lists.craft.list;
-    let openerActionElem = boosterCrafterShortcuts.lists.opener.action;
-    let openerListElem = boosterCrafterShortcuts.lists.opener.list;
-
-    openerLoaderProgressElem.innerHTML = '0';
-    document.getElementById('opener-list-progress-total').innerHTML = tallyOpenerBoosters();
-    boosterCrafterSetOverlay(boosterCrafterShortcuts.gooStatus, false);
-    boosterCrafterShortcuts.unpackTradableGooButton.disabled = true;
-    boosterCrafterShortcuts.unpackNontradableGooButton.disabled = true;
-    boosterCrafterShortcuts.SelectorAddCraftButton.disabled = false;
-    boosterCrafterShortcuts.addCraftButton.disabled = false;
-    craftActionElem.classList.add('disabled');
-    boosterCrafterSetOverlay(craftListElem, false);
-    boosterCrafterSetOverlay(openerListElem, true, 'loading');
-
-    console.log(boosterCrafterData);
-    await boosterCrafterOpenBoosters();
-
-
-    if(document.getElementById('goostatus-sack-tradable').textContent !== '0') {
-        boosterCrafterShortcuts.unpackTradableGooButton.disabled = false;
-    }
-    if(document.getElementById('goostatus-sack-nontradable').textContent !== '0') {
-        boosterCrafterShortcuts.unpackNontradableGooButton.disabled = false;
-    }
-    craftActionElem.classList.remove('disabled');
-    boosterCrafterShortcuts.addOpenerButton.disabled = false;
-    openerActionElem.classList.remove('disabled');
-    boosterCrafterSetOverlay(openerListElem, false);
-}
-async function boosterCrafterOpenBoosters() {
-    async function openBooster(appid, assetid) {
-        requestBody.set('appid', appid);
-        requestBody.set('communityitemid', assetid);
-
-
-        let response = await fetch(urlString, {
-            method: 'POST',
-            body: requestBody,
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-            }
-        });
-
-        let responseData = await response.json();
-
-        // let responseData = {
-        //     "success": 1,
-        //     "rgItems": [
-        //         {
-        //             "image": "url-addr-str",
-        //             "name": "string",
-        //             "series": 1,
-        //             "foil": boolean
-        //         },
-        //         {
-        //             "image": "url-addr-str",
-        //             "name": "string",
-        //             "series": 1,
-        //             "foil": boolean
-        //         },
-        //         {
-        //             "image": "url-addr-str",
-        //             "name": "string",
-        //             "series": 1,
-        //             "foil": boolean
-        //         }
-        //     ]
-        // };
-
-        if(responseData.success !== 1) {
-            throw 'boosterCrafterOpenBoosters(): error opening booster!';
-        }
-
-        for(let cardData of responseData.rgItems) {
-            let imgUrl = cardData.image.replace(/https:\/\/community\.(akamai|cloudflare)\.steamstatic\.com\/economy\/image\//g, '');
-            currentDropStats[appid][imgUrl] ??= { imgUrl: imgUrl, name: cardData.name, foil: cardData.foil, count: 0 };
-            currentDropStats[appid][imgUrl].count++;
-            dropStats[appid][imgUrl] ??= { imgUrl: imgUrl, name: cardData.name, foil: cardData.foil, count: 0 };
-            dropStats[appid][imgUrl].count++;
-
-
-            let cardElem = boosterCrafterShortcuts.lists.card.list.querySelector(`[data-img-url="${imgUrl}"]`);
-            if(cardElem) {
-                cardElem.dataset.qty = currentDropStats[appid][imgUrl].count;
-            } else {
-                let HTMLString = boosterCrafterGenerateCardListEntry({ appid: appid, imgUrl: imgUrl, qty: 1, foil: cardData.foil, name: cardData.name });
-
-                let firstElem = boosterCrafterShortcuts.lists.card.list.querySelector(`[data-appid="${appid}"]`);
-                if(firstElem) {
-                    firstElem.insertAdjacentHTML('beforebegin', HTMLString);
-                } else {
-                    let entriesElem = boosterCrafterShortcuts.lists.card.list.querySelector(`.userscript-config-list-entries`);
-                    entriesElem.insertAdjacentHTML('beforeend', HTMLString);
-                }
-            }
-
-            if(cardData.foil) {
-                boosterCrafterShortcuts.foilCardCount.innerHTML = parseInt(boosterCrafterShortcuts.foilCardCount.innerHTML) + 1;
-            } else {
-                boosterCrafterShortcuts.normalCardCount.innerHTML = parseInt(boosterCrafterShortcuts.normalCardCount.innerHTML) + 1;
-            }
-        }
-    }
-
-    let currentDropStats = boosterCrafterData.currentDropStats;
-    let dropStats = globalSettings.boosterCrafter.stats.drops;
-    let openerLoaderProgressElem = document.getElementById('opener-list-progress');
-    let progressCounter = 0;
-    let selectedEntries = boosterCrafterShortcuts.lists.opener.list.querySelectorAll('.selected');
-    if(!selectedEntries.length) {
-        selectedEntries = boosterCrafterShortcuts.lists.opener.list.querySelectorAll('.userscript-config-list-entry');
-    }
-
-    let requestBody = new URLSearchParams({
-        sessionid: steamToolsUtils.getSessionId()
-    });
-    let urlString = `https://steamcommunity.com/profiles/${steamToolsUtils.getMySteamId()}/ajaxunpackbooster/`;
-
-    for(let entryElem of selectedEntries) {
-        let appid = entryElem.dataset.appid;
-        let invElem = boosterCrafterShortcuts.lists.inventory.list.querySelector(`[data-appid="${appid}"]`);
-        let boosterListEntry = boosterCrafterData.boosters[appid];
-        let openerListEntry = boosterCrafterData.openerList[appid];
-        let { qtyTradable, qtyNontradable } = openerListEntry;
-        currentDropStats[appid] ??= {};
-        dropStats[appid] ??= {};
-
-        for(let i=0; i<qtyTradable; ++i) {
-            if(boosterListEntry.tradables.length === 0) {
-                throw 'boosterCrafterOpenBoosters(): No boosters left in the list!';
-            }
-
-            let asset = boosterListEntry.tradables[boosterListEntry.tradables.length - 1];
-
-            await openBooster(appid, asset.assetid);
-            openerListEntry.qtyTradable--;
-            openerListEntry.maxTradable--;
-            entryElem.dataset.qtyTradable = openerListEntry.qtyTradable;
-            invElem.dataset.qtyTradable = openerListEntry.maxTradable;
-            await boosterCrafterConfigSave();
-            openerLoaderProgressElem.innerHTML = ++progressCounter;
-
-            boosterListEntry.count--;
-            boosterListEntry.tradableCount--;
-            boosterListEntry.tradables.pop();
-        }
-
-        for(let i=0; i<qtyNontradable; ++i) {
-            if(boosterListEntry.nontradables.length === 0) {
-                throw 'boosterCrafterOpenBoosters(): No boosters left in the list!';
-            }
-
-            let asset = boosterListEntry.nontradables[boosterListEntry.nontradables.length - 1];
-
-            await openBooster(appid, asset.assetid);
-            openerListEntry.qtyNontradable--;
-            openerListEntry.maxNontradable--;
-            entryElem.dataset.qtyNontradable = openerListEntry.qtyNontradable;
-            invElem.dataset.qtyNontradable = openerListEntry.maxNontradable;
-            await boosterCrafterConfigSave();
-            openerLoaderProgressElem.innerHTML = ++progressCounter;
-
-            boosterListEntry.count--;
-            boosterListEntry.nontradableCount--;
-            boosterListEntry.nontradables.pop();
-        }
-
-        if(!openerListEntry.maxTradable && !openerListEntry.maxNontradable) {
-            delete boosterCrafterData.openerList[appid];
-            entryElem.remove();
-            invElem.remove();
-        }
-    }
-}
-
-function boosterCrafterSetOverlay(overlayContainerElem, overlayEnable, overlayState) {
-    if(overlayEnable) {
-        overlayContainerElem.classList.add('overlay');
-    } else {
-        overlayContainerElem.classList.remove('overlay');
-    }
-
-    if(typeof overlayState === 'string') {
-        let overlayElem;
-        for(let containerChildElem of overlayContainerElem.children) {
-            if(containerChildElem.matches('.userscript-overlay')) {
-                if(overlayElem) {
-                    console.warn('boosterCrafterSetOverlay(): Multiple overlay elements detected on same parent!');
-                }
-                overlayElem = containerChildElem;
-            }
-        }
-
-        if(!overlayElem) {
-            console.warn('boosterCrafterSetOverlay(): No overlay element found in immediate children!');
-            return;
-        }
-
-        overlayElem.className = 'userscript-overlay ' + overlayState;
-    }
-}
-function boosterCrafterGenerateBoosterListEntry(params) {
-    if(!Object.hasOwn(params, 'appid')) {
-        console.error('boosterCrafterGenerateBoosterListEntry(): Appid not provided!');
-        return '';
-    }
-    let HTMLString = `<div class="userscript-config-list-entry booster" data-appid="${params.appid}"`;
-    if(Object.hasOwn(params, 'tradableCount') && Object.hasOwn(params, 'nontradableCount')) {
-        HTMLString += ` data-qty-tradable="${params.tradableCount}" data-qty-nontradable="${params.nontradableCount}"`;
-    } else if(Object.hasOwn(params, 'price')) {
-        HTMLString += ` data-cost="${params.price}"`;
-        if(Object.hasOwn(params, 'available_at_time')) {
-            HTMLString += ` data-cooldown-timer="∞:∞:∞"`;
-        }
-    }
-    if(Object.hasOwn(params, 'name')) {
-        HTMLString += ` title="${params.name}"`;
-    }
-    HTMLString += '>'
-      +    `<img src="https://community.cloudflare.steamstatic.com/economy/boosterpack/${params.appid}?l=english&single=1&v=2&size=75x" alt="">`
-      + '</div>';
-
-    return HTMLString;
-}
-function boosterCrafterGenerateCardListEntry(params) {
-    if(!Object.hasOwn(params, 'imgUrl')) {
-        console.error('boosterCrafterGenerateCardListEntry(): img url string not provided!');
-        return '';
-    }
-
-    let HTMLString = `<div class="userscript-config-list-entry card"`;
-    if(Object.hasOwn(params, 'appid')) {
-        HTMLString += ` data-appid="${params.appid}"`;
-    }
-    HTMLString += ` data-img-url="${params.imgUrl}"`;
-    if(Object.hasOwn(params, 'qty')) {
-        HTMLString += ` data-qty="${params.qty}"`;
-    }
-    if(params.foil) {
-        HTMLString += ` data-foil=""`;
-    }
-    if(Object.hasOwn(params, 'name')) {
-        HTMLString += ` title="${params.name}"`;
-    }
-    HTMLString += '>'
-      +    `<img src="https://community.akamai.steamstatic.com/economy/image/${params.imgUrl}/75fx85f?allow_animated=1" alt="">`
-      + '</div>';
-
-    return HTMLString;
-}
-
-async function boosterCrafterConfigSave() {
-    await SteamToolsDbManager.setToolConfig('boosterCrafter');
-}
-async function boosterCrafterConfigLoad() {
-    let config = await SteamToolsDbManager.getToolConfig('boosterCrafter');
-    if(config.boosterCrafter) {
-        globalSettings.boosterCrafter = config.boosterCrafter;
-        boosterCrafterLoadConfig();
-    }
-}
-
-async function boosterCrafterConfigImportListener() {
-    const isValidConfigObject = (obj) => {
-        if(!steamToolsUtils.isSimplyObject(obj.lists)) {
-            return false;
-        } else if(!steamToolsUtils.isSimplyObject(obj.lists.favorites)) {
-            return false;
-        } else if(!steamToolsUtils.isSimplyObject(obj.lists.crafting)) {
-            return false;
-        } else if(!steamToolsUtils.isSimplyObject(obj.stats)) {
-            return false;
-        } else if(!steamToolsUtils.isSimplyObject(obj.stats.crafts)) {
-            return false;
-        } else if(!steamToolsUtils.isSimplyObject(obj.stats.drops)) {
-            return false;
-        }
-        return true;
-    }
-
-    let importedConfig = await importConfig('boosterCrafter');
-    console.log(importedConfig)
-    if(!isValidConfigObject(importedConfig)) {
-        throw 'boosterCrafterConfigImportListener(): Invalid imported config!';
-    }
-
-    globalSettings.boosterCrafter = importedConfig;
-    boosterCrafterLoadConfig();
-    boosterCrafterConfigSave();
-}
-async function boosterCrafterConfigExportListener() {
-    exportConfig('boosterCrafter', 'SteamBoosterCrafterConfig');
-}
-
-function boosterCrafterParseCooldownDate(dateString) {
-    let [monthStr, dayStr, , time] = dateString.split(' ');
-    let dateNow = new Date();
-    let nextYear = dateNow.getMonth() === 11 && monthStr === 'Jan';
-    let newTime = time.match(/\d+/g).map(x => parseInt(x));
-    if(time.endsWith('am') && time.startsWith('12')) {
-        newTime[0] = 0;
-    } else if(time.endsWith('pm') && !time.startsWith('12')) {
-        newTime[0] += 12;
-    }
-
-    return new Date(dateNow.getFullYear() + (nextYear ? 1 : 0), MONTHS_ARRAY.indexOf(monthStr), parseInt(dayStr), newTime[0], newTime[1]);
-}
-
-async function setupBadgepageCraft() {
-    // add button near the existing craft button
-}
-
-function badgepageCraftUpdateTextListener() {
-
-}
-
-function badgepageCraftUpdateSliderListener() {
-
-}
-
-function badgepageCraftCraftListener() {
-    
-}
-
-function badgepageCraftPromptCancelListener() {
-
-}
-
-function badgepageCraftPromptConfirmListener () {
-
-}
-
-
-
-GLOBALSETTINGSDEFAULTS.badgepageFilter = {
-    applist: {
-        // object of appids, array/set of profileids
     },
-    includeCacheMatching: false
-};
-const badgepageFilterShortcuts = {};
-const badgepageFilterData = {};
 
-async function setupBadgepageFilter() {
-    Object.assign(badgepageFilterData, {
-        isMyPage: document.getElementById('global_actions').querySelector(':scope > a').href.includes(document.querySelector('.profile_small_header_texture > a').href),
-        itemIds: {},
-        cardInfoList: [],
-        appid: document.querySelector('a.whiteLink:nth-child(5)').href.match(/\d+(?=\/$)/g)[0],
-        isFoilPage: window.location.search.includes('border=1'),
-        friendsCardStock: {},
-        // cachedProfiles: added from globalSettings
-        // me: added from processing my badgepage
-    });
+    shortcuts: {},
+    data: {},
 
-    let { isMyPage, cardInfoList } = badgepageFilterData;
+    setup: async function() {
+        // resize
+        for(let minioption of document.getElementsByClassName('minioption')) {
+            minioption.style.width = '150px';
+            minioption.style.marginBottom = '40px';
+        }
+        document.querySelector('.booster_creator_right').style.width = '480px';
+        document.querySelector('.booster_creator_left').style.marginBottom = '0';
+        document.querySelector('.booster_creator_left').style.marginRight = '60px';
 
-    let config = await SteamToolsDbManager.getToolConfig('badgepageFilter');
+        // set up css styles for this feature
+        GM_addStyle(cssGlobal);
+        GM_addStyle(cssEnhanced);
 
-    globalSettings.badgepageFilter = config.badgepageFilter ?? steamToolsUtils.deepClone(GLOBALSETTINGSDEFAULTS.badgepageFilter);
-    globalSettings.badgepageFilter.applist[badgepageFilterData.appid] ??= [];
-    badgepageFilterData.cachedProfiles = steamToolsUtils.deepClone(globalSettings.badgepageFilter.applist[badgepageFilterData.appid]);
+        let config = await SteamToolsDbManager.getToolConfig('boosterCrafter');
 
-    if(isMyPage) {
-        await badgepageFilterprocessMyBadgepage();
-    } else {
-        await badgepageFilterProcessOthersBadgepage(document);
-    }
+        globalSettings.boosterCrafter = config.boosterCrafter ?? steamToolsUtils.deepClone(BoosterCrafter.SETTINGSDEFAULTS);
 
-    for(let cardEntry of document.querySelectorAll('.badge_card_set_card')) {
-        let textNodes = cardEntry.querySelector('.badge_card_set_text').childNodes;
-        cardInfoList.push({
-            name: textNodes[textNodes.length-3].textContent.trim(),
-            img: cardEntry.querySelector('img').src
-        });
-    }
+        addSvgBlock(document.querySelector('.booster_creator_area'));
 
-    addSvgBlock(document.getElementById('responsive_page_template_content'));
-    GM_addStyle(cssGlobal);
-    GM_addStyle(cssEnhanced);
-    GM_addStyle(cssMatcher);
-
-    let friendMatchHTMLString = '<div id="page-match-options" class="enhanced-options right userscript-vars">'
-      +    '<button id="good-swaps" class="userscript-btn purple wide">Display Good Swaps</button>'
-      +    '<button id="balance-cards" class="userscript-btn purple wide">Balance Cards</button>'
-      +    '<button id="help-others" class="userscript-btn purple wide">Help Friends!</button>'
-      + '</div>';
-    if(isMyPage) {
-        let headerLinkElem = document.querySelector('.badge_cards_to_collect');
-        headerLinkElem.insertAdjacentHTML('beforebegin', friendMatchHTMLString);
-    } else {
-        let headerLinkElem = document.querySelector('.badge_row_inner');
-        headerLinkElem.insertAdjacentHTML('beforeend', friendMatchHTMLString);
-    }
-
-    badgepageFilterShortcuts.main = document.querySelector('.badge_row_inner');
-    badgepageFilterShortcuts.options = document.getElementById('page-match-options');
-    badgepageFilterShortcuts.main.insertAdjacentHTML('beforeend', cssAddThrobber());
-    badgepageFilterShortcuts.throbber = document.querySelector('.userscript-throbber');
-
-    document.getElementById('good-swaps').addEventListener('click', badgepageFilterShowGoodSwapsListener);
-    document.getElementById('balance-cards').addEventListener('click', badgepageFilterMutualOnlyMatchingListener);
-    document.getElementById('help-others').addEventListener('click', badgepageFilterHelpOthersListener);
-
-    if(isMyPage) {
-        let moreFilterOptionsHTMLString = '<div>'
-          +       `<input type="checkbox" id="include-cached-profiles" ${globalSettings.badgepageFilter.includeCacheMatching ? 'checked' : ''}>`
-          +       '<label for="include-cached-profiles">Include Past Matches</label>'
+        // insert new elements (add loading elements?)
+        const generateGooStatusSectionHTMLString = (tradableString, itemString) => {
+            return `<div class="enhanced-goostatus-section" data-type="${itemString}">`
+              +    `<div id="goostatus-${itemString}-${tradableString}" class="enhanced-goostatus-text">0</div>`
+              + '</div>';
+        };
+        const generateGooStatusRowHTMLString = (tradableString) => {
+            return `<div class="enhanced-goostatus-row" data-type="${tradableString}">`
+              +    generateGooStatusSectionHTMLString(tradableString, 'sack')
+              +    `<button id="goostatus-unpack-${tradableString}" class="enhanced-action">>></button>`
+              +    generateGooStatusSectionHTMLString(tradableString, 'goo')
+              + '</div>';
+        };
+        document.querySelector('.booster_creator_goostatus').style.display = 'none';
+        const gooStatusDialogHTMLString = '<div class="userscript-dialog">'
+          +    '<div>'
+          +       'Unpack <input type="number" id="goostatus-unpack-text" class="userscript-input" min="0"> sacks'
           +    '</div>'
-          +    '<button id="friend-filter" class="userscript-btn purple wide">Filter Friends</button>';
-        badgepageFilterShortcuts.options.insertAdjacentHTML('afterbegin', moreFilterOptionsHTMLString);
-        document.getElementById('include-cached-profiles').addEventListener('click', badgepageFilterUpdateCacheFlagListener);
-        document.getElementById('friend-filter').addEventListener('click', badgepageFilterFilterFriendsWithCardsListener);
-    } else {
-        let dividerHTMLString = '<div class="badge_detail_tasks footer"></div>';
-        badgepageFilterShortcuts.options.insertAdjacentHTML('beforebegin', dividerHTMLString);
-    }
-}
+          +    '<input type="range" name="unpack-amount" id="goostatus-unpack-slider" class="userscript-input" list="goostatus-unpack-datalist" min="0">'
+          +    '<div class="userscript-dialog-container">'
+          +       '<button id="goostatus-unpack-cancel" class="userscript-btn red wide">Cancel</button>'
+          +       '<button id="goostatus-unpack-confirm" class="userscript-btn green wide">Unpack</button>'
+          +    '</div>'
+          +    '<datalist id="goostatus-unpack-datalist"></datalist>'
+          + '</div>';
+        let gooStatusHTMLString = '<div class="enhanced-goostatus-container userscript-vars">'
+          +    '<div class="enhanced-goostatus overlay">'
+          +       generateGooStatusRowHTMLString('tradable')
+          +       generateGooStatusRowHTMLString('nontradable')
+          +       cssAddOverlay(cssAddThrobber(), gooStatusDialogHTMLString, { initialState: 'loading' })
+          +    '</div>'
+          + '</div>';
+        document.querySelector('.booster_creator_goostatus').insertAdjacentHTML('afterend', gooStatusHTMLString);
 
-function getCardStock(pageElem) {
-    if(!pageElem.querySelector('.badge_card_set_cards')) {
-        return null;
-    }
+        let boosterSelectorHTMLString = '<div class="enhanced-options userscript-vars">'
+          +    '<button id="selector-add-favorites" class="userscript-btn purple wide">Add to Favorites</button>'
+          +    '<button id="selector-add-craft" class="userscript-btn purple wide">Add to List</button>'
+          + '</div>';
+        document.querySelector('.booster_game_selector').insertAdjacentHTML('afterend', boosterSelectorHTMLString);
 
-    let cardStock = [];
-    for(let cardEntry of pageElem.querySelectorAll('.badge_card_set_card')) {
-        let cardEntryNodes = cardEntry.children[1].childNodes;
-        let cardAmount = cardEntryNodes.length === 5 ? parseInt(cardEntryNodes[1].textContent.replace(/[()]/g, '')) : 0;
-        cardStock.push(parseInt(cardAmount));
-    }
+        const favoritesListDialogHTMLString = '<div class="userscript-dialog">'
+          +    '<input type="text" name="app-search" id="app-search-text-input" class="userscript-input" placeholder="Search title/appid">'
+          +    '<div id="app-search-results" class="userscript-dialog-container full"></div>'
+          +    '<div class="userscript-dialog-container">'
+          +       '<button id="app-search-close" class="userscript-btn red wide">Close</button>'
+          +    '</div>'
+          + '</div>';
+        const craftListLoaderHTMLString = '<div class="userscript-loader">'
+          +    cssAddThrobber()
+          +    '<div class="userscript-dialog-container">'
+          +       '<span><span id="craft-list-progress">0</span>/<span id="craft-list-progress-total">0</span></span>'
+          +    '</div>'
+          + '</div>';
+        const craftListDialogHTMLString = '<div class="userscript-dialog">'
+          +    '<div>Craft the following boosters?</div>'
+          +    '<div class="userscript-dialog-table-container userscript-custom-scroll">'
+          +       '<table class="userscript-dialog-table">'
+          +          '<thead>'
+          +             '<tr>'
+          +                '<th>Name</th>'
+          +                '<th>Cost</th>'
+          +             '</tr>'
+          +          '</thead>'
+          +          '<tbody id="craft-dialog-table-body">'
+          +          '</tbody>'
+          +       '</table>'
+          +    '</div>'
+          +    '<div class="userscript-dialog-container">'
+          +       '<span>Total Boosters: <span id="craft-total-boosters-text">0</span></span>'
+          +    '</div>'
+          +    '<div class="userscript-dialog-container">'
+          +       '<span>Total Cost: <span id="craft-total-cost-text">0</span></span>'
+          +    '</div>'
+          +    '<div class="userscript-dialog-container">'
+          +       '<button id="craft-dialog-cancel" class="userscript-btn red wide">No</button>'
+          +       '<button id="craft-dialog-confirm" class="userscript-btn green wide">Yes</button>'
+          +    '</div>'
+          + '</div>';
+        const openerListLoaderHTMLString = '<div class="userscript-loader">'
+          +    cssAddThrobber()
+          +    '<div class="userscript-dialog-container">'
+          +       '<span><span id="opener-list-progress">0</span>/<span id="opener-list-progress-total">0</span></span>'
+          +    '</div>'
+          + '</div>';
+        const openerListDialogHTMLString = '<div class="userscript-dialog">'
+          +    '<div>Open the following boosters?</div>'
+          +    '<div class="userscript-dialog-table-container userscript-custom-scroll">'
+          +       '<table class="userscript-dialog-table">'
+          +          '<thead>'
+          +             '<tr>'
+          +                '<th>Name</th>'
+          +                '<th>⏳</th>'
+          +                '<th>✅</th>'
+          +             '</tr>'
+          +          '</thead>'
+          +          '<tbody id="opener-dialog-table-body">'
+          +          '</tbody>'
+          +       '</table>'
+          +    '</div>'
+          +    '<div class="userscript-dialog-container">'
+          +       '<button id="opener-dialog-cancel" class="userscript-btn red wide">No</button>'
+          +       '<button id="opener-dialog-confirm" class="userscript-btn green wide">Yes</button>'
+          +    '</div>'
+          + '</div>';
+        let enhancedBoosterHTMLString = '<div class="enhanced-area userscript-vars">'
+          +    '<div class="userscript-config-list enhanced-list-container" data-list-type="favorites">'
+          +       '<div class="userscript-config-list-header"><span class="userscript-config-list-title">Favorites</span></div>'
+          +       '<div class="conf-list-entry-action modify">'
+          +          '<div class="conf-list-entry-action-modify">'
+          +             '<div class="entry-action">'
+          +                '<div class="userscript-bg-filtered delete"></div>'
+          +             '</div>'
+          +             '<div id="config-import" class="entry-action" title="import config file">'
+          +                '<div class="userscript-bg-filtered upload"></div>'
+          +             '</div>'
+          +             '<div id="config-export" class="entry-action" title="export config file">'
+          +                '<div class="userscript-bg-filtered download"></div>'
+          +             '</div>'
+          +             '<div id="app-search" class="entry-action">'
+          +                '<div class="userscript-bg-filtered search"></div>'
+          +             '</div>'
+          +          '</div>'
+          +          '<div class="userscript-overlay"></div>'
+          +       '</div>'
+          +       '<div class="userscript-config-list-list overlay">'
+          +          '<div class="userscript-config-list-entries tile userscript-custom-scroll"></div>'
+          +          cssAddOverlay(cssAddThrobber(), favoritesListDialogHTMLString, { initialState: 'loading' })
+          +       '</div>'
+          +    '</div>'
+          +    '<button id="add-craft" class="userscript-btn enhanced-action purple">'
+          +       '>><br>Add'
+          +    '</button>'
+          +    '<div class="userscript-config-list enhanced-list-container" data-list-type="craft">'
+          +       '<div class="userscript-config-list-header">'
+          +          '<span class="userscript-config-list-title">Craft List</span>'
+          +       '</div>'
+          +       '<div class="conf-list-entry-action modify disabled">'
+          +          '<div class="conf-list-entry-action-modify">'
+          +             '<div class="entry-action">'
+          +                '<div class="userscript-bg-filtered delete"></div>'
+          +             '</div>'
+          +             '<div id="craft-cost" class="conf-list-text gem-amount" data-qty="0"></div>'
+          +             '<div id="craft-boosters" class="entry-action">Craft</div>'
+          +          '</div>'
+          +          '<div class="userscript-overlay"></div>'
+          +       '</div>'
+          +       '<div class="userscript-config-list-list overlay">'
+          +          '<div class="userscript-config-list-entries tile userscript-custom-scroll"></div>'
+          +          cssAddOverlay(craftListLoaderHTMLString, craftListDialogHTMLString, { initialState: 'loading' })
+          +       '</div>'
+          +    '</div>'
+          +    '<div class="userscript-config-list enhanced-list-container" data-list-type="inventory">'
+          +       '<div class="userscript-config-list-header">'
+          +          '<span class="userscript-config-list-title">Available Boosters</span>'
+          +       '</div>'
+          +       '<div class="conf-list-entry-action modify">'
+          +          '<div class="conf-list-entry-action-modify">'
+          +             '<div id="inventory-reload" class="entry-action">'
+          +                '<div class="userscript-bg-filtered reload"></div>'
+          +             '</div>'
+          +          '</div>'
+          +          '<div class="userscript-overlay"></div>'
+          +       '</div>'
+          +       '<div class="userscript-config-list-list overlay">'
+          +          '<div class="userscript-config-list-entries tile userscript-custom-scroll"></div>'
+          +          cssAddOverlay(cssAddThrobber(), { initialState: 'loading' })
+          +       '</div>'
+          +    '</div>'
+          +    '<button id="add-opener" class="userscript-btn enhanced-action purple">'
+          +       '>><br>Add'
+          +    '</button>'
+          +    '<div class="userscript-config-list enhanced-list-container" data-list-type="opener">'
+          +       '<div class="userscript-config-list-header">'
+          +          '<span class="userscript-config-list-title">Boosters to Open</span>'
+          +       '</div>'
+          +       '<div class="conf-list-entry-action modify">'
+          +          '<div class="conf-list-entry-action-modify">'
+          +             '<div class="entry-action">'
+          +                '<div class="userscript-bg-filtered delete"></div>'
+          +             '</div>'
+          +             '<div id="open-boosters" class="entry-action">Open</div>'
+          +             '<div id="decr-opener" class="entry-action">-</div>'
+          +             '<div id="incr-opener" class="entry-action">+</div>'
+          +          '</div>'
+          +          '<div class="userscript-overlay"></div>'
+          +       '</div>'
+          +       '<div class="userscript-config-list-list">'
+          +       '<div class="userscript-config-list-entries tile userscript-custom-scroll"></div>'
+          +       cssAddOverlay(openerListLoaderHTMLString, openerListDialogHTMLString, { initialState: 'loading' })
+          +       '</div>'
+          +    '</div>'
+          +    '<div class="userscript-config-list enhanced-list-container wide" data-list-type="card">'
+          +       '<div class="userscript-config-list-header">'
+          +          '<span class="userscript-config-list-title">Card Drops</span>'
+          +       '</div>'
+          +       '<div class="conf-list-entry-action text">'
+          +          '<div class="conf-list-texts">'
+          +             '<div class="conf-list-text">Normal: <span id="text-normal-cards">0</span></div>'
+          +             '<div class="conf-list-text">Foil: <span id="text-foil-cards">0</span></div>'
+          +          '</div>'
+          +       '</div>'
+          +       '<div class="userscript-config-list-list">'
+          +          '<div class="userscript-config-list-entries tile userscript-custom-scroll"></div>'
+          +       '</div>'
+          +    '</div>'
+          + '</div>';
+        document.querySelector('.booster_creator_area').insertAdjacentHTML('afterend', enhancedBoosterHTMLString);
 
-    return cardStock;
-}
-
-async function badgepageFilterprocessMyBadgepage() {
-    if(badgepageFilterData.me) {
-        return;
-    }
-
-    let { isMyPage, itemIds } = badgepageFilterData;
-
-    let doc;
-    if(isMyPage) {
-        doc = document;
-    } else {
-        let myHomepage = document.getElementById('global_actions').querySelector(':scope > a').href;
-        let { appid, isFoilPage } = badgepageFilterData;
-        let urlString = `${myHomepage}/gamecards/${appid}/${isFoilPage ? '?border=1' : ''}`;
-
-        let response = await fetch(urlString);
-        let parser = new DOMParser();
-        doc = parser.parseFromString(await response.text(), 'text/html');
-    }
-
-    let stock = getCardStock(doc);
-    let missing = new Set();
-    let possible = new Set();
-
-    if(!stock.some(x => x)) {
-        if(badgepageFilterShortcuts.options) {
-            for(let button of badgepageFilterShortcuts.options.querySelectorAll('button')) {
-                button.setAttribute('disabled', '');
+        // element shortcuts
+        BoosterCrafter.shortcuts.gooStatus = document.querySelector('.enhanced-goostatus');
+        BoosterCrafter.shortcuts.lists = {};
+        for(let listContainerElem of document.querySelectorAll('.enhanced-area [data-list-type]')) {
+            BoosterCrafter.shortcuts.lists[listContainerElem.dataset.listType] = {
+                main: listContainerElem,
+                action: listContainerElem.querySelector('.conf-list-entry-action'),
+                list: listContainerElem.querySelector('.userscript-config-list-list'),
+            };
+        }
+        for(let gooItemType of ['sack', 'goo']) {
+            for(let tradability of ['tradable', 'nontradable']) {
+                let goostatusKey = `goostatus${gooItemType[0].toUpperCase() + gooItemType.slice(1)}${tradability[0].toUpperCase() + tradability.slice(1)}`;
+                BoosterCrafter.shortcuts[goostatusKey] = document.getElementById(`goostatus-${gooItemType}-${tradability}`);
             }
         }
+        BoosterCrafter.shortcuts.craftCost = document.getElementById('craft-cost');
+        BoosterCrafter.shortcuts.unpackTradableGooButton = document.getElementById('goostatus-unpack-tradable');
+        BoosterCrafter.shortcuts.unpackNontradableGooButton = document.getElementById('goostatus-unpack-nontradable');
+        BoosterCrafter.shortcuts.unpackGooText = document.getElementById('goostatus-unpack-text');
+        BoosterCrafter.shortcuts.unpackGooSlider = document.getElementById('goostatus-unpack-slider');
+        BoosterCrafter.shortcuts.SelectorAddFavoritesButton = document.getElementById('selector-add-favorites');
+        BoosterCrafter.shortcuts.SelectorAddCraftButton = document.getElementById('selector-add-craft');
+        BoosterCrafter.shortcuts.addCraftButton = document.getElementById('add-craft');
+        BoosterCrafter.shortcuts.addOpenerButton = document.getElementById('add-opener');
+        BoosterCrafter.shortcuts.normalCardCount = document.getElementById('text-normal-cards');
+        BoosterCrafter.shortcuts.foilCardCount = document.getElementById('text-foil-cards');
 
-        badgepageFilterData.me = null;
-        return;
-    }
+        // event listeners
+        document.getElementById('goostatus-unpack-tradable').addEventListener('click', BoosterCrafter.unpackGooSackListener);
+        document.getElementById('goostatus-unpack-nontradable').addEventListener('click', BoosterCrafter.unpackGooSackListener);
+        document.getElementById('goostatus-unpack-text').addEventListener('input', BoosterCrafter.gooUpdateTextListener);
+        document.getElementById('goostatus-unpack-slider').addEventListener('input', BoosterCrafter.gooUpdateSliderListener);
+        document.getElementById('goostatus-unpack-cancel').addEventListener('click', BoosterCrafter.gooUnpackCancelListener);
+        document.getElementById('goostatus-unpack-confirm').addEventListener('click', BoosterCrafter.gooUnpackConfirmListener);
 
-    for(let i=0; i<stock.length; ++i) {
-        if(stock[i]>=2) {
-            possible.add(i);
-        } else if(stock[i]==0) {
-            missing.add(i);
+        document.getElementById('selector-add-favorites').addEventListener('click', BoosterCrafter.favoritesListAddListener);
+        document.getElementById('selector-add-craft').addEventListener('click', BoosterCrafter.craftListAddListener);
+
+        document.getElementById('config-import').addEventListener('click', BoosterCrafter.configImportListener);
+        document.getElementById('config-export').addEventListener('click', BoosterCrafter.configExportListener);
+        document.getElementById('app-search').addEventListener('click', BoosterCrafter.appSearchListener);
+        document.getElementById('app-search-text-input').addEventListener('input', BoosterCrafter.appSearchTextInputListener);
+        document.getElementById('app-search-results').addEventListener('click', BoosterCrafter.appSearchAddFavoritesListener);
+        document.getElementById('app-search-close').addEventListener('click', BoosterCrafter.appSearchCloseListener);
+        document.getElementById('add-craft').addEventListener('click', BoosterCrafter.craftListAddFavoritesListener);
+
+        document.getElementById('craft-boosters').addEventListener('click', BoosterCrafter.craftListCraftListener);
+        document.getElementById('craft-dialog-cancel').addEventListener('click', BoosterCrafter.craftListCraftCancelListener);
+        document.getElementById('craft-dialog-confirm').addEventListener('click', BoosterCrafter.craftListCraftConfirmListener);
+
+        document.getElementById('inventory-reload').addEventListener('click', BoosterCrafter.inventoryListReloadListener);
+
+        document.getElementById('add-opener').addEventListener('click', BoosterCrafter.openerListAddListener);
+        document.getElementById('incr-opener').addEventListener('click', BoosterCrafter.openerListIncrementListener);
+        document.getElementById('decr-opener').addEventListener('click', BoosterCrafter.openerListDecrementListener);
+        document.getElementById('open-boosters').addEventListener('click', BoosterCrafter.openerListOpenListener);
+        document.getElementById('opener-dialog-cancel').addEventListener('click', BoosterCrafter.openerListOpenCancelListener);
+        document.getElementById('opener-dialog-confirm').addEventListener('click', BoosterCrafter.openerListOpenConfirmListener);
+
+        for(let listElem of document.querySelectorAll('.userscript-config-list-list')) {
+            listElem.addEventListener('click', BoosterCrafter.selectEntriesListener);
         }
-    }
+        for(let removeButtonElem of document.querySelectorAll('.enhanced-list-container .entry-action > .delete')) {
+            removeButtonElem.parentElement.addEventListener('click', BoosterCrafter.listRemoveListener);
+        }
 
-    for(let missingCardElem of doc.querySelectorAll('.badge_card_to_collect')) {
-        let itemId = parseInt(missingCardElem.querySelector('img').id.slice(9));
-        let index = parseInt(missingCardElem.querySelector('.badge_card_collect_text > :last-child').textContent.match(/\d+/)) - 1;
-        itemIds[index] = itemId;
-    }
+        BoosterCrafter.data.openerList = {};
+        BoosterCrafter.data.lastSelected = {};
+        BoosterCrafter.data.craftCost = { amount: 0, max: 0 };
+        BoosterCrafter.data.currentDropStats = {};
 
-    badgepageFilterData.me = { stock, missing, possible };
-}
-
-async function badgepageFilterGetFriendBadgepage(target) {
-    let { friendsCardStock, isFoilPage, appid } = badgepageFilterData;
-    let isString = typeof target === 'string';
-    let profileUrl = isString
-      ? target
-      : target.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
-
-    if(!Object.hasOwn(friendsCardStock, profileUrl)) {
-        let steamId3 = isString ? undefined : target?.querySelector('.btn_grey_grey ').onclick.toString().match(/\d+/g)[0];
-        let urlString = `https://steamcommunity.com/${profileUrl}/gamecards/${appid}/${isFoilPage ? '?border=1' : ''}`;
-
-        let response = await fetch(urlString);
-        let parser = new DOMParser();
-        let doc = parser.parseFromString(await response.text(), "text/html");
-
-        friendsCardStock[profileUrl] = {
-            id3: steamId3
+        BoosterCrafter.data.gems = null; // gems data structure is sloppy
+        BoosterCrafter.data.boosters = null;
+        BoosterCrafter.data.cooldownList = {};
+        BoosterCrafter.data.craftQueue = [];
+        BoosterCrafter.data.appSearch = {
+            timeout: null,
+            prevInput: '',
+            prevResults: {
+                appids: [],
+                names: []
+            }
         };
 
-        await badgepageFilterProcessOthersBadgepage(doc, profileUrl);
-    }
-
-    return friendsCardStock[profileUrl];
-}
-
-async function badgepageFilterProcessOthersBadgepage(doc, targetUrl) {
-    let { friendsCardStock } = badgepageFilterData;
-
-    if(!doc.querySelector('.badge_gamecard_page')) {
-        if(targetUrl) {
-            friendsCardStock[targetUrl] = null;
-            await badgepageFilterProfileCacheRemove(targetUrl);
-        }
-        return;
-    }
-
-    let badgepageHeaderElem = doc.querySelector('.profile_small_header_texture');
-    let profileLink = badgepageHeaderElem.querySelector('.profile_small_header_name > a').href;
-    let profileUrl = profileLink.replace('https://steamcommunity.com/', '');
-    let name = badgepageHeaderElem.querySelector('.profile_small_header_name').textContent.trim();
-    let avatarElem = badgepageHeaderElem.querySelector('.playerAvatar');
-    let state = avatarElem.classList.contains('offline')
-      ? 'offline' : avatarElem.classList.contains('online')
-      ? 'online' : avatarElem.classList.contains('in-game')
-      ? 'in-game' : null;
-    let imgLink = avatarElem.children[avatarElem.children.length-1].src.replace('_medium', '');
-
-    let stock = getCardStock(doc);
-
-    if(!stock?.some(x => x)) {
-        await badgepageFilterProfileCacheRemove(profileUrl);
-        friendsCardStock[profileUrl] = null;
-    } else {
-        await badgepageFilterProfileCacheAdd(profileUrl);
-
-        friendsCardStock[profileUrl] ??= {};
-        Object.assign(friendsCardStock[profileUrl], {
-            name,
-            profileLink,
-            pfp: imgLink,
-            state,
-            stock
-        });
-    }
-
-    return friendsCardStock[profileUrl];
-}
-
-async function badgepageFilterUpdateCacheFlagListener(event) {
-    globalSettings.badgepageFilter.includeCacheMatching = event.target.checked;
-    await badgepageFilterSaveConfig();
-}
-
-function getPossibleMatches(profile, partnerMissingCards, partnerPossibleCards) {
-    let { stock, lowestCards: profileLowestCards, possibleCards: profilePossibleCards } = profile;
-
-    if(profileLowestCards && profilePossibleCards) {
-        return { profileLowestCards, profilePossibleCards };
-    }
-
-    let minVal = Math.min(...stock);
-    let lowestCards = new Set(stock.reduce((arr, x, i) => {
-        if(x==minVal) {
-            arr.push(i);
-        }
-        return arr;
-    }, []));
-
-    let possibleCards = Array(stock.length);
-    for(let i=0; i<possibleCards.length; ++i) {
-        possibleCards[i] =[];
-    }
-
-    for(let partnerMissingCard of partnerMissingCards) {
-        for(let partnerPossibleCard of partnerPossibleCards) {
-            if(partnerMissingCard === partnerPossibleCard) {
-                throw 'getPossibleMatches(): Missing card and possible card cannot have same index in both, something is wrong!';
+        // save and modify booster selector list from the page
+        BoosterCrafter.data.boosterDataList = unsafeWindow.CBoosterCreatorPage.sm_rgBoosterData;
+        for(let appid in BoosterCrafter.data.boosterDataList) {
+            let appEntry = BoosterCrafter.data.boosterDataList[appid];
+            if(appEntry.unavailable) {
+                appEntry.cooldownDate = BoosterCrafter.parseCooldownDate(appEntry.available_at_time);
             }
+        }
 
-            if(stock[partnerMissingCard]<2) {
+
+
+        // load crafting lists, set up desync detector, start cooldown timer, and load gem and booster data from inventory
+        BoosterCrafter.loadConfig();
+        BoosterCrafter.data.lastSyncTime = Date.now();
+        setInterval(BoosterCrafter.checkDesync, 1500);
+        BoosterCrafter.boosterCooldownUpdateDisplay();
+        setInterval(BoosterCrafter.boosterCooldownUpdateTimer, 1000);
+        BoosterCrafter.loadData();
+    },
+    checkDesync: function() {
+        let desyncTimeTrigger = 5000;
+
+        if(Date.now() - BoosterCrafter.data.lastSyncTime > desyncTimeTrigger) {
+            console.log('resetting cooldown timers!')
+            for(let appid in BoosterCrafter.data.cooldownList) {
+                BoosterCrafter.boosterCooldownSetTimer(appid);
+            }
+        }
+
+        BoosterCrafter.data.lastSyncTime = Date.now();
+        BoosterCrafter.updateBoosterCost();
+    },
+    loadConfig: async function() {
+        let favoritesActionElem = BoosterCrafter.shortcuts.lists.favorites.action;
+        let favoritesListElem = BoosterCrafter.shortcuts.lists.favorites.list;
+        let favoritesListEntriesElem = favoritesListElem.querySelector('.userscript-config-list-entries');
+        let craftActionElem = BoosterCrafter.shortcuts.lists.craft.action;
+        let craftListElem = BoosterCrafter.shortcuts.lists.craft.list;
+        let craftListEntriesElem = craftListElem.querySelector('.userscript-config-list-entries');
+
+        favoritesActionElem.classList.add('disabled');
+        BoosterCrafter.setOverlay(favoritesListElem, true, '');
+        craftActionElem.classList.add('disabled');
+        BoosterCrafter.setOverlay(craftListElem, true, '');
+
+        // populate favorites list
+        favoritesListEntriesElem.innerHTML = '';
+        let favoritesEntriesHTMLString = '';
+        for(let appid in globalSettings.boosterCrafter.lists.favorites) {
+            let boosterData = BoosterCrafter.data.boosterDataList[appid];
+
+            if(!boosterData) {
                 continue;
             }
-            if(stock[partnerMissingCard]-stock[partnerPossibleCard] >= 2) {
-                possibleCards[partnerMissingCard].push(partnerPossibleCard);
+
+            favoritesEntriesHTMLString += BoosterCrafter.generateBoosterListEntry(boosterData);
+            BoosterCrafter.boosterCooldownAddTimer(appid);
+        }
+        favoritesListEntriesElem.insertAdjacentHTML('beforeend', favoritesEntriesHTMLString);
+
+        // populate craft list
+        craftListEntriesElem.innerHTML = '';
+        let craftEntriesHTMLString = '';
+        for(let appid in globalSettings.boosterCrafter.lists.crafting) {
+            let boosterData = BoosterCrafter.data.boosterDataList[appid];
+
+            if(!boosterData) {
+                continue;
+            }
+
+            craftEntriesHTMLString += BoosterCrafter.generateBoosterListEntry(boosterData);
+            BoosterCrafter.boosterCooldownAddTimer(appid);
+        }
+        craftListEntriesElem.insertAdjacentHTML('beforeend', craftEntriesHTMLString);
+        BoosterCrafter.updateBoosterCost();
+
+        // tally up historical card drops
+        let normalCardCount = 0;
+        let foilCardCount = 0;
+        for(let appid in globalSettings.boosterCrafter.stats.drops) {
+            for(let item in globalSettings.boosterCrafter.stats.drops[appid]) {
+                let itemData = globalSettings.boosterCrafter.stats.drops[appid][item];
+                if(itemData.foil) {
+                    foilCardCount += itemData.count;
+                } else {
+                    normalCardCount += itemData.count;
+                }
             }
         }
-    }
+        BoosterCrafter.shortcuts.normalCardCount.innerHTML = normalCardCount;
+        BoosterCrafter.shortcuts.foilCardCount.innerHTML = foilCardCount;
 
-    profile.lowestCards = lowestCards;
-    profile.possibleCards = possibleCards;
+        favoritesActionElem.classList.remove('disabled');
+        BoosterCrafter.setOverlay(favoritesListElem, false);
+        craftActionElem.classList.remove('disabled');
+        BoosterCrafter.setOverlay(craftListElem, false);
+    },
+    loadData: async function() {
+        const getArraySum = (arr) => {
+            let sum = 0;
+            for(let i=0; i<arr.length; i++) {
+                sum += arr[i].count;
+            }
+            return sum;
+        };
 
-    return { lowestCards, possibleCards };
-}
+        // enable overlays
+        let craftActionElem = BoosterCrafter.shortcuts.lists.craft.action;
+        let inventoryActionElem = BoosterCrafter.shortcuts.lists.inventory.action;
+        let inventoryListElem = BoosterCrafter.shortcuts.lists.inventory.list;
+        let openerActionElem = BoosterCrafter.shortcuts.lists.opener.action;
+        let openerListElem = BoosterCrafter.shortcuts.lists.opener.list;
 
-async function badgepageFilterFilterFriendsWithCardsListener() {
-    document.getElementById('friend-filter').setAttribute('disabled', '');
+        BoosterCrafter.setOverlay(BoosterCrafter.shortcuts.gooStatus, true, 'loading');
+        craftActionElem.classList.add('disabled');
+        inventoryActionElem.classList.add('disabled');
+        BoosterCrafter.setOverlay(inventoryListElem, true, 'loading');
+        // disable add button?
+        openerActionElem.classList.add('disabled');
+        BoosterCrafter.setOverlay(openerListElem, true, '');
 
-    let { friendsCardStock, isMyPage, me } = badgepageFilterData;
+        let inventoryEntriesElem = inventoryListElem.querySelector('.userscript-config-list-entries');
 
-    if(!isMyPage) {
-        console.error('badgepageFilterFilterFriendsWithCardsListener(): This is not a user badgepage, it should not have been called!');
-        return;
-    }
+        await Profile.findProfile(steamToolsUtils.getMySteamId());
+        await Profile.me.getInventory('booster');
 
-    for(let missingCardElem of document.querySelectorAll('.badge_card_to_collect')) {
-        let index = missingCardElem.querySelector('.badge_card_collect_text').lastElementChild.textContent.match(/^\d+/g)[0];
-        index = parseInt(index)-1;
+        // if inventory fails, then alert user of failure here
 
-        for(let profileContainerElem of missingCardElem.querySelectorAll('.badge_friendwithgamecard')) {
-            let profileElem = profileContainerElem.querySelector('.persona');
-            let profileUrl = profileElem.href.match(/(id|profiles)\/[^/]+$/g);
+        BoosterCrafter.data.gems = steamToolsUtils.deepClone(Profile.me.inventory.data.gem?.[0]['753']);
+        if(!BoosterCrafter.data.gems) {
+            BoosterCrafter.shortcuts.goostatusSackTradable.innerHTML = '0';
+            BoosterCrafter.shortcuts.goostatusSackNontradable.innerHTML = '0';
+            BoosterCrafter.shortcuts.goostatusGooTradable.innerHTML = '0';
+            BoosterCrafter.shortcuts.goostatusGooNontradable.innerHTML = '0';
+            BoosterCrafter.shortcuts.unpackTradableGooButton.removeAttribute('disabled');
+            BoosterCrafter.shortcuts.unpackNontradableGooButton.removeAttribute('disabled');
+        } else {
+            let gemsData = BoosterCrafter.data.gems.find(x => x.classid === '667924416');
+            let sacksData = BoosterCrafter.data.gems.find(x => x.classid === '667933237');
+            let sumTradables, sumNonradables;
+            if(gemsData) {
+                BoosterCrafter.shortcuts.goostatusGooTradable.innerHTML = getArraySum(gemsData.tradables).toLocaleString();
+                BoosterCrafter.shortcuts.goostatusGooNontradable.innerHTML = getArraySum(gemsData.nontradables).toLocaleString();
+                gemsData.tradables.sort((a, b) => a.count-b.count);
+                gemsData.nontradables.sort((a, b) => a.count-b.count);
+            } else {
+                BoosterCrafter.shortcuts.goostatusGooTradable.innerHTML = '0';
+                BoosterCrafter.shortcuts.goostatusGooNontradable.innerHTML = '0';
+            }
+            if(sacksData) {
+                sumTradables = getArraySum(sacksData.tradables);
+                sumNonradables = getArraySum(sacksData.nontradables);
+                BoosterCrafter.shortcuts.goostatusSackTradable.innerHTML = sumTradables.toLocaleString();
+                BoosterCrafter.shortcuts.goostatusSackNontradable.innerHTML = sumNonradables.toLocaleString();
+                sacksData.tradables.sort((a, b) => a.count-b.count);
+                sacksData.nontradables.sort((a, b) => a.count-b.count);
+            } else {
+                BoosterCrafter.shortcuts.goostatusSackTradable.innerHTML = '0';
+                BoosterCrafter.shortcuts.goostatusSackNontradable.innerHTML = '0';
+            }
+            sumTradables
+              ? BoosterCrafter.shortcuts.unpackTradableGooButton.removeAttribute('disabled')
+              : BoosterCrafter.shortcuts.unpackTradableGooButton.setAttribute('disabled', '');
+            sumNonradables
+              ? BoosterCrafter.shortcuts.unpackNontradableGooButton.removeAttribute('disabled')
+              : BoosterCrafter.shortcuts.unpackNontradableGooButton.setAttribute('disabled', '');
+        }
 
-            await badgepageFilterGetFriendBadgepage(profileContainerElem);
+        BoosterCrafter.data.boosters = {};
 
-            if(!friendsCardStock[profileUrl]?.stock) {
-                profileContainerElem.style.backgroundColor = '#111';
+        inventoryEntriesElem.innerHTML = '';
+        let boosterDataList = Profile.me.inventory.data.booster[0];
+        for(let appid in Profile.me.inventory.data.booster[0]) {
+            BoosterCrafter.data.boosters[appid] = steamToolsUtils.deepClone(boosterDataList[appid][0]);
+
+            let boosterEntry = BoosterCrafter.data.boosters[appid];
+            boosterEntry.tradableCount = boosterEntry.tradables.reduce((sum, x) => sum + x.count, 0);
+            boosterEntry.nontradableCount = boosterEntry.nontradables.reduce((sum, x) => sum + x.count, 0);
+
+            let entryElem = inventoryEntriesElem.querySelector(`.userscript-config-list-entry[data-appid="${appid}"]`);
+            if(entryElem) {
+                entryElem.dataset.qtyTradable = boosterEntry.tradableCount;
+                entryElem.dataset.qtyNontradable = boosterEntry.nontradableCount;
+            } else {
+                let appData = await Profile.findAppMetaData(appid);
+                // let HTMLString = `<div class="userscript-config-list-entry booster" data-appid="${appid}" data-qty-tradable="${boosterEntry.tradableCount}" data-qty-nontradable="${boosterEntry.nontradableCount}" title="${appData.name}">`
+                // +    `<img src="https://community.cloudflare.steamstatic.com/economy/boosterpack/${appid}?l=english&single=1&v=2&size=75x" alt="">`
+                // + '</div>';
+                inventoryEntriesElem.insertAdjacentHTML('beforeend', BoosterCrafter.generateBoosterListEntry({ appid: appid, tradableCount: boosterEntry.tradableCount, nontradableCount: boosterEntry.nontradableCount, name: appData.name }));
+            }
+        }
+
+        // disable overlays
+        BoosterCrafter.setOverlay(BoosterCrafter.shortcuts.gooStatus, false);
+        craftActionElem.classList.remove('disabled');
+        inventoryActionElem.classList.remove('disabled');
+        BoosterCrafter.setOverlay(inventoryListElem, false);
+        // enable add button?
+        openerActionElem.classList.remove('disabled');
+        BoosterCrafter.setOverlay(openerListElem, false);
+    },
+    updateBoosterCost: function() {
+        let allTotal = 0;
+        let selectedTotal = 0;
+        for(let entryElem of BoosterCrafter.shortcuts.lists.craft.list.querySelectorAll('.userscript-config-list-entry')) {
+            if(Object.hasOwn(entryElem.dataset, 'cooldownTimer')) {
+                continue;
+            }
+
+            allTotal += parseInt(entryElem.dataset.cost);
+            if(entryElem.matches('.selected')) {
+                selectedTotal += parseInt(entryElem.dataset.cost);
+            }
+        }
+
+        BoosterCrafter.data.craftCost.max = allTotal;
+        BoosterCrafter.data.craftCost.amount = selectedTotal || allTotal;
+        if(BoosterCrafter.data.craftCost.amount > BoosterCrafter.data.craftCost.max) {
+            throw 'BoosterCrafter.updateBoosterCost(): craft cost amount exceeds max! Investigate!';
+        }
+        BoosterCrafter.shortcuts.craftCost.dataset.qty = BoosterCrafter.data.craftCost.amount.toLocaleString();
+    },
+    inventoryListReloadListener: function() {
+        BoosterCrafter.loadData();
+    },
+
+    appSearchListener: function() {
+        let favoritesActionElem = BoosterCrafter.shortcuts.lists.favorites.action;
+        let favoritesListElem = BoosterCrafter.shortcuts.lists.favorites.list;
+
+        favoritesActionElem.classList.add('disabled');
+        BoosterCrafter.setOverlay(favoritesListElem, true, 'dialog');
+    },
+    appSearchTextInputListener: function(event) {
+        clearTimeout(BoosterCrafter.data.appSearch.timeout);
+        BoosterCrafter.data.appSearch.timeout = setTimeout(BoosterCrafter.appSearchTextInput, 500, event.target.value);
+    },
+    appSearchTextInput: function(inputStr) {
+        const generateSearchResultRowHTMLString = (data) => `<div class="app-list-row" data-appid="${data.appid}">`
+          +    `<img class="app-header" src="https://cdn.cloudflare.steamstatic.com/steam/apps/${data.appid}/header.jpg" alt="">`
+          +    `<span class="app-name">${data.name}</span>`
+          + '</div>';
+        let searchResultsElem = document.getElementById('app-search-results');
+
+        let searchResults = { appids: [], names: [] };
+
+        if(!inputStr.length) {
+            // empty string
+        } else if(BoosterCrafter.data.appSearch.prevInput.length && inputStr.includes(BoosterCrafter.data.appSearch.prevInput)) {
+            let prevSearchResults = BoosterCrafter.data.appSearch.prevResults;
+            for(let app of prevSearchResults.appids) {
+                if(app.appid.toString().includes(inputStr)) {
+                    searchResults.appids.push(app);
+                }
+            }
+            for(let app of prevSearchResults.names) {
+                if(app.name.toLowerCase().includes(inputStr)) {
+                    searchResults.names.push(app);
+                }
+            }
+        } else {
+            let isNumber = /^\d+$/.test(inputStr);
+            for(let appid in BoosterCrafter.data.boosterDataList) {
+                let entry = BoosterCrafter.data.boosterDataList[appid];
+                if(isNumber && entry.appid.toString().includes(inputStr)) {
+                    searchResults.appids.push(BoosterCrafter.data.boosterDataList[appid]);
+                } else if(entry.name.toLowerCase().includes(inputStr)) {
+                    searchResults.names.push(BoosterCrafter.data.boosterDataList[appid]);
+                }
+            }
+        }
+
+        // order the results from best to worst good matches (just sort by string length?)
+
+        searchResultsElem.innerHTML = '';
+        let appSearchHTMLString = '';
+        let listingCounter = 0;
+        for(let entry of searchResults.appids) {
+            appSearchHTMLString += generateSearchResultRowHTMLString(entry);
+            if(++listingCounter === 3) {
+                break;
+            }
+        }
+        for(let entry of searchResults.names) {
+            appSearchHTMLString += generateSearchResultRowHTMLString(entry);
+            if(++listingCounter === 6) {
+                break;
+            }
+        }
+        searchResultsElem.insertAdjacentHTML('beforeend', appSearchHTMLString);
+
+        BoosterCrafter.data.appSearch.prevInput = inputStr;
+        BoosterCrafter.data.appSearch.prevResults = searchResults;
+    },
+    appSearchAddFavoritesListener: function(event) {
+        let currentEntryElem = event.target;
+        while (!currentEntryElem.matches('.app-list-row')) {
+            if(currentEntryElem.matches('#app-search-results')) {
+                return;
+            }
+            currentEntryElem = currentEntryElem.parentElement;
+        }
+
+        let appid = currentEntryElem.dataset.appid;
+        let boosterData = BoosterCrafter.data.boosterDataList[appid];
+        let favoritesList = globalSettings.boosterCrafter.lists.favorites;
+        let favoritesActionElem = BoosterCrafter.shortcuts.lists.favorites.action;
+        let favoritesListElem = BoosterCrafter.shortcuts.lists.favorites.list;
+        let favoritesListEntriesElem = BoosterCrafter.shortcuts.lists.favorites.list.querySelector('.userscript-config-list-entries');
+
+        if(!Object.hasOwn(favoritesList, appid)) {
+            favoritesList[appid] = { appid: boosterData.appid };
+            favoritesListEntriesElem.insertAdjacentHTML('beforeend', BoosterCrafter.generateBoosterListEntry(boosterData));
+        }
+
+        BoosterCrafter.configSave();
+
+        favoritesActionElem.classList.remove('disabled');
+        BoosterCrafter.setOverlay(favoritesListElem, false);
+    },
+    appSearchCloseListener: function() {
+        let favoritesActionElem = BoosterCrafter.shortcuts.lists.favorites.action;
+        let favoritesListElem = BoosterCrafter.shortcuts.lists.favorites.list;
+
+        favoritesActionElem.classList.remove('disabled');
+        BoosterCrafter.setOverlay(favoritesListElem, false);
+    },
+
+    boosterCooldownSetTimer: function(appid, craftedNow = false) {
+        let cooldownTimer = !craftedNow
+          ? Math.ceil((BoosterCrafter.data.boosterDataList[appid].cooldownDate.valueOf() - Date.now()) / 1000)
+          : 24 * 60 * 60;
+        let timerSeconds = cooldownTimer % 60;
+        let timerMinutes = Math.floor(cooldownTimer / 60) % 60;
+        let timerHours = Math.floor(cooldownTimer / (60 * 60));
+        BoosterCrafter.data.cooldownList[appid] = [timerHours, timerMinutes, timerSeconds];
+    },
+    boosterCooldownAddTimer: function(appid, craftedNow = false) {
+        if((!BoosterCrafter.data.boosterDataList[appid].unavailable && !craftedNow) || Object.hasOwn(BoosterCrafter.data.cooldownList, appid)) {
+            return;
+        }
+
+        BoosterCrafter.boosterCooldownSetTimer(appid, craftedNow);
+        BoosterCrafter.boosterCooldownUpdateDisplay();
+    },
+    boosterCooldownUpdateTimer: function() {
+        for(let appid in BoosterCrafter.data.cooldownList) {
+            let timer = BoosterCrafter.data.cooldownList[appid];
+            if(timer[2] <= 0) {
+                if(timer[1] <= 0) {
+                    if(timer[0] <= 0) {
+                        delete BoosterCrafter.data.cooldownList[appid];
+                        continue;
+                    }
+                    timer[0]--;
+                    timer[1] = 59;
+                } else {
+                    timer[1]--;
+                }
+                timer[2] = 59;
+            } else {
+                timer[2]--;
+            }
+        }
+
+        BoosterCrafter.boosterCooldownUpdateDisplay();
+    },
+    boosterCooldownUpdateDisplay: function(entryElemArg) {
+        const stringifyTimer = (timerArr) => timerArr[0] + ':' + timerArr[1].toString().padStart(2, '0') + ':' + timerArr[2].toString().padStart(2, '0');
+        const updateTimer = (elem) => {
+            let appid = elem.dataset.appid;
+            let timer = BoosterCrafter.data.cooldownList[appid];
+            if(!timer) {
+                if(elem.dataset.cooldownTimer) {
+                    delete elem.dataset.cooldownTimer;
+                    delete BoosterCrafter.data.boosterDataList[appid].unavailable;
+                }
+            } else {
+                elem.dataset.cooldownTimer = stringifyTimer(timer);
+            }
+        };
+
+        if(entryElemArg) {
+            updateTimer(entryElemArg);
+            return;
+        }
+
+        for(let entryElem of BoosterCrafter.shortcuts.lists.favorites.list.querySelectorAll('.userscript-config-list-entry')) {
+            updateTimer(entryElem);
+        }
+        for(let entryElem of BoosterCrafter.shortcuts.lists.craft.list.querySelectorAll('.userscript-config-list-entry')) {
+            updateTimer(entryElem);
+        }
+    },
+
+    unpackGooSackListener: function(event) {
+        let rowElem = event.target;
+        while (!rowElem.matches('.enhanced-goostatus-row')) {
+            if(rowElem.matches('.enhanced-goostatus')) {
+                throw 'BoosterCrafter.unpackGooSackListener(): No row container found! Was the document structured correctly?';
+            }
+            rowElem = rowElem.parentElement;
+        }
+
+        let sacksData = BoosterCrafter.data.gems.find(x => x.classid === '667933237');
+        if(!sacksData) {
+            console.error('BoosterCrafter.unpackGooSackListener(): No sacks found! Were the buttons properly disabled?');
+            return;
+        }
+
+        let tradableType = rowElem.dataset.type;
+        let dataset;
+        if(tradableType === 'tradable') {
+            dataset = steamToolsUtils.deepClone(sacksData.tradables);
+        } else if(tradableType === 'nontradable') {
+            dataset = steamToolsUtils.deepClone(sacksData.nontradables);
+        } else {
+            throw 'BoosterCrafter.unpackGooSackListener(): TradableType is neither tradable nor nontradable???';
+        }
+
+        if(!dataset.length) {
+            console.error('BoosterCrafter.unpackGooSackListener(): Selected dataset has no entries!');
+            return;
+        }
+        BoosterCrafter.data.unpackList = dataset;
+
+        let gooDatalistElem = document.getElementById('goostatus-unpack-datalist');
+        let gooMax = 0;
+        let datalistHTMLString = '';
+        for(let i=0; i<dataset.length; i++) {
+            gooMax += dataset[i].count;
+            if(i < dataset.length-1) {
+                datalistHTMLString += `<option value="${gooMax}"></option>`
+            }
+        }
+
+        BoosterCrafter.shortcuts.unpackGooText.max = gooMax;
+        BoosterCrafter.shortcuts.unpackGooSlider.max = gooMax;
+        gooDatalistElem.innerHTML = datalistHTMLString;
+
+        BoosterCrafter.shortcuts.unpackGooText.value = 0;
+        BoosterCrafter.shortcuts.unpackGooSlider.value = 0;
+
+        BoosterCrafter.setOverlay(BoosterCrafter.shortcuts.gooStatus, true, 'dialog');
+    },
+    gooUpdateTextListener: function(event) {
+        BoosterCrafter.shortcuts.unpackGooSlider.value = event.target.value;
+    },
+    gooUpdateSliderListener: function(event) {
+        BoosterCrafter.shortcuts.unpackGooText.value = event.target.value;
+    },
+    gooUnpackCancelListener: function(event) {
+        BoosterCrafter.setOverlay(BoosterCrafter.shortcuts.gooStatus, false);
+    },
+    gooUnpackConfirmListener: async function(event) {
+        let unpackTotalAmount = parseInt(BoosterCrafter.shortcuts.unpackGooSlider.value); // shouldn't overflow the max amount
+        if(unpackTotalAmount === 0) {
+            BoosterCrafter.setOverlay(BoosterCrafter.shortcuts.gooStatus, false);
+            return;
+        }
+
+        let craftActionElem = BoosterCrafter.shortcuts.lists.craft.action;
+        let craftListElem = BoosterCrafter.shortcuts.lists.craft.list;
+        let openerActionElem = BoosterCrafter.shortcuts.lists.opener.action;
+        let openerListElem = BoosterCrafter.shortcuts.lists.opener.list;
+
+        BoosterCrafter.setOverlay(BoosterCrafter.shortcuts.gooStatus, true, 'loading');
+        BoosterCrafter.shortcuts.SelectorAddCraftButton.disabled = false;
+        BoosterCrafter.shortcuts.addCraftButton.disabled = false;
+        craftActionElem.classList.add('disabled');
+        BoosterCrafter.setOverlay(craftListElem, false);
+        BoosterCrafter.shortcuts.addOpenerButton.disabled = false;
+        openerActionElem.classList.add('disabled');
+        BoosterCrafter.setOverlay(openerListElem, false);
+
+        let requestBody = new URLSearchParams({
+            sessionid: steamToolsUtils.getSessionId(),
+            appid: '753',
+            goo_denomination_in: '1000',
+            goo_denomination_out: '1'
+        });
+        let urlString = `https://steamcommunity.com/profiles/${steamToolsUtils.getMySteamId()}/ajaxexchangegoo/`;
+        let refererString = `https://steamcommunity.com/profiles/${steamToolsUtils.getMySteamId()}/inventory/`;
+
+        while (unpackTotalAmount > 0) {
+            let sackItem = BoosterCrafter.data.unpackList[0];
+            let unpackItemAmount = Math.min(sackItem.count, unpackTotalAmount);
+
+            requestBody.set('assetid', sackItem.assetid);
+            requestBody.set('goo_amount_in', unpackItemAmount.toString());
+            requestBody.set('goo_amount_out_expected', (unpackItemAmount * 1000).toString());
+
+            let response = await fetch(urlString, {
+                method: 'POST',
+                body: requestBody,
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                },
+                referer: refererString
+            });
+
+            try {
+                // throws error in the event that request is redirected to a steam webpage instead of giving a response
+                response = await response.json();
+                if(response.success !== 1) {
+                    throw 'boosterCrafterUnpackConfirmListener(): Unpacking sack failed!';
+                }
+            } catch (err) {
+                console.error(err);
+                break;
+            }
+
+            unpackTotalAmount -= unpackItemAmount;
+            if(unpackItemAmount === sackItem.count) {
+                BoosterCrafter.data.unpackList.shift();
+            } else {
+                sackItem.count -= unpackItemAmount;
+            }
+        }
+
+        // update sm goo amount and stuff here
+        // rather than executing load data, update gem data here
+
+        craftActionElem.classList.remove('disabled');
+        openerActionElem.classList.remove('disabled');
+        BoosterCrafter.setOverlay(BoosterCrafter.shortcuts.gooStatus, false);
+        BoosterCrafter.loadData();
+    },
+
+    getListContainerElem: function(elem) {
+        let containerElem = elem;
+        while (!containerElem.matches('.enhanced-list-container')) {
+            if(containerElem.matches('body')) {
+                throw 'BoosterCrafter.listRemoveListener(): container not found!';
+            }
+            containerElem = containerElem.parentElement;
+        }
+        return containerElem;
+    },
+    selectEntriesListener: function(event) {
+        let currentEntryElem = event.target;
+        while (!currentEntryElem.matches('.userscript-config-list-entry')) {
+            if(currentEntryElem.matches('.userscript-config-list-list')) {
+                return;
+            }
+            currentEntryElem = currentEntryElem.parentElement;
+        }
+
+        let listType = BoosterCrafter.getListContainerElem(event.currentTarget).dataset.listType;
+        if(listType === 'card') {
+            return;
+        }
+
+        if(!event.shiftKey && !event.ctrlKey) {
+            let selectedList = event.currentTarget.querySelectorAll('.selected');
+            for(let selectedEntryElem of selectedList) {
+                selectedEntryElem.classList.remove('selected');
+            }
+
+            if(selectedList.length !== 1 || currentEntryElem.dataset.appid !== BoosterCrafter.data.lastSelected[listType]?.dataset?.appid) {
+                currentEntryElem.classList.add('selected');
+            }
+        } else if(event.shiftKey) {
+            let prevIndex, currIndex;
+            let entries = event.currentTarget.querySelectorAll('.userscript-config-list-entry');
+            for(let i=0; i<entries.length; i++) {
+                if(entries[i].dataset.appid === BoosterCrafter.data.lastSelected[listType]?.dataset?.appid) {
+                    prevIndex = i;
+                    if(currIndex !== undefined) {
+                        break;
+                    }
+                }
+                if(entries[i].dataset.appid === currentEntryElem.dataset.appid) {
+                    currIndex = i;
+                    if(prevIndex !== undefined) {
+                        break;
+                    }
+                }
+            }
+            prevIndex ??= 0;
+
+            if(prevIndex === currIndex) {
                 return;
             }
 
-            getPossibleMatches(friendsCardStock[profileUrl], me.missing, me.possible);
+            let minIndex = prevIndex<currIndex ? prevIndex : currIndex;
+            let maxIndex = prevIndex<currIndex ? currIndex : prevIndex;
+            for(let i=minIndex+1; i<maxIndex; i++) {
+                entries[i].classList.add('selected');
+            }
+            entries[currIndex].classList.add('selected');
+        } else if(event.ctrlKey) {
+            currentEntryElem.classList.toggle('selected');
+        }
+        BoosterCrafter.data.lastSelected[listType] = currentEntryElem;
 
-            if(!friendsCardStock[profileUrl]?.possibleCards?.[index].length) {
-                profileContainerElem.style.display = 'none';
+        if(listType === 'craft') {
+            BoosterCrafter.updateBoosterCost();
+        }
+    },
+    listRemoveListener: function(event) {
+        console.log('removing selected elements...');
+        let containerElem = event.target;
+        while (!containerElem.matches('.enhanced-list-container')) {
+            if(containerElem.matches('body')) {
+                throw 'BoosterCrafter.listRemoveListener(): container not found!';
+            }
+            containerElem = containerElem.parentElement;
+        }
+        let listType = containerElem.dataset.listType;
+
+        let lists = globalSettings.boosterCrafter.lists;
+        for(let selectedEntryElem of BoosterCrafter.shortcuts.lists[listType].list.querySelectorAll('.selected')) {
+            if(listType === 'favorites') {
+                delete lists.favorites[selectedEntryElem.dataset.appid];
+            } else if(listType === 'craft') {
+                delete lists.crafting[selectedEntryElem.dataset.appid];
+            } else if(listType === 'opener') {
+                delete BoosterCrafter.data.openerList[selectedEntryElem.dataset.appid]
+            } else {
+                throw 'BoosterCrafter.listRemoveListener(): Container entry deletion not implemented!';
+            }
+
+            console.log('removing element...')
+            selectedEntryElem.remove();
+        }
+
+        BoosterCrafter.data.lastSelected[listType] = null;
+        BoosterCrafter.configSave();
+        if(listType === 'craft') {
+            BoosterCrafter.updateBoosterCost();
+        }
+    },
+
+    favoritesListAddListener: function() {
+        let selectedAppid = document.getElementById('booster_game_selector').value;
+        if(isNaN(parseInt(selectedAppid))) {
+            console.log('BoosterCrafter.favoritesListAddListener(): No app selected, no boosters will be added');
+            return;
+        }
+
+        let favoritesList = globalSettings.boosterCrafter.lists.favorites;
+        let favoritesListElem = BoosterCrafter.shortcuts.lists.favorites.list.querySelector('.userscript-config-list-entries');
+
+        if(Object.hasOwn(favoritesList, selectedAppid)) {
+            return;
+        }
+        let boosterData = unsafeWindow.CBoosterCreatorPage.sm_rgBoosterData[selectedAppid];
+        favoritesList[selectedAppid] = { appid: boosterData.appid }; // add more data here
+
+        // let favoritesEntryHTMLString = `<div class="userscript-config-list-entry booster" data-appid="${boosterData.appid}" data-cost="${boosterData.price}" title="${boosterData.name}">`
+        // +    `<img src="https://community.cloudflare.steamstatic.com/economy/boosterpack/${boosterData.appid}?l=english&single=1&v=2&size=75x" alt="">`
+        // + '</div>';
+        favoritesListElem.insertAdjacentHTML('beforeend', BoosterCrafter.generateBoosterListEntry(boosterData));
+        BoosterCrafter.boosterCooldownAddTimer(boosterData.appid);
+
+        BoosterCrafter.configSave();
+    },
+    craftListAddListener: function() {
+        let selectedAppid = document.getElementById('booster_game_selector').value;
+        if(isNaN(parseInt(selectedAppid))) {
+            console.log('BoosterCrafter.craftListAddListener(): No app selected, no boosters will be added');
+            return;
+        }
+        BoosterCrafter.craftListAdd([selectedAppid]);
+    },
+    craftListAddFavoritesListener: function() {
+        let containerElem = BoosterCrafter.shortcuts.lists.favorites.list;
+        let appids = [];
+        for(let selectedEntryElem of containerElem.querySelectorAll('.selected')) {
+            appids.push(selectedEntryElem.dataset.appid);
+            selectedEntryElem.classList.remove('selected');
+        }
+
+        BoosterCrafter.craftListAdd(appids);
+    },
+    craftListAdd: function(appids) {
+        let craftList = globalSettings.boosterCrafter.lists.crafting;
+        let craftListElem = BoosterCrafter.shortcuts.lists.craft.list.querySelector('.userscript-config-list-entries');
+        for(let i=0; i<appids.length; i++) {
+            if(Object.hasOwn(craftList, appids[i])) {
+                continue;
+            }
+            let boosterData = BoosterCrafter.data.boosterDataList[appids[i]];
+            craftList[appids[i]] = { appid: boosterData.appid }; // add more data here
+
+            // let craftEntryHTMLString = `<div class="userscript-config-list-entry booster" data-appid="${boosterData.appid}" data-cost="${boosterData.price}" title="${boosterData.name}">`
+            // +    `<img src="https://community.cloudflare.steamstatic.com/economy/boosterpack/${boosterData.appid}?l=english&single=1&v=2&size=75x" alt="">`
+            // + '</div>';
+            craftListElem.insertAdjacentHTML('beforeend', BoosterCrafter.generateBoosterListEntry(boosterData));
+            BoosterCrafter.boosterCooldownAddTimer(boosterData.appid);
+        }
+
+        BoosterCrafter.configSave();
+        BoosterCrafter.updateBoosterCost();
+    },
+    craftListCraftListener: function(event) {
+        let selectedCount = 0;
+        let selectedTotalCost = 0;
+        let selectedEntries = BoosterCrafter.shortcuts.lists.craft.list.querySelectorAll('.selected');
+        if(!selectedEntries.length) {
+            selectedEntries = BoosterCrafter.shortcuts.lists.craft.list.querySelectorAll('.userscript-config-list-entry');
+        }
+
+        let stopFlag = true;
+        let tableBodyElem = document.getElementById('craft-dialog-table-body');
+        tableBodyElem.innerHTML = '';
+        BoosterCrafter.data.craftQueue = [];
+
+        for(let entryElem of selectedEntries) {
+            if(Object.hasOwn(entryElem.dataset, 'cooldownTimer')) {
+                continue;
+            }
+            let appid = entryElem.dataset.appid;
+            let boosterData = BoosterCrafter.data.boosterDataList[appid];
+            if(!boosterData) {
+                console.warn(`BoosterCrafter.craftListCraftListener(): booster data for appid ${appid} not found!`);
+            }
+
+            let tableRow = tableBodyElem.insertRow();
+            tableRow.insertCell(0).innerHTML = boosterData.name;
+            tableRow.insertCell(1).innerHTML = boosterData.price;
+
+            selectedCount++;
+            selectedTotalCost += parseInt(boosterData.price);
+
+            BoosterCrafter.data.craftQueue.push(entryElem);
+            stopFlag = false;
+        }
+        if(stopFlag) {
+            return;
+        }
+        document.getElementById('craft-total-boosters-text').innerHTML = selectedCount;
+        document.getElementById('craft-total-cost-text').innerHTML = selectedTotalCost.toLocaleString();
+
+        let craftActionElem = BoosterCrafter.shortcuts.lists.craft.action;
+        let craftListElem = BoosterCrafter.shortcuts.lists.craft.list;
+
+        BoosterCrafter.shortcuts.SelectorAddCraftButton.disabled = true;
+        BoosterCrafter.shortcuts.addCraftButton.disabled = true;
+        craftActionElem.classList.add('disabled');
+        BoosterCrafter.setOverlay(craftListElem, true, 'dialog');
+    },
+    craftListCraftCancelListener: function() {
+        let craftActionElem = BoosterCrafter.shortcuts.lists.craft.action;
+        let craftListElem = BoosterCrafter.shortcuts.lists.craft.list;
+
+        BoosterCrafter.shortcuts.SelectorAddCraftButton.disabled = false;
+        BoosterCrafter.shortcuts.addCraftButton.disabled = false;
+        craftActionElem.classList.remove('disabled');
+        BoosterCrafter.setOverlay(craftListElem, false);
+    },
+    craftListCraftConfirmListener: async function() {
+        let craftLoaderProgressElem = document.getElementById('craft-list-progress');
+        let craftActionElem = BoosterCrafter.shortcuts.lists.craft.action;
+        let craftListElem = BoosterCrafter.shortcuts.lists.craft.list;
+        let openerActionElem = BoosterCrafter.shortcuts.lists.opener.action;
+        let openerListElem = BoosterCrafter.shortcuts.lists.opener.list;
+
+        craftLoaderProgressElem.innerHTML = '0';
+        document.getElementById('craft-list-progress-total').innerHTML = document.getElementById('craft-total-boosters-text').innerHTML;
+        BoosterCrafter.setOverlay(BoosterCrafter.shortcuts.gooStatus, false);
+        BoosterCrafter.shortcuts.unpackTradableGooButton.disabled = true;
+        BoosterCrafter.shortcuts.unpackNontradableGooButton.disabled = true;
+        BoosterCrafter.setOverlay(craftListElem, true, 'loading');
+        BoosterCrafter.shortcuts.addOpenerButton.disabled = false;
+        openerActionElem.classList.add('disabled');
+        BoosterCrafter.setOverlay(openerListElem, false);
+
+        let craftCostAmount = BoosterCrafter.data.craftCost.amount;
+        let gems = BoosterCrafter.data.gems.find(x => x.classid === '667924416');
+        if(!gems || gems.count<craftCostAmount) {
+            let sacks = BoosterCrafter.data.gems.find(x => x.classid === '667933237');
+            if(!sacks || (sacks.count*1000)+gems.count<craftCostAmount) {
+                alert('Not enough gems. Try making less boosters?');
+            } else {
+                alert('Not enough gems. Try unpacking some sacks of gems or making less boosters?');
+            }
+        } else {
+            let gemsTradableAmount = gems.tradables.reduce((sum, x) => sum + x.count, 0);
+            if(gemsTradableAmount < craftCostAmount) {
+                let userResponse = prompt('Not enough tradable gems. Some nontradable gems will be used. Proceed? (y/n)');
+                if(userResponse.toLowerCase().startsWith('y')) {
+                    await BoosterCrafter.craftBoosters();
+                }
+            } else {
+                await BoosterCrafter.craftBoosters();
             }
         }
-    }
-}
 
-async function badgepageFilterShowGoodSwapsListener() {
-    const generateMatchItemsHTMLString = (indices, priority) => {
-        let { cardInfoList } = badgepageFilterData;
-        return indices.map(x => `<div class="match-item${priority.has(x) ? ' good' : ''}" title="${cardInfoList[x].name}"><img src="${cardInfoList[x].img + '/96fx96f?allow_animated=1'}" alt="${cardInfoList[x].name}"></div>`).join('');
-    };
-    const generateMatchRowHTMLString = (profileid3, index, goodMatches, priority) => {
-        let { appid, itemIds } = badgepageFilterData;
-        return '<div class="match-item-row align-right">'
-          +    '<div class="match-item-list left">'
-          +       generateMatchItemsHTMLString(goodMatches, priority)
-          +    '</div>'
-          +    `<div class="match-item-action trade" title="Offer a Trade..." onclick="StartTradeOffer( ${profileid3}, {for_tradingcard: '${appid + '_' + itemIds[index]}'} );"></div>`
-          +    '<div class="match-item-list right">'
-          +       generateMatchItemsHTMLString([index], priority)
-          +    '</div>'
-          + '</div>';
-    };
-    const generateMatchRowsHTMLString = (profileid3, matches, priority) => matches.map((x, i) => x.length ? generateMatchRowHTMLString(profileid3, i, x, priority) : '').join('');
-    async function checkAndDisplayPossibleSingleSwaps(target) {
-        let steamId3;
-        let profileUrl;
-        if(typeof target === 'object') {
-            steamId3 = badgepageFilterExtractSteamId3(target);
-            profileUrl = target.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
-        } else if(typeof target === 'string') {
-            profileUrl = target;
+
+        if(document.getElementById('goostatus-sack-tradable').textContent !== '0') {
+            BoosterCrafter.shortcuts.unpackTradableGooButton.disabled = false;
+        }
+        if(document.getElementById('goostatus-sack-nontradable').textContent !== '0') {
+            BoosterCrafter.shortcuts.unpackNontradableGooButton.disabled = false;
+        }
+        BoosterCrafter.shortcuts.SelectorAddCraftButton.disabled = false;
+        BoosterCrafter.shortcuts.addCraftButton.disabled = false;
+        craftActionElem.classList.remove('disabled');
+        BoosterCrafter.setOverlay(craftListElem, false);
+        openerActionElem.classList.remove('disabled');
+    },
+    craftBoosters: async function() {
+        let craftLoaderProgressElem = document.getElementById('craft-list-progress');
+        let progressCounter = 0;
+        let tradableGems = unsafeWindow.CBoosterCreatorPage.sm_flUserTradableGooAmount;
+        let nontradableGems = unsafeWindow.CBoosterCreatorPage.sm_flUserUntradableGooAmount;
+        let craftStats = globalSettings.boosterCrafter.stats.crafts;
+        let tradabilityPreference = 2;
+
+        let requestBody = new URLSearchParams({
+            sessionid: steamToolsUtils.getSessionId()
+        });
+        let urlString = 'https://steamcommunity.com/tradingcards/ajaxcreatebooster/';
+
+        while(BoosterCrafter.data.craftQueue.length) {
+            let entryElem = BoosterCrafter.data.craftQueue[BoosterCrafter.data.craftQueue.length - 1];
+            let appid = entryElem.dataset.appid;
+            let boosterData = BoosterCrafter.data.boosterDataList[appid];
+            BoosterCrafter.data.boosters[appid] ??= { tradables: [], nontradables: [], count: 0, tradableCount: 0, nontradableCount: 0 };
+            let boosterListEntry = BoosterCrafter.data.boosters[appid];
+            let openerListEntry = BoosterCrafter.data.openerList[appid];
+            tradabilityPreference = tradableGems >= parseInt(entryElem.dataset.cost) ? 1 : 3;
+
+            requestBody.set('appid', boosterData.appid);
+            requestBody.set('series', boosterData.series);
+            requestBody.set('tradability_preference', tradabilityPreference);
+
+
+            let response = await fetch(urlString, {
+                method: 'POST',
+                body: requestBody,
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                }
+            });
+
+            let responseData = await response.json();
+
+            // let responseData = {
+            //     "purchase_result": {
+            //         "communityitemid": "00000000000",
+            //         "appid": 000000,
+            //         "item_type": 00,
+            //         "purchaseid": "00000000",
+            //         "success": 1,
+            //         "rwgrsn": -2
+            //     },
+            //     "goo_amount": "000000",
+            //     "tradable_goo_amount": "000000",
+            //     "untradable_goo_amount": "0000"
+            // };
+
+            BoosterCrafter.boosterCooldownAddTimer(appid, true);
+            entryElem.classList.remove('selected');
+
+            boosterData.unavailable = true;
+            boosterData.cooldownDate = new Date();
+            boosterData.cooldownDate.setDate(boosterData.cooldownDate.getDate() + 1);
+            if(boosterData.$Option) {
+                unsafeWindow.CBoosterCreatorPage.ToggleActionButton(boosterData.$Option);
+            }
+            if(boosterData.$MiniOption) {
+                unsafeWindow.CBoosterCreatorPage.ToggleActionButton(boosterData.$MiniOption);
+            }
+            unsafeWindow.CBoosterCreatorPage.RefreshSelectOptions();
+
+            unsafeWindow.CBoosterCreatorPage.UpdateGooDisplay(responseData.goo_amount, responseData.tradable_goo_amount, responseData.untradable_goo_amount);
+            BoosterCrafter.shortcuts.goostatusGooTradable.innerHTML = parseInt(responseData.tradable_goo_amount).toLocaleString();
+            BoosterCrafter.shortcuts.goostatusGooNontradable.innerHTML = parseInt(responseData.untradable_goo_amount).toLocaleString();
+            let gems = BoosterCrafter.data.gems.find(x => x.classid === '667924416');
+
+            // NOTE: Change gemsDiff if a predictable behaviour can be concluded
+            let gemsTradableDiff = gems.tradables.reduce((sum, x) => sum + x.count, 0) - parseInt(responseData.tradable_goo_amount);
+            while (gemsTradableDiff > 0) {
+                let lastAsset = gems.tradables[gems.tradables.length - 1];
+                if(lastAsset.count < gemsTradableDiff) {
+                    gemsTradableDiff -= lastAsset.count;
+                    gems.tradables.pop();
+                } else {
+                    lastAsset.count -= gemsTradableDiff;
+                    gemsTradableDiff = 0;
+                }
+            }
+            let gemsNontradableDiff = gems.nontradables.reduce((sum, x) => sum + x.count, 0) - parseInt(responseData.untradable_goo_amount);
+            let boosterTradability = !!gemsNontradableDiff;
+            while (gemsNontradableDiff > 0) {
+                let lastAsset = gems.nontradables[gems.nontradables.length - 1];
+                if(lastAsset.count < gemsNontradableDiff) {
+                    gemsNontradableDiff -= lastAsset.count;
+                    gems.nontradables.pop();
+                } else {
+                    lastAsset.count -= gemsNontradableDiff;
+                    gemsNontradableDiff = 0;
+                }
+            }
+            gems.count = parseInt(responseData.goo_amount);
+
+            if(boosterTradability) {
+                boosterListEntry.nontradables.push({ assetid: responseData.purchase_result.communityitemid, count: 1 });
+                boosterListEntry.nontradableCount++;
+                if(openerListEntry) {
+                    openerListEntry.maxNontradable++;
+                }
+            } else {
+                boosterListEntry.tradables.push({ assetid: responseData.purchase_result.communityitemid, count: 1 });
+                boosterListEntry.tradableCount++;
+                if(openerListEntry) {
+                    openerListEntry.maxTradable++;
+                }
+            }
+            boosterListEntry.count++;
+
+            let invEntryElem = BoosterCrafter.shortcuts.lists.inventory.list.querySelector(`[data-appid="${appid}"]`);
+            if(invEntryElem) {
+                if(boosterTradability) {
+                    invEntryElem.dataset.qtyNontradable = boosterListEntry.nontradableCount;
+                } else {
+                    invEntryElem.dataset.qtyTradable = boosterListEntry.tradableCount;
+                }
+            } else {
+                let invEntriesElem = BoosterCrafter.shortcuts.lists.inventory.list.querySelector('.userscript-config-list-entries');
+                let HTMLString = BoosterCrafter.generateBoosterListEntry({ appid: appid, name: boosterData.name, tradableCount: boosterListEntry.tradableCount, nontradableCount: boosterListEntry.nontradableCount });
+                invEntriesElem.insertAdjacentHTML('beforeend', HTMLString);
+            }
+
+            if(!Object.hasOwn(craftStats, appid)) {
+                craftStats[appid] = 0;
+            }
+            craftStats[appid]++;
+            await BoosterCrafter.configSave();
+
+            craftLoaderProgressElem.innerHTML = ++progressCounter;
+            BoosterCrafter.data.craftQueue.pop();
+        }
+
+        BoosterCrafter.updateBoosterCost();
+    },
+
+    openerListAddListener: function() {
+        let openerListElem = BoosterCrafter.shortcuts.lists.opener.list.querySelector('.userscript-config-list-entries');
+        for(let selectedElem of BoosterCrafter.shortcuts.lists.inventory.list.querySelectorAll('.selected')) {
+            let appid = selectedElem.dataset.appid;
+            if(BoosterCrafter.data.openerList[appid]) {
+                continue;
+            }
+
+            let qtyTradable = parseInt(selectedElem.dataset.qtyTradable);
+            let qtyNontradable = parseInt(selectedElem.dataset.qtyNontradable);
+            let name = selectedElem.title;
+            BoosterCrafter.data.openerList[appid] = {
+                qtyTradable: qtyTradable,
+                maxTradable: qtyTradable,
+                qtyNontradable: qtyNontradable,
+                maxNontradable: qtyNontradable,
+                name: name
+            };
+
+            // let openerEntryHTMLString = `<div class="userscript-config-list-entry booster" data-appid="${appid}" data-qty-tradable="${qtyTradable}" data-qty-nontradable="${qtyNontradable}" title="${name}">`
+            // +    `<img src="https://community.cloudflare.steamstatic.com/economy/boosterpack/${appid}?l=english&single=1&v=2&size=75x" alt="">` // TODO: change language dynamically?
+            // + '</div>';
+            openerListElem.insertAdjacentHTML('beforeend', BoosterCrafter.generateBoosterListEntry({ appid: appid, tradableCount: qtyTradable, nontradableCount: qtyNontradable, name: name }));
+
+            selectedElem.classList.remove('selected');
+        }
+    },
+    openerListIncrementListener: function() {
+        BoosterCrafter.openerListChangeValue(1);
+    },
+    openerListDecrementListener: function() {
+        BoosterCrafter.openerListChangeValue(-1);
+    },
+    openerListChangeValu: function(value) {
+        if(typeof value !== 'number') {
+            return;
+        }
+
+        for(let selectedElem of BoosterCrafter.shortcuts.lists.opener.list.querySelectorAll('.selected')) {
+            let appid = selectedElem.dataset.appid;
+            if(!BoosterCrafter.data.openerList[appid]) {
+                console.warn('BoosterCrafter.openerListIncrementListener(): invalid appid somehow, something is wrong!');
+                continue;
+            }
+
+            let dataEntry = BoosterCrafter.data.openerList[appid];
+
+            if(dataEntry.qtyTradable === dataEntry.maxTradable) {
+                let newQty = dataEntry.qtyNontradable + value;
+                if(newQty > dataEntry.maxNontradable) {
+                    dataEntry.qtyTradable = Math.min(newQty - dataEntry.maxNontradable, dataEntry.maxTradable);
+                    dataEntry.qtyNontradable = 0;
+                } else if(newQty < 0) {
+                    dataEntry.qtyTradable = Math.max(dataEntry.maxTradable + newQty, 1);
+                    dataEntry.qtyNontradable = 0;
+                } else {
+                    dataEntry.qtyNontradable = newQty;
+                }
+            } else {
+                let newQty = dataEntry.qtyTradable + value;
+                if(newQty > dataEntry.maxTradable) {
+                    dataEntry.qtyTradable = dataEntry.maxTradable;
+                    dataEntry.qtyNontradable = Math.min(newQty - dataEntry.maxTradable, dataEntry.maxNontradable);
+                } else if(newQty < 1) {
+                    dataEntry.qtyTradable = dataEntry.maxTradable;
+                    dataEntry.qtyNontradable = Math.max(dataEntry.maxNontradable + newQty, 0);
+                } else {
+                    dataEntry.qtyTradable = newQty;
+                }
+            }
+
+            selectedElem.dataset.qtyTradable = dataEntry.qtyTradable;
+            selectedElem.dataset.qtyNontradable = dataEntry.qtyNontradable;
+        }
+    },
+    openerListOpenListener: function() {
+        let selectedEntries = BoosterCrafter.shortcuts.lists.opener.list.querySelectorAll('.selected');
+        if(!selectedEntries.length) {
+            selectedEntries = BoosterCrafter.shortcuts.lists.opener.list.querySelectorAll('.userscript-config-list-entry');
+        }
+        if(!selectedEntries.length) {
+            return;
+        }
+        let tableBodyElem = document.getElementById('opener-dialog-table-body');
+        tableBodyElem.innerHTML = '';
+        for(let entryElem of selectedEntries) {
+            let name = entryElem.title;
+            let tradableCount = entryElem.dataset.qtyTradable;
+            let nontradableCount = entryElem.dataset.qtyNontradable;
+
+
+            let tableRow = tableBodyElem.insertRow();
+            tableRow.insertCell(0).innerHTML = name;
+            tableRow.insertCell(1).innerHTML = nontradableCount;
+            tableRow.insertCell(2).innerHTML = tradableCount;
+        }
+
+        let openerActionElem = BoosterCrafter.shortcuts.lists.opener.action;
+        let openerListElem = BoosterCrafter.shortcuts.lists.opener.list;
+
+        BoosterCrafter.shortcuts.addOpenerButton.disabled = true;
+        openerActionElem.classList.add('disabled');
+        BoosterCrafter.setOverlay(openerListElem, true, 'dialog');
+    },
+    openerListOpenCancelListener: function() {
+        let openerActionElem = BoosterCrafter.shortcuts.lists.opener.action;
+        let openerListElem = BoosterCrafter.shortcuts.lists.opener.list;
+
+        BoosterCrafter.shortcuts.addOpenerButton.disabled = false;
+        openerActionElem.classList.remove('disabled');
+        BoosterCrafter.setOverlay(openerListElem, false);
+    },
+    openerListOpenConfirmListener: async function() {
+        const tallyOpenerBoosters = () => {
+            let total = 0;
+            for(let appid in BoosterCrafter.data.openerList) {
+                let entry = BoosterCrafter.data.openerList[appid];
+                total += entry.qtyTradable + entry.qtyNontradable;
+            }
+            return total;
+        };
+
+        let openerLoaderProgressElem = document.getElementById('opener-list-progress');
+        let craftActionElem = BoosterCrafter.shortcuts.lists.craft.action;
+        let craftListElem = BoosterCrafter.shortcuts.lists.craft.list;
+        let openerActionElem = BoosterCrafter.shortcuts.lists.opener.action;
+        let openerListElem = BoosterCrafter.shortcuts.lists.opener.list;
+
+        openerLoaderProgressElem.innerHTML = '0';
+        document.getElementById('opener-list-progress-total').innerHTML = tallyOpenerBoosters();
+        BoosterCrafter.setOverlay(BoosterCrafter.shortcuts.gooStatus, false);
+        BoosterCrafter.shortcuts.unpackTradableGooButton.disabled = true;
+        BoosterCrafter.shortcuts.unpackNontradableGooButton.disabled = true;
+        BoosterCrafter.shortcuts.SelectorAddCraftButton.disabled = false;
+        BoosterCrafter.shortcuts.addCraftButton.disabled = false;
+        craftActionElem.classList.add('disabled');
+        BoosterCrafter.setOverlay(craftListElem, false);
+        BoosterCrafter.setOverlay(openerListElem, true, 'loading');
+
+        console.log(BoosterCrafter.data);
+        await BoosterCrafter.openBoosters();
+
+
+        if(document.getElementById('goostatus-sack-tradable').textContent !== '0') {
+            BoosterCrafter.shortcuts.unpackTradableGooButton.disabled = false;
+        }
+        if(document.getElementById('goostatus-sack-nontradable').textContent !== '0') {
+            BoosterCrafter.shortcuts.unpackNontradableGooButton.disabled = false;
+        }
+        craftActionElem.classList.remove('disabled');
+        BoosterCrafter.shortcuts.addOpenerButton.disabled = false;
+        openerActionElem.classList.remove('disabled');
+        BoosterCrafter.setOverlay(openerListElem, false);
+    },
+    openBoosters: async function() {
+        async function openBooster(appid, assetid) {
+            requestBody.set('appid', appid);
+            requestBody.set('communityitemid', assetid);
+
+
+            let response = await fetch(urlString, {
+                method: 'POST',
+                body: requestBody,
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                }
+            });
+
+            let responseData = await response.json();
+
+            // let responseData = {
+            //     "success": 1,
+            //     "rgItems": [
+            //         {
+            //             "image": "url-addr-str",
+            //             "name": "string",
+            //             "series": 1,
+            //             "foil": boolean
+            //         },
+            //         {
+            //             "image": "url-addr-str",
+            //             "name": "string",
+            //             "series": 1,
+            //             "foil": boolean
+            //         },
+            //         {
+            //             "image": "url-addr-str",
+            //             "name": "string",
+            //             "series": 1,
+            //             "foil": boolean
+            //         }
+            //     ]
+            // };
+
+            if(responseData.success !== 1) {
+                throw 'BoosterCrafter.openBoosters(): error opening booster!';
+            }
+
+            for(let cardData of responseData.rgItems) {
+                let imgUrl = cardData.image.replace(/https:\/\/community\.(akamai|cloudflare)\.steamstatic\.com\/economy\/image\//g, '');
+                currentDropStats[appid][imgUrl] ??= { imgUrl: imgUrl, name: cardData.name, foil: cardData.foil, count: 0 };
+                currentDropStats[appid][imgUrl].count++;
+                dropStats[appid][imgUrl] ??= { imgUrl: imgUrl, name: cardData.name, foil: cardData.foil, count: 0 };
+                dropStats[appid][imgUrl].count++;
+
+
+                let cardElem = BoosterCrafter.shortcuts.lists.card.list.querySelector(`[data-img-url="${imgUrl}"]`);
+                if(cardElem) {
+                    cardElem.dataset.qty = currentDropStats[appid][imgUrl].count;
+                } else {
+                    let HTMLString = BoosterCrafter.generateCardListEntry({ appid: appid, imgUrl: imgUrl, qty: 1, foil: cardData.foil, name: cardData.name });
+
+                    let firstElem = BoosterCrafter.shortcuts.lists.card.list.querySelector(`[data-appid="${appid}"]`);
+                    if(firstElem) {
+                        firstElem.insertAdjacentHTML('beforebegin', HTMLString);
+                    } else {
+                        let entriesElem = BoosterCrafter.shortcuts.lists.card.list.querySelector(`.userscript-config-list-entries`);
+                        entriesElem.insertAdjacentHTML('beforeend', HTMLString);
+                    }
+                }
+
+                if(cardData.foil) {
+                    BoosterCrafter.shortcuts.foilCardCount.innerHTML = parseInt(BoosterCrafter.shortcuts.foilCardCount.innerHTML) + 1;
+                } else {
+                    BoosterCrafter.shortcuts.normalCardCount.innerHTML = parseInt(BoosterCrafter.shortcuts.normalCardCount.innerHTML) + 1;
+                }
+            }
+        }
+
+        let currentDropStats = BoosterCrafter.data.currentDropStats;
+        let dropStats = globalSettings.boosterCrafter.stats.drops;
+        let openerLoaderProgressElem = document.getElementById('opener-list-progress');
+        let progressCounter = 0;
+        let selectedEntries = BoosterCrafter.shortcuts.lists.opener.list.querySelectorAll('.selected');
+        if(!selectedEntries.length) {
+            selectedEntries = BoosterCrafter.shortcuts.lists.opener.list.querySelectorAll('.userscript-config-list-entry');
+        }
+
+        let requestBody = new URLSearchParams({
+            sessionid: steamToolsUtils.getSessionId()
+        });
+        let urlString = `https://steamcommunity.com/profiles/${steamToolsUtils.getMySteamId()}/ajaxunpackbooster/`;
+
+        for(let entryElem of selectedEntries) {
+            let appid = entryElem.dataset.appid;
+            let invElem = BoosterCrafter.shortcuts.lists.inventory.list.querySelector(`[data-appid="${appid}"]`);
+            let boosterListEntry = BoosterCrafter.data.boosters[appid];
+            let openerListEntry = BoosterCrafter.data.openerList[appid];
+            let { qtyTradable, qtyNontradable } = openerListEntry;
+            currentDropStats[appid] ??= {};
+            dropStats[appid] ??= {};
+
+            for(let i=0; i<qtyTradable; ++i) {
+                if(boosterListEntry.tradables.length === 0) {
+                    throw 'BoosterCrafter.openBoosters(): No boosters left in the list!';
+                }
+
+                let asset = boosterListEntry.tradables[boosterListEntry.tradables.length - 1];
+
+                await openBooster(appid, asset.assetid);
+                openerListEntry.qtyTradable--;
+                openerListEntry.maxTradable--;
+                entryElem.dataset.qtyTradable = openerListEntry.qtyTradable;
+                invElem.dataset.qtyTradable = openerListEntry.maxTradable;
+                await BoosterCrafter.configSave();
+                openerLoaderProgressElem.innerHTML = ++progressCounter;
+
+                boosterListEntry.count--;
+                boosterListEntry.tradableCount--;
+                boosterListEntry.tradables.pop();
+            }
+
+            for(let i=0; i<qtyNontradable; ++i) {
+                if(boosterListEntry.nontradables.length === 0) {
+                    throw 'BoosterCrafter.openBoosters(): No boosters left in the list!';
+                }
+
+                let asset = boosterListEntry.nontradables[boosterListEntry.nontradables.length - 1];
+
+                await openBooster(appid, asset.assetid);
+                openerListEntry.qtyNontradable--;
+                openerListEntry.maxNontradable--;
+                entryElem.dataset.qtyNontradable = openerListEntry.qtyNontradable;
+                invElem.dataset.qtyNontradable = openerListEntry.maxNontradable;
+                await BoosterCrafter.configSave();
+                openerLoaderProgressElem.innerHTML = ++progressCounter;
+
+                boosterListEntry.count--;
+                boosterListEntry.nontradableCount--;
+                boosterListEntry.nontradables.pop();
+            }
+
+            if(!openerListEntry.maxTradable && !openerListEntry.maxNontradable) {
+                delete BoosterCrafter.data.openerList[appid];
+                entryElem.remove();
+                invElem.remove();
+            }
+        }
+    },
+
+    setOverlay: function(overlayContainerElem, overlayEnable, overlayState) {
+        if(overlayEnable) {
+            overlayContainerElem.classList.add('overlay');
         } else {
-            // improper parameter type
+            overlayContainerElem.classList.remove('overlay');
+        }
+
+        if(typeof overlayState === 'string') {
+            let overlayElem;
+            for(let containerChildElem of overlayContainerElem.children) {
+                if(containerChildElem.matches('.userscript-overlay')) {
+                    if(overlayElem) {
+                        console.warn('BoosterCrafter.setOverlay(): Multiple overlay elements detected on same parent!');
+                    }
+                    overlayElem = containerChildElem;
+                }
+            }
+
+            if(!overlayElem) {
+                console.warn('BoosterCrafter.setOverlay(): No overlay element found in immediate children!');
+                return;
+            }
+
+            overlayElem.className = 'userscript-overlay ' + overlayState;
+        }
+    },
+    // include language params?
+    generateBoosterListEntry: function(params) {
+        if(!Object.hasOwn(params, 'appid')) {
+            console.error('BoosterCrafter.generateBoosterListEntry(): Appid not provided!');
+            return '';
+        }
+        let HTMLString = `<div class="userscript-config-list-entry booster" data-appid="${params.appid}"`;
+        if(Object.hasOwn(params, 'tradableCount') && Object.hasOwn(params, 'nontradableCount')) {
+            HTMLString += ` data-qty-tradable="${params.tradableCount}" data-qty-nontradable="${params.nontradableCount}"`;
+        } else if(Object.hasOwn(params, 'price')) {
+            HTMLString += ` data-cost="${params.price}"`;
+            if(Object.hasOwn(params, 'available_at_time')) {
+                HTMLString += ` data-cooldown-timer="∞:∞:∞"`;
+            }
+        }
+        if(Object.hasOwn(params, 'name')) {
+            HTMLString += ` title="${params.name}"`;
+        }
+        HTMLString += '>'
+          +    `<img src="https://community.cloudflare.steamstatic.com/economy/boosterpack/${params.appid}?l=english&single=1&v=2&size=75x" alt="">`
+          + '</div>';
+
+        return HTMLString;
+    },
+    generateCardListEntry: function(params) {
+        if(!Object.hasOwn(params, 'imgUrl')) {
+            console.error('BoosterCrafter.generateCardListEntry(): img url string not provided!');
+            return '';
+        }
+
+        let HTMLString = `<div class="userscript-config-list-entry card"`;
+        if(Object.hasOwn(params, 'appid')) {
+            HTMLString += ` data-appid="${params.appid}"`;
+        }
+        HTMLString += ` data-img-url="${params.imgUrl}"`;
+        if(Object.hasOwn(params, 'qty')) {
+            HTMLString += ` data-qty="${params.qty}"`;
+        }
+        if(params.foil) {
+            HTMLString += ` data-foil=""`;
+        }
+        if(Object.hasOwn(params, 'name')) {
+            HTMLString += ` title="${params.name}"`;
+        }
+        HTMLString += '>'
+          +    `<img src="https://community.akamai.steamstatic.com/economy/image/${params.imgUrl}/75fx85f?allow_animated=1" alt="">`
+          + '</div>';
+
+        return HTMLString;
+    },
+
+    configSave: async function() {
+        await SteamToolsDbManager.setToolConfig('boosterCrafter');
+    },
+    configLoad: async function() {
+        let config = await SteamToolsDbManager.getToolConfig('boosterCrafter');
+        if(config.boosterCrafter) {
+            globalSettings.boosterCrafter = config.boosterCrafter;
+            BoosterCrafter.loadConfig();
+        }
+    },
+
+    configImportListener: async function() {
+        const isValidConfigObject = (obj) => {
+            if(!steamToolsUtils.isSimplyObject(obj.lists)) {
+                return false;
+            } else if(!steamToolsUtils.isSimplyObject(obj.lists.favorites)) {
+                return false;
+            } else if(!steamToolsUtils.isSimplyObject(obj.lists.crafting)) {
+                return false;
+            } else if(!steamToolsUtils.isSimplyObject(obj.stats)) {
+                return false;
+            } else if(!steamToolsUtils.isSimplyObject(obj.stats.crafts)) {
+                return false;
+            } else if(!steamToolsUtils.isSimplyObject(obj.stats.drops)) {
+                return false;
+            }
+            return true;
+        }
+
+        let importedConfig = await importConfig('boosterCrafter');
+        console.log(importedConfig)
+        if(!isValidConfigObject(importedConfig)) {
+            throw 'BoosterCrafter.configImportListener(): Invalid imported config!';
+        }
+
+        globalSettings.boosterCrafter = importedConfig;
+        BoosterCrafter.loadConfig();
+        BoosterCrafter.configSave();
+    },
+    configExportListener: async function() {
+        exportConfig('boosterCrafter', 'SteamBoosterCrafterConfig');
+    },
+
+    parseCooldownDate: function(dateString) {
+        let [monthStr, dayStr, , time] = dateString.split(' ');
+        let dateNow = new Date();
+        let nextYear = dateNow.getMonth() === 11 && monthStr === 'Jan';
+        let newTime = time.match(/\d+/g).map(x => parseInt(x));
+        if(time.endsWith('am') && time.startsWith('12')) {
+            newTime[0] = 0;
+        } else if(time.endsWith('pm') && !time.startsWith('12')) {
+            newTime[0] += 12;
+        }
+
+        return new Date(dateNow.getFullYear() + (nextYear ? 1 : 0), MONTHS_ARRAY.indexOf(monthStr), parseInt(dayStr), newTime[0], newTime[1]);
+    }
+};
+
+const TradeofferWindow = {
+    SETTINGSDEFAULTS: {
+        disabled: [], // disable any unwanted tabs here
+        filter: {
+            pLastSelected: null,
+            qLastSelected: null,
+            apps: [
+            /*     { // app
+             *         id: string,
+             *         fetched: boolean,
+             *         categories: [
+             *             { // category
+             *                 id: string,
+             *                 name: string,
+             *                 pOpened: boolean,
+             *                 qOpened: boolean,
+             *                 tags: [
+             *                     { // tag
+             *                         id: string,
+             *                         name: string,
+             *                         excluded: boolean,
+             *                         filtered: boolean
+             *                     },
+             *                     ...
+             *                 ]
+             *             },
+             *             ...
+             *         ]
+             *     },
+             *     ...
+             */
+            ]
+        },
+        // displayMode: int // set by display setup for quick search
+    },
+
+    FEATURE_LIST: {
+        prefilter: { title: 'Prefilter', tabContent: 'P', entry: 'prefilterSetup' },
+        quickSearch: { title: 'Quick Search', tabContent: 'Q', entry: 'quickSearchSetup' },
+        itemsSelector: { title: 'Items Selector', tabContent: 'I', entry: 'itemsSelectorSetup' },
+        message: { title: 'Message', tabContent: 'M', entry: 'messageSetup' },
+        summary: { title: 'Summary', tabContent: 'S', entry: 'summarySetup' },
+    },
+    MIN_TAG_SEARCH: 20,
+    INPUT_DELAY: 400, // ms
+
+    shortcuts: {},
+    data: {},
+
+    setup: async function() {
+        // resize existing tabs
+        let tabsContainerElem = document.querySelector('.inventory_user_tabs');
+        let userTabElem = tabsContainerElem.querySelector('#inventory_select_your_inventory');
+        userTabElem.innerHTML = '<div>You</div>';
+        let partnerTabElem = tabsContainerElem.querySelector('#inventory_select_their_inventory');
+        partnerTabElem.innerHTML = '<div>Them</div>';
+        partnerTabElem.style.float = ''; // float back to left
+
+        // remove apps in app inventory selector with 0 items
+        for(let appSelectorOptionElem of document.querySelectorAll('.appselect_options .option > span')) {
+            let optionQuantity = parseInt(appSelectorOptionElem.textContent);
+            if(optionQuantity === 0) {
+                appSelectorOptionElem.parentElement.remove();
+            }
+        }
+
+        // Add CSS Styles
+        GM_addStyle(cssTradeofferWindow);
+
+        // load config
+        let config = await SteamToolsDbManager.getToolConfig('tradeofferConfig');
+        if(config.tradeofferConfig) {
+            globalSettings.tradeofferConfig = config.tradeofferConfig;
+        } else {
+            globalSettings.tradeofferConfig = steamToolsUtils.deepClone(TradeofferWindow.SETTINGSDEFAULTS);
+        }
+
+        TradeofferWindow.filterLookupReset();
+        if(globalSettings.tradeofferConfig.filter.apps.length) {
+            TradeofferWindow.filterLookupUpdateApp(globalSettings.tradeofferConfig.filter.apps);
+        }
+
+        // set up overlay
+        const overlayHTMLString = '<div class="userscript-trade-overlay">'
+          +     '<div class="userscript-trade-overlay-header">'
+                  // the title will be changed when a feature setup is triggered
+          +         '<span class="userscript-trade-overlay-title">?????</span>'
+          +     '</div>'
+          +     '<div class="userscript-trade-overlay-close">'
+          +     '</div>'
+          +     '<div class="userscript-trade-overlay-body">'
+          +         '' // the body will be generated on each feature setup
+          +     '</div>'
+          + '</div>';
+
+        let tradeAreaElem = document.querySelector('.trade_area');
+        tradeAreaElem.insertAdjacentHTML('beforeend', overlayHTMLString);
+
+        // Get names, ids, urls for both parties in the trade offer window
+        // NOTE: Since we don't have immediate access to user's own name, we resort to extracting it out of the hidden escrow message
+        Object.assign(TradeofferWindow.data, { me: {}, them: {} });
+        let partnerName = TradeofferWindow.data.them.name = document.getElementById('trade_theirs').querySelector('.offerheader h2 > a').textContent;
+        let partnerEscrowMessage = document.getElementById('trade_escrow_for_them').textContent;
+        let userEscrowMessage = document.getElementById('trade_escrow_for_me').textContent;
+        TradeofferWindow.data.me.name = userEscrowMessage.slice(partnerEscrowMessage.indexOf(partnerName), partnerEscrowMessage.indexOf(partnerName) + partnerName.length - partnerEscrowMessage.length);
+
+        TradeofferWindow.data.them.id = unsafeWindow.UserThem.strSteamId;
+        TradeofferWindow.data.them.url = unsafeWindow.UserThem.strProfileURL;
+        TradeofferWindow.data.them.img = document.getElementById('trade_theirs').querySelector('.avatarIcon img').src;
+        TradeofferWindow.data.me.id = unsafeWindow.UserYou.strSteamId;
+        TradeofferWindow.data.me.url = unsafeWindow.UserYou.strProfileURL;
+        TradeofferWindow.data.me.img = document.getElementById('trade_yours').querySelector('.avatarIcon img').src;
+
+        // add app entries into filter
+        TradeofferWindow.addAppFilterApps();
+
+        // Add tabs to the user_tabs section
+        const generateUserTabHTMLString = (featureName, featureData) => {
+            return `<div class="inventory_user_tab userscript-tab" data-name=${featureName}>`
+              +     '<div>'
+              +         featureData.tabContent
+              +     '</div>'
+              + '</div>';
+        };
+        let newTabsHTMLString = '';
+        for(let tabName in TradeofferWindow.FEATURE_LIST) {
+            if(!globalSettings.tradeofferConfig.disabled.includes(tabName)) {
+                newTabsHTMLString += generateUserTabHTMLString(tabName, TradeofferWindow.FEATURE_LIST[tabName]);
+            }
+        }
+
+        // tabsContainerElem.querySelector('[style="clear: both;"]')
+        tabsContainerElem.querySelector('.inventory_user_tab_gap')
+            .insertAdjacentHTML('beforebegin', newTabsHTMLString);
+
+        TradeofferWindow.shortcuts.userSelectTabs = tabsContainerElem;
+        TradeofferWindow.shortcuts.overlay = tradeAreaElem.querySelector('.userscript-trade-overlay');
+        TradeofferWindow.shortcuts.overlayTitle = tradeAreaElem.querySelector('.userscript-trade-overlay-title');
+        TradeofferWindow.shortcuts.overlayBody = tradeAreaElem.querySelector('.userscript-trade-overlay-body');
+
+        tabsContainerElem.addEventListener('click', TradeofferWindow.selectCustomTabListener);
+        TradeofferWindow.shortcuts.overlay.querySelector('.userscript-trade-overlay-close').addEventListener('click', TradeofferWindow.overlayCloseListener);
+    },
+    selectCustomTabListener: function(event) {
+        let tabElem = event.target;
+        while(!tabElem.matches('.inventory_user_tab')) {
+            if(tabElem.matches('.inventory_user_tabs')) {
+                console.error('TradeofferWindow.selectCustomTabListener(): No tab element found!');
+                return;
+            }
+            tabElem = tabElem.parentElement;
+        }
+
+        let tabData = TradeofferWindow.FEATURE_LIST[tabElem.dataset.name];
+        if (!tabData || (typeof TradeofferWindow[tabData.entry] !== 'function')) {
+            throw 'TradeofferWindow.selectCustomTabListener(): Invalid function name! Was something set up incorrectly?';
+        }
+
+        TradeofferWindow.shortcuts.overlayTitle.textContent = tabData.title;
+
+        TradeofferWindow[tabData.entry]();
+
+        TradeofferWindow.shortcuts.overlayBody.dataset.name = tabElem.dataset.name;
+        TradeofferWindow.shortcuts.overlay.parentElement.classList.add('overlay');
+    },
+    addAppFilterApps: function() {
+        let filterData = globalSettings.tradeofferConfig.filter;
+
+        const storeAppFilterEntry = (appInfo) => {
+            for(let appid in appInfo) {
+                if(!filterData.apps.some(x => x.id === appid)) {
+                    let newFilterData = {
+                        id: appid,
+                        fetched: false,
+                        categories: []
+                    };
+                    filterData.apps.push(newFilterData);
+                    TradeofferWindow.filterLookupUpdateApp(newFilterData);
+                }
+            }
+        };
+
+        storeAppFilterEntry(unsafeWindow.g_rgAppContextData);
+        storeAppFilterEntry(unsafeWindow.g_rgPartnerAppContextData);
+
+        // save config
+    },
+
+    filterLookupReset: function() {
+        TradeofferWindow.data.filterLookup = {
+            data: globalSettings.tradeofferConfig.filter,
+            apps: {}
+        };
+    },
+    filterLookupUpdateApp: function(app) {
+        const updateAppLookup = (appData) => {
+            if(!steamToolsUtils.isSimplyObject(appData)) {
+                throw 'TradeofferWindow.filterLookupUpdateApp(): appData is not an object or array!';
+            }
+
+            filterLookup.apps[appData.id] = { data: appData, categories: {} };
+            if(appData.categories.length) {
+                TradeofferWindow.filterLookupUpdateCategory(appData.id, appData.categories);
+            }
+        }
+
+        let { filterLookup } = TradeofferWindow.data;
+        if(!filterLookup) {
+            console.warn('TradeofferWindow.filterLookupUpdateApp(): filterLookup does not exist');
             return;
         }
 
-        if(processedFriends.has(profileUrl)) {
+        if(Array.isArray(app)) {
+            for(let appData of app) {
+                updateAppLookup(appData);
+            }
+        } else {
+            updateAppLookup(app);
+        }
+    },
+    filterLookupUpdateCategory: function(appid, category) {
+        const updateCategoryLookup = (categoryData) => {
+            if(!steamToolsUtils.isSimplyObject(categoryData)) {
+                throw 'TradeofferWindow.filterLookupUpdateCategory(): categoryData is not an object or array!';
+            }
+
+            filterLookupApp.categories[categoryData.id] = { data: categoryData, tags: {} };
+            if(categoryData.tags.length) {
+                TradeofferWindow.filterLookupUpdateTag(appid, categoryData.id, categoryData.tags);
+            }
+        }
+
+        let filterLookupApp = TradeofferWindow.data.filterLookup?.apps[appid];
+        if(!filterLookupApp) {
+            console.warn('TradeofferWindow.filterLookupUpdateCategory(): App entry in filterLookup does not exist');
             return;
         }
 
-        let profile = await badgepageFilterGetFriendBadgepage(target);
+        if(Array.isArray(category)) {
+            for(let categoryData of category) {
+                updateCategoryLookup(categoryData);
+            }
+        } else {
+            updateCategoryLookup(category);
+        }
+    },
+    filterLookupUpdateTag: function(appid, categoryid, tag) {
+        const updateTagLookup = (tagData) => {
+            if(!steamToolsUtils.isSimplyObject(tagData)) {
+                throw 'TradeofferWindow.filterLookupUpdateTag(): tagData is not an object or array!';
+            }
 
-        if(!profile?.stock) {
+            filterLookupCategory.tags[tagData.id] = { data: tagData };
+        }
+
+        let filterLookupCategory = TradeofferWindow.data.filterLookup?.apps[appid]?.categories[categoryid];
+        if(!filterLookupCategory) {
+            console.warn('TradeofferWindow.filterLookupUpdateTag(): Category entry in filterLookup does not exist');
             return;
         }
 
-        let { lowestCards, possibleCards } = getPossibleMatches(profile, myMissingCards, myPossibleCards);
-        if(!possibleCards?.some(x => x.length)) {
+        if(Array.isArray(tag)) {
+            for(let tagData of tag) {
+                updateTagLookup(tagData);
+            }
+        } else {
+            updateTagLookup(tag);
+        }
+    },
+    filterLookupGet: function(appid, categoryid, tagid) {
+        let data = TradeofferWindow.data.filterLookup;
+        if(!data) {
+            return null;
+        }
+
+        if(typeof appid !== 'string' && typeof appid !== 'number') {
+            return null;
+        }
+        data = data.apps[appid];
+        if(!data) {
+            return null;
+        }
+
+        if(categoryid === undefined) {
+            return data.data;
+        } else if(typeof categoryid !== 'string' && typeof categoryid !== 'number') {
+            return null;
+        }
+        data = data.categories[categoryid];
+        if(!data) {
+            return null;
+        }
+
+        if(tagid === undefined) {
+            return data.data;
+        } else if(typeof tagid !== 'string' && typeof tagid !== 'number') {
+            return null;
+        }
+        data = data.tags[tagid];
+        if(!data) {
+            return null;
+        }
+
+        return data.data;
+    },
+
+
+
+
+
+    overlayCloseListener: function() {
+        TradeofferWindow.shortcuts.overlay.parentElement.classList.remove('overlay');
+    },
+    selectorMenuToggleListener: function(event) {
+        if(!event.currentTarget.matches('.main-control-selector-container')) {
+            throw 'TradeofferWindow.selectorMenuToggle(): Not attached to selector container!';
+        }
+
+        event.currentTarget.classList.toggle('active');
+    },
+    selectorMenuSelectListener: function(event) {
+        if(!event.currentTarget.matches('.main-control-selector-options')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
+        } else if(!event.currentTarget.parentElement.matches('.main-control-selector-container')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Options container is not immediate child of selector container!';
+        }
+
+        let optionElem = event.target;
+        while (!optionElem.matches('.main-control-selector-option')) {
+            if (optionElem.matches('.main-control-selector-options')) {
+                throw 'tradeofferSelectorMenuSelectListener(): No option found! Was the document structured correctly?';
+            }
+            optionElem = optionElem.parentElement;
+        }
+
+        TradeofferWindow.selectorMenuSelect(event.currentTarget.parentElement, optionElem);
+
+        // the event bubbling will take care of toggling the selector menu back off
+    },
+    selectorMenuSelect: function(selectorElem, option) {
+        if(!(selectorElem instanceof Element) || (!(option instanceof Element) && !(typeof option !== 'number'))) {
+            throw 'TradeofferWindow.selectorMenuSelect(): invalid arg types...';
+        }
+
+        if(!(option instanceof Element)) {
+            option = selectorElem.querySelector(`.main-control-selector-option[data-id="${option}"]`);
+            if(!option) {
+                console.warn('TradeofferWindow.selectorMenuSelect(): No valid options found');
+            }
+        } else if(!option.matches('.main-control-selector-option')) {
+            throw 'TradeofferWindow.selectorMenuSelect(): option element provided is not an option!';
+        }
+
+        selectorElem.querySelector('.main-control-selector-select').innerHTML = option.innerHTML;
+        Object.assign(selectorElem.dataset, option.dataset);
+    },
+
+
+
+
+
+    prefilterShortcuts: {},
+
+    prefilterSetup: function() {
+        console.log('Prefilter WIP');
+
+        let { prefilterShortcuts } = TradeofferWindow;
+
+        if(prefilterShortcuts.body !== undefined) {
             return;
         }
 
-        let profileGoodSwapHTMLString = '<div class="match-container-outer">'
-          +    '<div class="match-container max3">'
+        // generate prefilter body and attach to overlay body
+        const prefilterBodyHTMLString = '<div class="prefilter-body">'
+          +     '<div class="prefilter-main-control">'
+          +         '<div class="main-control-section">'
+          +             TradeofferWindow.generateAppSelectorHTMLString({ id: 'selector-prefilter-app' })
+          +         '</div>'
+          +     '</div>'
+          +     '<div class="prefilter-tag-category-containers">'
+          +         '' // populated when an app is selected
+          +     '</div>'
+          + '</div>';
+
+        TradeofferWindow.shortcuts.overlayBody.insertAdjacentHTML('beforeend', prefilterBodyHTMLString);
+
+        // add shortcuts to parts of the prefilter body
+        let prefilterBody = prefilterShortcuts.body = TradeofferWindow.shortcuts.overlayBody.querySelector('.prefilter-body');
+        prefilterShortcuts.selector = document.getElementById('selector-prefilter-app');
+        prefilterShortcuts.selectorOptions = prefilterShortcuts.selector.querySelector('.main-control-selector-options');
+        prefilterShortcuts.categories = prefilterBody.querySelector('.prefilter-tag-category-containers');
+
+        // add event listeners to everything in the prefilter body minus the categories,
+        //   those will be handled dynamically
+        prefilterShortcuts.selector.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
+        prefilterShortcuts.selectorOptions.addEventListener('click', TradeofferWindow.prefilterAppSelectorMenuSelectListener);
+
+        let lastSelectedApp = globalSettings.tradeofferConfig.filter.pLastSelected;
+        if(lastSelectedApp) {
+            prefilterShortcuts.selectorOptions.querySelector(`[data-id="${lastSelectedApp}"]`)?.click();
+        }
+    },
+    prefilterAppSelectorMenuSelectListener: async function(event) {
+        if(!event.currentTarget.matches('.main-control-selector-options')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
+        } else if(!event.currentTarget.parentElement.matches('.main-control-selector-container')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Options container is not immediate child of selector container!';
+        }
+
+        let optionElem = event.target;
+        while (!optionElem.matches('.main-control-selector-option')) {
+            if (optionElem.matches('.main-control-selector-options')) {
+                throw 'tradeofferSelectorMenuSelectListener(): No option found! Was the document structured correctly?';
+            }
+            optionElem = optionElem.parentElement;
+        }
+
+        let selectorElem = event.currentTarget.parentElement;
+        if(selectorElem.dataset.id === optionElem.dataset.id) {
+            return;
+        }
+
+        TradeofferWindow.selectorMenuSelect(selectorElem, optionElem);
+
+        let { categories: categoriesElem } = TradeofferWindow.prefilterShortcuts;
+        let optionId = optionElem.dataset.id;
+        let filterData = await TradeofferWindow.getMarketFilterData(optionId);
+
+        let categoryElemList = categoriesElem.querySelectorAll('.prefilter-tag-category');
+        let categoryElemIndex = 0;
+        let prefilterCategoryIndex = 0;
+
+        while(categoryElemIndex<categoryElemList.length && prefilterCategoryIndex<filterData.categories.length) {
+            TradeofferWindow.prefilterRepopulateCategoryElement(categoryElemList[categoryElemIndex++], filterData.categories[prefilterCategoryIndex++]);
+        }
+
+        if(categoryElemIndex===categoryElemList.length) {
+            let newCategoriesHTMLString = '';
+            let newIndex = categoryElemIndex;
+            while(prefilterCategoryIndex<filterData.categories.length) {
+                newCategoriesHTMLString += TradeofferWindow.generateCategoryHTMLString(filterData.categories[prefilterCategoryIndex++]);
+            }
+
+            TradeofferWindow.prefilterShortcuts.categories.insertAdjacentHTML('beforeend', newCategoriesHTMLString);
+
+            let categoryElemList = TradeofferWindow.prefilterShortcuts.categories.querySelectorAll('.prefilter-tag-category');
+            while(newIndex<categoryElemList.length) {
+                let newCategoryElem = categoryElemList[newIndex++];
+                newCategoryElem.querySelector('.prefilter-tag-category-searchbar')
+                  ?.addEventListener('input', steamToolsUtils.debounceFunction(TradeofferWindow.prefilterCategorySearchInputListener, TradeofferWindow.INPUT_DELAY));
+                newCategoryElem.querySelector('.prefilter-tag-category-reset')
+                  ?.addEventListener('click', TradeofferWindow.prefilterCategoryResetListener);
+                newCategoryElem.querySelector('.prefilter-tags-selected')
+                  ?.addEventListener('click', TradeofferWindow.prefilterCategoryTagsExludeToggleListener);
+                newCategoryElem.querySelector('.prefilter-tags')
+                  ?.addEventListener('click', TradeofferWindow.prefilterCategoryTagsExludeToggleListener);
+                newCategoryElem.querySelector('.prefilter-collapse-bar')
+                  ?.addEventListener('click', TradeofferWindow.prefilterCategoryToggleListener);
+            }
+        } else if(prefilterCategoryIndex===filterData.categories.length) {
+            while(categoryElemIndex<categoryElemList.length) {
+                categoryElemList[categoryElemIndex++].remove();
+            }
+        }
+
+        globalSettings.tradeofferConfig.filter.pLastSelected = optionId;
+        // save config
+
+        // the event bubbling will take care of toggling the selector menu back off
+    },
+    // TODO: collapsable category containers, hides only unselected tags
+    prefilterRepopulateCategoryElement: function(categoryElem, categoryData) {
+        if(!(categoryElem instanceof Element) || !categoryElem.matches('.prefilter-tag-category')) {
+            throw 'TradeofferWindow.prefilterRepopulateCategoryElement(): Invalid category container element!'
+        }
+
+        categoryElem.dataset.id = categoryData.id;
+        categoryElem.querySelector('.prefilter-tag-category-title').textContent = categoryData.name;
+        let searchbarElem = categoryElem.querySelector('.prefilter-tag-category-searchbar');
+        let excludeSearchbar = categoryData.tags.length < TradeofferWindow.MIN_TAG_SEARCH;
+
+        if(searchbarElem && excludeSearchbar) {
+            searchbarElem.remove();
+        } else if(!searchbarElem && !excludeSearchbar) {
+            const searchbarHTMLString = '<div class="prefilter-tag-category-searchbar">'
+              +     `<input class="userscript-input" type="text" placeholder="Search ${categoryData.name.toLowerCase()} tags">`
+              + '</div>';
+
+            categoryElem.querySelector('.prefilter-tag-category-title')
+              .insertAdjacentHTML('afterend', searchbarHTMLString);
+        }
+
+        let tagsHTMLStrings = TradeofferWindow.generateTagsHTMLStrings(categoryData.tags);
+        categoryElem.querySelector('.prefilter-tags-selected').innerHTML = tagsHTMLStrings[0];
+        categoryElem.querySelector('.prefilter-tags').innerHTML = tagsHTMLStrings[1];
+
+        let isOpened = categoryElem.classList.contains('hidden');
+        if(isOpened !== categoryData.pOpened) {
+            categoryElem.classList.toggle('hidden');
+        }
+    },
+    prefilterCategoryToggleListener: function(event) {
+        let categoryElem = event.currentTarget.parentElement;
+        let tagsElem = categoryElem.querySelector('.prefilter-tags');
+        if(!event.currentTarget.matches('.prefilter-collapse-bar')) {
+            throw 'TradeofferWindow.prefilterCategoryToggleListener(): Not attached to a collapse bar!';
+        } else if(!tagsElem) {
+            throw 'TradeofferWindow.prefilterCategoryToggleListener(): No tags container found!';
+        }
+
+        tagsElem.classList.toggle('hidden');
+
+        let appid = TradeofferWindow.prefilterShortcuts.selector.dataset.id;
+        let categoryid = categoryElem.dataset.id;
+
+        let categoryConfig = TradeofferWindow.filterLookupGet(appid, categoryid);
+
+        if(!categoryConfig) {
+            throw 'TradeofferWindow.prefilterCategoryToggleListener(): category not found in config?!?!';
+        }
+
+        categoryConfig.pOpened = !categoryConfig.pOpened;
+        // save config
+    },
+    prefilterCategoryResetListener: function(event) {
+        let categoryElem = event.currentTarget.parentElement;
+        if(!event.currentTarget.matches('.prefilter-tag-category-reset')) {
+            throw 'TradeofferWindow.prefilterCategoryResetListener(): Not attached to the correct element class!';
+        } else if(!categoryElem.matches('.prefilter-tag-category')) {
+            throw 'TradeofferWindow.prefilterCategoryResetListener(): Not contained in a category container!';
+        }
+
+        let tagsSelectedElem = categoryElem.querySelector('.prefilter-tags-selected');
+        let tagsElem = categoryElem.querySelector('.prefilter-tags');
+        if(!tagsSelectedElem || !tagsElem) {
+            throw 'TradeofferWindow.prefilterCategoryResetListener(): one or both tags lists not found!';
+        }
+        for(let tagSelectedElem of tagsSelectedElem.querySelectorAll('.prefilter-tag-container')) {
+            let tagSelectedIndex = parseInt(tagSelectedElem.dataset.index);
+            let nextTagElem = null;
+
+            for(let tagElem of tagsElem.querySelectorAll('.prefilter-tag-container')) {
+                if(parseInt(tagElem.dataset.index) > tagSelectedIndex) {
+                    let nextTagElem = tagElem;
+                    break;
+                }
+            }
+
+            nextTagElem
+              ? nextTagElem.before(tagSelectedElem)
+              : tagsElem.appendChild(tagSelectedElem);
+        }
+
+        let appid = TradeofferWindow.prefilterShortcuts.selector.dataset.id;
+        let categoryid = categoryElem.dataset.id;
+
+        let tagsListConfig = TradeofferWindow.filterLookupGet(appid, categoryid)?.tags
+
+        if(!tagsListConfig) {
+            throw 'TradeofferWindow.prefilterCategoryResetListener(): tag list not found in config?!?!';
+        }
+
+        for(let tag of tagsListConfig) {
+            tag.excluded = false;
+        }
+
+        // save config
+    },
+    prefilterCategorySearchInputListener: function(event) {
+        let tagElemList = event.target;
+        while(!tagElemList.matches('.prefilter-tag-category')) {
+            if(tagElemList.matches('.prefilter-body')) {
+                throw 'TradeofferWindow.prefilterCategorySearchInputListener(): category container not found! Is the document structured correctly?';
+            }
+            tagElemList = tagElemList.parentElement;
+        }
+        tagElemList = tagElemList.querySelectorAll('.prefilter-tags .prefilter-tag-container');
+
+        // NOTE: Simple case insensitive compare, cannot deal with accents and special chars
+        let inputStr = event.target.value.toLowerCase();
+        for(let tagElem of tagElemList) {
+            if(tagElem.textContent.toLowerCase().includes(inputStr) || tagElem.dataset.id.toLowerCase().includes(inputStr)) {
+                tagElem.classList.remove('hidden');
+            } else {
+                tagElem.classList.add('hidden');
+            }
+        }
+    },
+    prefilterCategoryTagsExludeToggleListener: function(event) {
+        let categoryElem = event.currentTarget.parentElement;
+        if(!event.currentTarget.matches('.prefilter-tags, .prefilter-tags-selected')) {
+            throw 'TradeofferWindow.prefilterCategoryTagsExludeToggleListener(): Not attached to a tags container!';
+        } else if(!categoryElem.matches('.prefilter-tag-category')) {
+            throw 'TradeofferWindow.prefilterCategoryTagsExludeToggleListener(): Not contained in a category container!';
+        }
+
+        let tagElem = event.target;
+        while(!tagElem.matches('.prefilter-tag-container')) {
+            if(tagElem.matches('.prefilter-tags')) {
+                throw 'TradeofferWindow.prefilterCategoryTagsExludeToggleListener(): No tag container found!';
+            }
+            tagElem = tagElem.parentElement;
+        }
+
+        let sourceElem = event.currentTarget;
+        let destinationElem = sourceElem.matches('.prefilter-tags')
+          ? categoryElem.querySelector('.prefilter-tags-selected')
+          : categoryElem.querySelector('.prefilter-tags');
+
+        if(!destinationElem) {
+            throw 'TradeofferWindow.prefilterCategoryTagsExludeToggleListener(): Destination Element not found!';
+        }
+
+        let tagIndex = parseInt(tagElem.dataset.index);
+        let nextTagElem;
+        for(let destTagElem of destinationElem.querySelectorAll('.prefilter-tag-container')) {
+            if(parseInt(destTagElem.dataset.index) > tagIndex) {
+                nextTagElem = destTagElem;
+                break;
+            }
+        }
+
+        nextTagElem
+          ? nextTagElem.before(tagElem)
+          : destinationElem.appendChild(tagElem);
+
+        let appid = TradeofferWindow.prefilterShortcuts.selector.dataset.id;
+        let categoryid = categoryElem.dataset.id;
+        let tagid = tagElem.dataset.id;
+
+        let tagConfig = TradeofferWindow.filterLookupGet(appid, categoryid, tagid);
+
+        if(!tagConfig) {
+            throw 'TradeofferWindow.prefilterCategoryTagsExludeToggleListener(): tag no found in config?!?!';
+        }
+
+        tagConfig.excluded = !tagConfig.excluded;
+        // save config
+    },
+
+
+
+
+
+    quickSearchShortcuts: {},
+    quickSearchData: {
+        currentContext: { profile: null, app: null, context: null },
+        offerItems: { // items already selected in offer
+            // appid: {
+            //     contextid: { you: [assetids], them: [assetids] }
+            // }
+        },
+        // inventory: {
+        //     full_load: boolean
+        //     data: array,
+        //     dataFiltered: array,
+        //     pageCount: number,
+        //     currency: array,
+        //     descriptions: object,
+        // },
+        // searchText: string,
+        // facet: populated after inventory load
+        // filtersSelected: 0,
+        // mode: // 0: page, 1: scroll // set during display setup/toggle
+        currentPage: null,
+        display: {
+            rows: 5,
+            columns: 6
+        },
+        scrolling: {
+            pageCount: 5,
+            startOffset: 3,
+            pages: [],
+            // observer: created and saved on setup
+        },
+        paging: {
+            pages: {
+                fg: null,
+                bg: null
+            },
+            isAnimating: false,
+            keyframes: {
+                enterRight: [{ left: '100%' }, { left: '0%' }],
+                exitRight: [{ left: '0%' }, { left: '100%' }],
+                enterLeft: [{ left: '-100%' }, { left: '0%' }],
+                exitLeft: [{ left: '0%' }, { left: '-100%' }]
+            },
+            options: {
+                duration: 400,
+                easing: 'ease-in-out'
+            },
+            finishAnimation: function(animationObj, cb) {
+                function finishAnimating(event) {
+                    TradeofferWindow.quickSearchData.paging.isAnimating = false;
+                    cb();
+                }
+                animationObj.addEventListener('finish', finishAnimating);
+            }
+        },
+        select: {
+            lastSelected: null
+        }
+    },
+
+    quickSearchSetup: function() {
+        console.log('Quick Search WIP');
+
+        let { quickSearchShortcuts } = TradeofferWindow;
+
+        TradeofferWindow.quickSearchDisplaySelectResetAll();
+        TradeofferWindow.quickSearchOfferItemsUpdate();
+
+        if (quickSearchShortcuts.body !== undefined) {
+            return;
+        }
+
+        // generate prefilter body and attach to overlay body
+        const quickSearchMainControlHTMLString = '<div class="quick-search-main-control">'
+          +     '<div class="main-control-section">'
+          +         TradeofferWindow.generateProfileSelectorHTMLString({ id: 'selector-quick-search-profile' })
+          +         TradeofferWindow.generateAppSelectorHTMLString({ useUserApps: false, usePartnerApps: false, id: 'selector-quick-search-app', placeholderText: 'Select profile first', disabled: true })
+          +         TradeofferWindow.generateContextSelectorHTMLString(undefined, undefined, { id: 'selector-quick-search-context', placeholder: 'Select profile/app first', disabled: true })
+          +         '<button id="quick-search-load-inventory" class="main-control-selector-action">'
+          +             'Load'
+          +         '</button>'
+          +     '</div>'
+          +     '<div class="main-control-section">'
+          +         '<button id="quick-search-add-to-offer" class="main-control-selector-action">'
+          +             'Add Selected'
+          +         '</button>'
+          +     '</div>'
+          + '</div>';
+        const quickSearchInventoryFacetHTMLString = '<div id="quick-search-facet" class="quick-search-inventory-facet facet-container">'
+          +     '<input id="quick-search-search-inventory" class="userscript-input" type="text" placeholder="Search item name">'
+          +     '' // tag categories is generated when inventory is loaded
+          + '</div>';
+        const quickSearchInventoryDisplayHTMLString = '<div class="quick-search-inventory-display inventory-display-container">'
+          +     '<div id="quick-search-pages" class="inventory-pages-container">'
+          +         '' // pages will be set up on display mode selection
+          +     '</div>'
+          +     '<div id="quick-search-page-nav" class="inventory-page-nav">'
+          +         `<button class="inventory-page-nav-btn" data-step="${Number.MIN_SAFE_INTEGER}">|&lt</button>`
+          +         '<button class="inventory-page-nav-btn" data-step="-10">&lt&lt</button>'
+          +         '<button class="inventory-page-nav-btn" data-step="-1">&lt</button>'
+          +         '<div class="inventory-page-nav-numbers">'
+          +             '<span class="inventory-page-nav-text number first">1</span>'
+          +             '<span class="inventory-page-nav-text ellipsis first">...</span>'
+          +             '<span class="inventory-page-nav-text number previous"></span>'
+          +             '<span class="inventory-page-nav-text number current"></span>'
+          +             '<span class="inventory-page-nav-text number next"></span>'
+          +             '<span class="inventory-page-nav-text ellipsis last">...</span>'
+          +             '<span class="inventory-page-nav-text number last"></span>'
+          +         '</div>'
+          +         '<button class="inventory-page-nav-btn" data-step="1">&gt</button>'
+          +         '<button class="inventory-page-nav-btn" data-step="10">&gt&gt</button>'
+          +         `<button class="inventory-page-nav-btn" data-step="${Number.MAX_SAFE_INTEGER}">&gt|</button>`
+          +     '</div>'
+          + '</div>';
+        const quickSearchBodyHTMLString = '<div class="quick-search-body">'
+          +     quickSearchMainControlHTMLString
+          +     quickSearchInventoryFacetHTMLString
+          +     quickSearchInventoryDisplayHTMLString
+          + '</div>';
+
+        TradeofferWindow.shortcuts.overlayBody.insertAdjacentHTML('beforeend', quickSearchBodyHTMLString);
+
+        // add shortcuts to parts of the quick search body
+        quickSearchShortcuts.body = TradeofferWindow.shortcuts.overlayBody.querySelector('.quick-search-body');
+        quickSearchShortcuts.selectorProfile = document.getElementById('selector-quick-search-profile');
+        quickSearchShortcuts.selectorOptionsProfile = quickSearchShortcuts.selectorProfile.querySelector('.main-control-selector-options');
+        quickSearchShortcuts.selectorApp = document.getElementById('selector-quick-search-app');
+        quickSearchShortcuts.selectorOptionsApp = quickSearchShortcuts.selectorApp.querySelector('.main-control-selector-options');
+        quickSearchShortcuts.selectorContext = document.getElementById('selector-quick-search-context');
+        quickSearchShortcuts.selectorOptionsContext = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-options');
+
+        quickSearchShortcuts.facet = document.getElementById('quick-search-facet');
+
+        quickSearchShortcuts.display = quickSearchShortcuts.body.querySelector('.quick-search-inventory-display');
+        quickSearchShortcuts.pages = document.getElementById('quick-search-pages');
+        quickSearchShortcuts.pageNavigationBar = document.getElementById('quick-search-page-nav');
+        quickSearchShortcuts.pageNumbers = quickSearchShortcuts.pageNavigationBar.querySelector('.inventory-page-nav-numbers');
+
+        // add event listeners to everything in the quick search body
+        quickSearchShortcuts.selectorProfile.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
+        quickSearchShortcuts.selectorOptionsProfile.addEventListener('click', TradeofferWindow.quickSearchSelectorProfileSelectListener);
+        quickSearchShortcuts.selectorApp.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
+        quickSearchShortcuts.selectorOptionsApp.addEventListener('click', TradeofferWindow.quickSearchSelectorAppSelectListener);
+        quickSearchShortcuts.selectorContext.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
+        quickSearchShortcuts.selectorOptionsContext.addEventListener('click', TradeofferWindow.selectorMenuSelectListener);
+
+        document.getElementById('quick-search-load-inventory').addEventListener('click', TradeofferWindow.quickSearchLoadInventoryListener);
+        document.getElementById('quick-search-add-to-offer').addEventListener('click', TradeofferWindow.quickSearchAddSelectedListener);
+
+        document.getElementById('quick-search-search-inventory').addEventListener('input', steamToolsUtils.debounceFunction(TradeofferWindow.quickSearchFacetSearchInventoryInputListener, TradeofferWindow.INPUT_DELAY));
+
+        quickSearchShortcuts.pages.addEventListener('click', TradeofferWindow.quickSearchDisplaySelectItemsListener);
+        quickSearchShortcuts.pageNavigationBar.addEventListener('click', TradeofferWindow.quickSearchDisplayPaginateListener);
+    },
+    quickSearchOfferItemsUpdate: function() {
+        // grab items from both sides and update item list to disable during quick search
+        // update disable state for currently rendered items
+        let offerItems = {};
+
+        const addOfferItems = (offerItemElemList, isMe) => {
+            // go through loaded inventories to update their disabled state also
+            for(let offerItemElem of offerItemElemList) {
+                let itemData = offerItemElem.rgItem;
+                if(!itemData) {
+                    console.warn('TradeofferWindow.quickSearchOfferItemsUpdate(): item data not found on item elem??');
+                    console.log(offerItemElem);
+                    continue;
+                }
+
+                offerItems[itemData.appid] ??= {
+                    [itemData.contextid]: { you: [], them: [] }
+                };
+                offerItems[itemData.appid][itemData.contextid] ??= { you: [], them: [] };
+                offerItems[itemData.appid][itemData.contextid][isMe ? 'you' : 'them'].push(itemData.id);
+            }
+        };
+
+        addOfferItems(document.getElementById('your_slots').querySelectorAll('.item'), true);
+        addOfferItems(document.getElementById('their_slots').querySelectorAll('.item'), false);
+        TradeofferWindow.quickSearchData.offerItems = offerItems;
+
+        let { quickSearchShortcuts, quickSearchData: { currentContext, inventory } } = TradeofferWindow;
+        if(!quickSearchShortcuts.body || !currentContext.context) {
+            return;
+        }
+
+        let offerAssetsList = offerItems[currentContext.app]?.[currentContext.context]?.[currentContext.profile === steamToolsUtils.getMySteamId() ? 'you' : 'them'];
+        if(!offerAssetsList) {
+            offerAssetsList = [];
+        }
+
+        // update inventory data here
+        for(let asset of inventory.dataList) {
+            if(!asset) {
+                continue;
+            }
+            asset.disabled = offerAssetsList.includes(asset.id);
+            asset.selected &&= !asset.disabled;
+        }
+
+        // update inventory items in DOM
+        for(let itemElem of quickSearchShortcuts.body.querySelectorAll('.inventory-item-container')) {
+            let itemData = inventory.data[itemElem.dataset.id];
+            if(!itemData) {
+                throw 'TradeofferWindow.quickSearchOfferItemsUpdate(): an item in DOM has no item data?!?!';
+            }
+
+            if(itemData.disabled) {
+                itemElem.classList.remove('selected');
+                itemElem.classList.add('disabled');
+            } else {
+                itemElem.classList.remove('disabled');
+            }
+        }
+    },
+    quickSearchLoadInventoryListener: async function(event) {
+        console.log('quickSearchLoadInventoryListener() WIP');
+
+        let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
+        let { currentContext } = quickSearchData;
+        let profileid = quickSearchShortcuts.selectorProfile.dataset.id;
+        let appid = quickSearchShortcuts.selectorApp.dataset.id;
+        let contextid = quickSearchShortcuts.selectorContext.dataset.id;
+
+        if(profileid === '-1' || appid === '-1' || contextid === '-1') {
+            console.warn('TradeofferWindow.quickSearchLoadInventoryListener(): profile/app/context not selected!');
+            return;
+        } else if(profileid === currentContext.profile && appid === currentContext.app && contextid === currentContext.context) {
+            console.log('TradeofferWindow.quickSearchLoadInventoryListener(): is current context, no need to load inventory...');
+            return;
+        }
+
+        quickSearchData.facet = [];
+        quickSearchData.filtersSelected = 0;
+
+        // activate loading animation
+        // clear inventory display items
+        // clear facet lists
+
+        let inventory = await TradeofferWindow.getTradeInventoryFast2(profileid, appid, contextid, TradeofferWindow.quickSearchFilterInventoryBlock);
+
+        // put items into an ordered array
+        let assetList = [];
+        let nonpositionedAssets = [];
+        for(let assetid in inventory.rgInventory) {
+            let asset = inventory.rgInventory[assetid];
+            let assetIndex = parseInt(asset.pos);
+
+            if(!Number.isInteger(assetIndex)) {
+                nonpositionedAssets.push(asset);
+            }
+            if(assetList[asset.pos] === undefined) {
+                assetList[asset.pos] = asset;
+            } else {
+                nonpositionedAssets.push(asset);
+            }
+        }
+        assetList.concat(nonpositionedAssets);
+
+        quickSearchData.inventory = {
+            full_load: inventory.full_load,
+            data: inventory.rgInventory,
+            dataList: assetList,
+            dataFiltered: [],
+            pageCount: 0,
+            currency: inventory.rgCurrency,
+            descriptions: inventory.rgDescriptions
+        }
+        quickSearchData.currentContext = {
+            profile: profileid,
+            app: appid,
+            context: contextid
+        };
+
+        // set up inventroy display
+        TradeofferWindow.quickSearchFacetGenerate(quickSearchData.facet);
+        TradeofferWindow.quickSearchApplyFilter();
+        TradeofferWindow.quickSearchDisplaySetup();
+
+        // deactivate loading animation
+
+        // save config
+    },
+    quickSearchFilterInventoryBlock: function(data, { profileid, appid, contextid }) {
+        let filterData = TradeofferWindow.filterLookupGet(appid);
+        if(!filterData) {
+            filterData = {
+                id: appid,
+                fetched: false,
+                categories: []
+            };
+            globalSettings.tradeofferConfig.filter.apps.push(filterData);
+            TradeofferWindow.filterLookupUpdateApp(filterData);
+        }
+        let { quickSearchData } = TradeofferWindow;
+        let { facet: facetList } = quickSearchData;
+        let offerItemList = quickSearchData.offerItems?.[appid]?.[contextid]?.[steamToolsUtils.getMySteamId() === profileid ? 'you' : 'them'];
+
+        let excludedDescriptions = [];
+        for(let assetid in data.rgInventory) {
+            let asset = data.rgInventory[assetid];
+            let excludeAsset = false;
+            let descript = data.rgDescriptions[`${asset.classid}_${asset.instanceid}`];
+
+            if(!descript) {
+                console.error('TradeofferWindow.quickSearchFilterInventoryBlock(): Description not found for an asset?!?!');
+                continue;
+            }
+
+            // check to be excluded or not
+            for(let tag of descript.tags) {
+                let filterCategory = TradeofferWindow.filterLookupGet(appid, tag.category);
+                if(!filterCategory) {
+                    filterCategory = {
+                        id: tag.category,
+                        name: tag.category_name,
+                        pOpened: false,
+                        qOpened: false,
+                        tags: []
+                    };
+                    filterData.categories.push(filterCategory);
+                    TradeofferWindow.filterLookupUpdateCategory(appid, filterCategory);
+                }
+
+                let filterTag = TradeofferWindow.filterLookupGet(appid, tag.category, tag.internal_name);
+                if(!filterTag) {
+                    filterTag = {
+                        id: tag.internal_name,
+                        name: tag.name,
+                        excluded: false,
+                        filtered: false
+                    };
+                    filterCategory.tags.push(filterTag);
+                    TradeofferWindow.filterLookupUpdateTag(appid, tag.category, filterTag);
+                }
+
+                if(filterTag.excluded) {
+                    excludeAsset = true;
+                    break;
+                }
+            }
+
+            if(!excludeAsset) {
+                // Add to facet list
+                for(let tag of descript.tags) {
+                    let filterCategory = TradeofferWindow.filterLookupGet(appid, tag.category);
+                    let filterTag = TradeofferWindow.filterLookupGet(appid, tag.category, tag.internal_name);
+
+                    let facetCategory = facetList.find(x => x.id === tag.category);
+                    if(!facetCategory) {
+                        facetCategory = {
+                            id: filterCategory.id,
+                            name: filterCategory.name,
+                            open: filterCategory.qOpened,
+                            isFiltering: false,
+                            tags: []
+                        };
+                        facetList.push(facetCategory);
+                    }
+
+                    let facetTag = facetCategory.tags.find(x => x.id === filterTag.id);
+                    if(!facetTag) {
+                        facetTag = {
+                            id: filterTag.id,
+                            name: filterTag.name,
+                            filtered: filterTag.filtered,
+                            count: 0
+                        };
+                        facetCategory.tags.push(facetTag);
+                    }
+                    facetTag.count++;
+
+                    facetCategory.isFiltering ||= facetTag.filtered;
+                    if(facetTag.filtered) {
+                        quickSearchData.filtersSelected++;
+                    }
+                }
+
+                // flag current offer items
+                asset.disabled = offerItemList ? offerItemList.includes(asset.id) : false;
+                asset.selected = false;
+            } else {
+                delete data.rgInventory[assetid];
+                excludedDescriptions.push(`${asset.classid}_${asset.instanceid}`);
+            }
+        }
+
+        for(let descriptid of excludedDescriptions) {
+            delete data.rgDescriptions[descriptid];
+        }
+
+        return data;
+    },
+
+    quickSearchAddSelectedListener: function(event) {
+        console.log('quickSearchAddSelectedListener() WIP');
+
+        let { currentContext, inventory } = TradeofferWindow.quickSearchData;
+        let steamInventory;
+        if(unsafeWindow.UserYou.strSteamId === currentContext.profile) {
+            steamInventory = unsafeWindow.UserYou.rgContexts[currentContext.app]?.[currentContext.context]?.inventory?.rgInventory;
+        } else if(unsafeWindow.UserThem.strSteamId === currentContext.profile) {
+            steamInventory = unsafeWindow.UserThem.rgContexts[currentContext.app]?.[currentContext.context]?.inventory?.rgInventory;
+        } else {
+            throw 'TradeofferWindow.quickSearchAddSelectedListener(): current inventory does not belong to either trade partners????';
+        }
+
+        if(!steamInventory) {
+            throw 'TradeofferWindow.quickSearchAddSelectedListener(): steam inventory is not loaded?!?!';
+        }
+
+        for(let assetid in inventory.data) {
+            let asset = inventory.data[assetid];
+            if(!asset.selected) {
+                continue;
+            }
+
+            let steamAsset = steamInventory[asset.id];
+            if(!steamAsset) {
+                console.error('TradeofferWindow.quickSearchAddSelectedListener(): steam asset not found?!?!');
+                continue;
+            }
+
+            unsafeWindow.FindSlotAndSetItem(steamAsset);
+        }
+
+        // close overlay
+        TradeofferWindow.overlayCloseListener();
+    },
+    quickSearchSelectorProfileSelectListener(event) {
+        if(!event.currentTarget.matches('.main-control-selector-options')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
+        } else if(!event.currentTarget.parentElement.matches('.main-control-selector-container')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Options container is not immediate child of selector container!';
+        }
+
+        let { quickSearchShortcuts } = TradeofferWindow;
+
+        let optionElem = event.target;
+        while (!optionElem.matches('.main-control-selector-option')) {
+            if (optionElem.matches('.main-control-selector-options')) {
+                throw 'tradeofferSelectorMenuSelectListener(): No option found! Was the document structured correctly?';
+            }
+            optionElem = optionElem.parentElement;
+        }
+
+        let selectorElem = event.currentTarget.parentElement;
+        if(selectorElem.dataset.id === optionElem.dataset.id) {
+            return;
+        }
+
+        TradeofferWindow.selectorMenuSelect(selectorElem, optionElem);
+
+        quickSearchShortcuts.selectorApp.classList.remove('disabled', 'active');
+        quickSearchShortcuts.selectorApp.dataset.id = '-1';
+        quickSearchShortcuts.selectorContext.classList.add('disabled');
+        quickSearchShortcuts.selectorContext.classList.remove('active');
+        quickSearchShortcuts.selectorContext.dataset.id = '-1';
+
+        let selectorContextSelectElem = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-select');
+        selectorContextSelectElem.textContent = '';
+        selectorContextSelectElem.dataset.id = '-1';
+
+        let selectorAppSelectElem = quickSearchShortcuts.selectorApp.querySelector('.main-control-selector-select');
+        selectorAppSelectElem.innerHTML = `<img src="${TradeofferWindow.selectorData.blankImg}">`
+          + 'Select App';
+        selectorAppSelectElem.dataset.id = '-1';
+
+        let appOptions, appsData;
+        if(selectorElem.dataset.id === unsafeWindow.UserYou.strSteamId) {
+            appOptions = TradeofferWindow.selectorData.you;
+            appsData = unsafeWindow.UserYou.rgAppInfo;
+        } else if(selectorElem.dataset.id === unsafeWindow.UserThem.strSteamId) {
+            appOptions = TradeofferWindow.selectorData.them;
+            appsData = unsafeWindow.UserThem.rgAppInfo;
+        } else {
+            throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): profile id is not user nor partner!?!?!';
+        }
+
+        let newSelectorAppOptionsHTMLString = '';
+        for(let appid in appOptions) {
+            let appInfo = appsData[appid];
+            newSelectorAppOptionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(appInfo.name, { id: appid }, appInfo.icon);
+        }
+        quickSearchShortcuts.selectorOptionsApp.innerHTML = newSelectorAppOptionsHTMLString;
+    },
+    quickSearchSelectorAppSelectListener: function(event) {
+        if(!event.currentTarget.matches('.main-control-selector-options')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
+        } else if(!event.currentTarget.parentElement.matches('.main-control-selector-container')) {
+            throw 'TradeofferWindow.selectorMenuSelectListener(): Options container is not immediate child of selector container!';
+        }
+
+        let { quickSearchShortcuts } = TradeofferWindow;
+
+        let optionElem = event.target;
+        while (!optionElem.matches('.main-control-selector-option')) {
+            if (optionElem.matches('.main-control-selector-options')) {
+                throw 'tradeofferSelectorMenuSelectListener(): No option found! Was the document structured correctly?';
+            }
+            optionElem = optionElem.parentElement;
+        }
+
+        let selectorElem = event.currentTarget.parentElement;
+        if(selectorElem.dataset.id === optionElem.dataset.id) {
+            return;
+        }
+
+        TradeofferWindow.selectorMenuSelect(selectorElem, optionElem);
+
+        quickSearchShortcuts.selectorProfile.classList.remove('active');
+        quickSearchShortcuts.selectorContext.classList.remove('disabled', 'active');
+        quickSearchShortcuts.selectorContext.dataset.id = '-1';
+
+        let selectorContextSelectElem = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-select');
+        selectorContextSelectElem.innerHTML = 'Select Category';
+        selectorContextSelectElem.dataset.id = '-1';
+
+        let profileid = quickSearchShortcuts.selectorProfile.dataset.id;
+        let appid = optionElem.dataset.id;
+        let contextOptions, contextsData;
+        if(profileid === unsafeWindow.UserYou.strSteamId) {
+            contextOptions = TradeofferWindow.selectorData.you[appid];
+            contextsData = unsafeWindow.UserYou.rgAppInfo[appid].rgContexts;
+        } else if(profileid === unsafeWindow.UserThem.strSteamId) {
+            contextOptions = TradeofferWindow.selectorData.them[appid];
+            contextsData = unsafeWindow.UserThem.rgAppInfo[appid].rgContexts;
+        } else {
+            throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): profile id is not user nor partner!?!?!';
+        }
+
+        let newSelectorContextOptionsHTMLString = 'Select app first';
+        for(let contextid of contextOptions) {
+            let contextInfo = contextsData[contextid];
+            if(parseInt(contextid) === 0) {
+                continue;
+            }
+            newSelectorContextOptionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(contextInfo.name, { id: contextInfo.id });
+        }
+        quickSearchShortcuts.selectorOptionsContext.innerHTML = newSelectorContextOptionsHTMLString;
+    },
+    quickSearchDisplaySelectItemsListener: function(event) {
+        let itemElem = event.target.closest('.inventory-item-container');
+        if(!itemElem) {
+            return;
+        }
+
+        let { select: selectData, mode, inventory } = TradeofferWindow.quickSearchData;
+        if(!event.shiftKey && !event.ctrlKey) {
+            // let selectedElemList = event.currentTarget.querySelectorAll('.selected');
+            // for(let selectedElem of selectedElemList) {
+            //     let itemData = inventory.data[selectedElem.dataset.id];
+            //     if(itemData) {
+            //         itemData.selected = false;
+            //     }
+            //     selectedElem.classList.remove('selected');
+            // }
+
+            // if(!(selectedElemList.length === 1 && itemElem.dataset.id === selectData.lastSelected.dataset.id) && !itemElem.classList.contains('disabled')) {
+            //     let itemData = inventory.data[itemElem.dataset.id];
+            //     if(itemData) {
+            //         itemData.selected = true;
+            //         itemElem.classList.add('selected');
+            //     }
+            // }
+
+            let itemData = inventory.data[itemElem.dataset.id];
+            if(itemData) {
+                itemData.selected = !itemData.selected;
+                itemElem.classList.toggle('selected');
+            }
+        } else if(event.shiftKey) {
+            let prevIndex, currIndex;
+            let itemElemList;
+            if(mode === 0) {
+                itemElemList = itemElem.closest('.inventory-page').querySelectorAll('.inventory-item-container');
+            } else {
+                itemElemList = event.currentTarget.querySelectorAll('.inventory-item-container');
+            }
+
+            for(let i=0; i<itemElemList.length; i++) {
+                if(itemElemList[i].dataset.id === selectData.lastSelected?.dataset.id) {
+                    prevIndex = i;
+                    if(currIndex !== undefined) {
+                        break;
+                    }
+                }
+                if(itemElemList[i].dataset.id === itemElem.dataset.id) {
+                    currIndex = i;
+                    if(prevIndex !== undefined) {
+                        break;
+                    }
+                }
+            }
+            prevIndex ??= 0;
+
+            if(prevIndex === currIndex) {
+                return;
+            }
+
+            let minIndex = Math.min(prevIndex, currIndex);
+            let maxIndex = Math.max(prevIndex, currIndex);
+
+            for(let i=minIndex+1; i<maxIndex; i++) {
+                let itemData = inventory.data[itemElemList[i].dataset.id];
+                if(itemData?.disabled) {
+                    continue;
+                }
+
+                itemData.selected = true;
+                itemElemList[i].classList.add('selected');
+            }
+            let itemData = inventory.data[itemElemList[currIndex].dataset.id];
+            if(!itemData?.disabled) {
+                itemData.selected = true;
+                itemElemList[currIndex].classList.add('selected');
+            }
+        } else if(event.ctrlKey) {
+            let itemData = inventory.data[itemElem.dataset.id];
+            if(itemData) {
+                itemData.selected = !itemData.selected;
+                itemElem.classList.toggle('selected');
+            }
+        }
+
+        selectData.lastSelected = itemElem;
+    },
+    quickSearchDisplaySelectResetAll: function() {
+        let { quickSearchData, quickSearchShortcuts } = TradeofferWindow;
+        let { select, inventory } = quickSearchData;
+
+        if(!quickSearchShortcuts.pages || !inventory) {
+            return;
+        }
+
+        for(let assetid in inventory.data) {
+            inventory.data[assetid].selected = false;
+        }
+
+        for(let itemElem of quickSearchShortcuts.pages.querySelectorAll('.selected')) {
+            itemElem.classList.remove('selected');
+        }
+
+        select.lastSelected = null;
+    },
+    quickSearchDisplaySelectResetPage: function(pageElem) {
+        let { select, inventory } = TradeofferWindow.quickSearchData;
+
+        let lastSelectedId = select.lastSelected?.dataset.id;
+        for(let itemElem of pageElem.querySelectorAll('.selected')) {
+            let itemData = inventory.data[itemElem.dataset.id];
+            if(itemData) {
+                itemData.selected = false;
+            }
+            itemElem.classList.remove('selected');
+
+            if(itemElem.dataset.id === lastSelectedId) {
+                select.lastSelected = null;
+            }
+        }
+    },
+
+    quickSearchFacetGenerate: function(facetList) {
+        const generateFacetEntryHTMLString = (entryData) => {
+            return `<div class="facet-list-entry-container" data-id="${entryData.id}">`
+              +     '<label class="facet-list-entry-label">'
+              +         `<input type="checkbox"${entryData.filtered ? ' checked' : ''}>`
+              +         `<span class="facet-entry-title">${entryData.name}</span>`
+              +         `<span class="facet-entry-detail">(${entryData.count})</span>`
+              +     '<label>'
+              + '</div>';
+        };
+
+        let facetElem = TradeofferWindow.quickSearchShortcuts.facet;
+
+        let facetListsHTMLString = '';
+        for(let category of facetList) {
+            let facetSectionTitleHTMLString = `<div class="facet-section-title">${category.name}</div>`;
+            let facetSectionSearchHTMLString = '';
+            if(category.tags.length >= TradeofferWindow.MIN_TAG_SEARCH) {
+                facetSectionSearchHTMLString = '<div class="facet-list-searchbar">'
+                  +     `<input class="userscript-input" type="text" placeholder="Search ${category.name.toLowerCase()}">`
+                  + '</div>';
+            }
+
+            let facetSectionEntriesHTMLString = '';
+            for(let entry of category.tags) {
+                facetSectionEntriesHTMLString += generateFacetEntryHTMLString(entry);
+            }
+
+            facetListsHTMLString += `<div class="facet-section${category.open ? '' : ' hidden'}" data-id="${category.id}">`
+              +     facetSectionTitleHTMLString
+              +     facetSectionSearchHTMLString
+              +     `<div class="facet-list">`
+              +         facetSectionEntriesHTMLString
+              +     '</div>'
+              + '</div>';
+        }
+
+        for(let facetSectionElem of facetElem.querySelectorAll('.facet-section')) {
+            facetSectionElem.remove();
+        }
+        facetElem.insertAdjacentHTML('beforeend', facetListsHTMLString);
+
+        for(let facetTitleElem of facetElem.querySelectorAll('.facet-section-title')) {
+            facetTitleElem.addEventListener('click', TradeofferWindow.quickSearchFacetCategoryToggleListener);
+        }
+        for(let facetSearchElem of facetElem.querySelectorAll('.facet-list-searchbar .userscript-input')) {
+            facetSearchElem.addEventListener('input', steamToolsUtils.debounceFunction(TradeofferWindow.quickSearchFacetSearchCategoryInputListener, TradeofferWindow.INPUT_DELAY));
+        }
+        for(let facetListElem of facetElem.querySelectorAll('.facet-list')) {
+            facetListElem.addEventListener('change', TradeofferWindow.quickSearchFacetTagSelectListener);
+        }
+    },
+    quickSearchFacetCategoryToggleListener(event) {
+        let { quickSearchData } = TradeofferWindow;
+        let facetCategoryElem = event.target.closest('.facet-section');
+        if(!facetCategoryElem) {
+            throw 'TradeofferWindow.quickSearchFacetCategoryToggleListener(): facet section not found?!?! Is the document formatted correctly?';
+        }
+
+        facetCategoryElem.classList.toggle('hidden');
+        let categoryConfig = TradeofferWindow.filterLookupGet(quickSearchData.currentContext.app, facetCategoryElem.dataset.id);
+        if(categoryConfig) {
+            categoryConfig.qOpened = !categoryConfig.qOpened;
+        }
+
+        let categoryFacet = quickSearchData.facet.find(x => x.id === facetCategoryElem.dataset.id);
+        if(!categoryFacet) {
+            throw 'TradeofferWindow.quickSearchFacetCategoryToggleListener(): facet data not found?!?!';
+        }
+        categoryFacet.open = !categoryFacet.open;
+
+        // save config
+    },
+    quickSearchFacetSearchCategoryInputListener(event) {
+        // NOTE: May or may not need to change simple string comparisons into regex matching, or maybe split string matching
+
+        let searchText = event.target.value.toLowerCase() ?? '';
+        let facetSectionElem = event.target.closest('.facet-section');
+        if(!facetSectionElem) {
+            throw 'TradeofferWindow.quickSearchFacetSearchCategoryInputListener(): target is not within a facet section????';
+        }
+
+        for(let facetEntryElem of facetSectionElem.querySelectorAll('.facet-list .facet-list-entry-container')) {
+            if(facetEntryElem.dataset.id.toLowerCase().includes(searchText) || facetEntryElem.textContent.toLowerCase().includes(searchText)) {
+                facetEntryElem.classList.remove('hidden');
+            } else {
+                facetEntryElem.classList.add('hidden');
+            }
+        }
+    },
+    quickSearchFacetSearchInventoryInputListener(event) {
+        let { quickSearchData } = TradeofferWindow;
+
+        if(!quickSearchData.inventory) {
+            return;
+        }
+
+        let searchText = event.target.value;
+        let searchTextOld = quickSearchData.searchText;
+        quickSearchData.searchText = searchText;
+
+        if(searchText.includes(searchTextOld)) {
+            TradeofferWindow.quickSearchApplyFilter(searchText);
+        } else {
+            TradeofferWindow.quickSearchApplyFilter();
+        }
+    },
+    quickSearchFacetTagSelectListener(event) {
+        let { quickSearchData } = TradeofferWindow;
+
+        let facetEntryElem = event.target.closest('.facet-list-entry-container');
+        if(!facetEntryElem) {
+            throw 'TradeofferWindow.quickSearchFacetTagSelectListener(): tag container not found?!?! Is the document formatted correctly?';
+        }
+
+        let facetCategoryElem = facetEntryElem.closest('.facet-section');
+        if(!facetCategoryElem) {
+            throw 'TradeofferWindow.quickSearchFacetTagSelectListener(): facet section not found?!?! Is the document formatted correctly?';
+        }
+
+        let tagConfig = TradeofferWindow.filterLookupGet(quickSearchData.currentContext.app, facetCategoryElem.dataset.id, facetEntryElem.dataset.id);
+        tagConfig.filtered = event.target.checked;
+
+        let categoryFacet = quickSearchData.facet.find(x => x.id === facetCategoryElem.dataset.id);
+        if(!categoryFacet) {
+            throw 'TradeofferWindow.quickSearchFacetTagSelectListener(): facet category data not found?!?!';
+        }
+
+        let tagFacet = categoryFacet.tags.find(x => x.id === facetEntryElem.dataset.id);
+        if(!tagFacet) {
+            throw 'TradeofferWindow.quickSearchFacetTagSelectListener(): facet tag data not found?!?!';
+        }
+
+        let filterOnCount = categoryFacet.tags.reduce((count, tag) => tag.filtered ? ++count : count, 0);
+        let toggleFilterOn = !tagFacet.filtered && event.target.checked;
+        tagFacet.filtered = event.target.checked;
+        categoryFacet.isFiltering = !(filterOnCount === 1 && !toggleFilterOn);
+
+        toggleFilterOn ? quickSearchData.filtersSelected++ : quickSearchData.filtersSelected--;
+
+        if(filterOnCount === 0 && toggleFilterOn) {
+            TradeofferWindow.quickSearchApplyFilter({ category: categoryFacet.id, tag: tagFacet.id, diff: false });
+        } else if(filterOnCount > 1 && !toggleFilterOn) {
+            TradeofferWindow.quickSearchApplyFilter({ category: categoryFacet.id, tag: tagFacet.id, diff: true });
+        } else {
+            TradeofferWindow.quickSearchApplyFilter();
+        }
+
+        // save config
+    },
+    quickSearchApplyFilter(filter) {
+        // NOTE: May or may not need to change simple string comparisons into regex matching, or maybe split string matching
+
+        let { quickSearchData } = TradeofferWindow;
+        let { inventory, facet, searchText, filtersSelected } = quickSearchData;
+
+        if(!inventory) {
+            return;
+        }
+
+        if(filter) {
+            if(typeof filter === 'string') {
+                filter = filter.toLowerCase();
+                inventory.dataListFiltered = inventory.dataListFiltered.filter(item => {
+                    let descript = inventory.descriptions[`${item.classid}_${item.instanceid}`];
+                    return descript.name.toLowerCase().includes(filter) || descript.type.toLowerCase().includes(filter);
+                });
+            } else if(steamToolsUtils.isSimplyObject(filter)) {
+                inventory.dataListFiltered = inventory.dataListFiltered.filter(item => {
+                    let descript = inventory.descriptions[`${item.classid}_${item.instanceid}`];
+
+                    let itemTag = descript.tags.find(x => x.category === filter.category);
+                    if(!itemTag) {
+                        return false;
+                    }
+
+                    if(itemTag.internal_name === filter.tag) {
+                        return !filter.diff;
+                    }
+
+                    return filter.diff;
+                });
+            } else {
+                console.warn('TradeofferWindow.quickSearchApplyFilter(): invalid filter type! Inventory not filtered...');
+            }
+        } else {
+            searchText = typeof searchText === 'string' ? searchText.toLowerCase() : '';
+            inventory.dataListFiltered = inventory.dataList.filter(item => {
+                let descript = inventory.descriptions[`${item.classid}_${item.instanceid}`];
+                if(typeof searchText === 'string') {
+                    if(!descript.name.toLowerCase().includes(searchText) && !descript.type.toLowerCase().includes(searchText)) {
+                        return false;
+                    }
+                }
+
+                if(filtersSelected === 0) {
+                    return true;
+                }
+
+                for(let facetCategory of facet) {
+                    if(!facetCategory.isFiltering) {
+                        continue;
+                    }
+
+                    let itemTag = descript.tags.find(x => x.category === facetCategory.id);
+                    if(!itemTag) {
+                        return false;
+                    }
+
+                    let facetTag = facetCategory.tags.find(x => x.id === itemTag.internal_name);
+                    if(!facetTag) {
+                        console.warn('TradeofferWindow.quickSearchApplyFilter(): tag not found in facet data?!?! Item will not be filtered out...');
+                        return true;
+                    }
+
+                    if(!facetTag.filtered) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+        }
+
+        inventory.pageCount = Math.ceil(quickSearchData.inventory.dataListFiltered.length / (quickSearchData.display.rows*quickSearchData.display.columns));
+        TradeofferWindow.quickSearchShortcuts.pageNumbers.querySelector('.number.last').textContent = inventory.pageCount;
+
+        // re-render pages if needed
+        if(quickSearchData.mode === 0) {
+            let fgPage = quickSearchData.paging.pages.fg;
+            let fgPageNum = parseInt(fgPage.dataset.page);
+            if(fgPageNum > inventory.pageCount) {
+                fgPageNum = Math.max(1, inventory.pageCount);
+            }
+            TradeofferWindow.quickSearchDisplayPopulatePage(fgPage, fgPageNum);
+            TradeofferWindow.quickSearchDisplayUpdatePageNavigationBar(fgPageNum);
+        } else if(quickSearchData.mode === 1) {
+            let pages = quickSearchData.scrolling.pages;
+            let pageOffset = 0;
+            for(let i=pages.length-1; i>=0; i--) {
+                let pageElem = pages[i];
+                let pageNum = parseInt(pageElem.dataset.page);
+                if(pageNum === 0) {
+                    continue;
+                } else if(pageNum > inventory.pageCount && pageOffset === 0) {
+                    pageOffset = pageNum - inventory.pageCount;
+                }
+
+                TradeofferWindow.quickSearchDisplayPopulatePage(pageElem, pageNum-pageOffset);
+            }
+        }
+    },
+
+    quickSearchDisplayModeToggleListener: function(event) {
+        // toggle display mode
+        // set config data
+        TradeofferWindow.quickSearchDisplaySetup();
+    },
+    quickSearchDisplaySetup: function() {
+        let { displayMode } = globalSettings.tradeofferConfig;
+        if(displayMode === undefined) {
+            TradeofferWindow.quickSearchDisplaySetupPaging();
+        }
+
+        let currentMode = TradeofferWindow.quickSearchData.mode;
+        if(currentMode === undefined || displayMode !== currentMode) {
+            if(displayMode === 0) {
+                TradeofferWindow.quickSearchSetupDisplayPaging();
+            } else if(displayMode === 1) {
+                TradeofferWindow.quickSearchSetupDisplayScrolling();
+            }
+        }
+    },
+    quickSearchDisplaySetupPaging: function() {
+        let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
+        let { paging: pagingData, inventory: { pageCount: pageNumLast } } = quickSearchData;
+
+        if(quickSearchData.mode === 0) {
+            return;
+        }
+
+        if(quickSearchData.mode !== null) {
+            // reset non-paging stuff and selections
+            if(quickSearchData.mode === 1) {
+                let { scrolling: scrollData } = quickSearchData;
+                TradeofferWindow.quickSearchDisplaySelectReset();
+                scrollData.observer.disconnect();
+                for(let pageElem of scrollData.pages) {
+                    pageElem.remove();
+                }
+                scrollData.pages = [];
+                quickSearchShortcuts.display.classList.remove('scrolling');
+            }
+        }
+
+        quickSearchShortcuts.display.classList.add('paging');
+        let pageNumCurrent = quickSearchData.currentPage ? parseInt(quickSearchData.currentPage.dataset.page) : null;
+        if(pageNumCurrent !== null && (pageNumCurrent < 1 || pageNumCurrent > pageNumLast)) {
+            // reuse current page and set active
+            quickSearchShortcuts.pages.insertAdjacentElement('afterbegin', quickSearchData.currentPage);
+            quickSearchData.currentPage.classList.add('active');
+            pagingData.pages.fg = quickSearchData.currentPage;
+        } else {
+            // generate 1st page and set active
+            let pageFgHTMLString = TradeofferWindow.quickSearchDisplayGeneratePageHTMLString(1);
+            quickSearchShortcuts.pages.insertAdjacentHTML('afterbegin', pageFgHTMLString);
+            let pageFgElem = quickSearchShortcuts.pages.querySelector('.inventory-page');
+            pageFgElem.classList.add('active');
+            quickSearchData.currentPage = pageFgElem;
+            pagingData.pages.fg = pageFgElem;
+        }
+
+        let pageBgHTMLString = TradeofferWindow.quickSearchDisplayGeneratePageHTMLString();
+        quickSearchShortcuts.pages.insertAdjacentHTML('afterbegin', pageBgHTMLString);
+        let pageBgElem = quickSearchShortcuts.pages.querySelector('.inventory-page:not(.active)');
+        pagingData.pages.bg = pageBgElem;
+        TradeofferWindow.quickSearchDisplayUpdatePageNavigationBar(1);
+
+        quickSearchData.mode = 0;
+    },
+    quickSearchDisplaySetupScrolling: function() {
+        let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
+        let { scrolling: scrollData } = quickSearchData;
+        if(quickSearchData.mode === 1) {
+            return;
+        }
+
+        if(quickSearchData.mode !== null) {
+            // reset non-scrolling stuff and selections
+            if(quickSearchData.mode === 0) {
+                let { paging: pagingData } = quickSearchData;
+                TradeofferWindow.quickSearchDisplaySelectReset();
+                pagingData.pages.fg.classList.remove('active');
+                pagingData.pages.fg.remove();
+                pagingData.pages.bg.remove();
+                pagingData.pages = { fg: null, bg: null };
+                quickSearchShortcuts.display.classList.remove('paging');
+            }
+        }
+
+        quickSearchShortcuts.display.classList.add('scrolling');
+        let pageNumCurrent = quickSearchData.currentPage ? parseInt(quickSearchData.currentPage.dataset.page) : null;
+        let pagesHTMLString = '';
+        for(let i=(pageNumCurrent ?? 1)-scrollData.startOffset, end=i+scrollData.pageCount; i<end; i++) {
+            if(i === pageNumCurrent) {
+                pagesHTMLString += quickSearchData.currentPage.outerHTML;
+            } else {
+                pagesHTMLString += TradeofferWindow.quickSearchDisplayGeneratePageHTMLString(i);
+            }
+        }
+        quickSearchShortcuts.pages.insertAdjacentHTML('afterbegin', pagesHTMLString);
+
+        let pageElemList = quickSearchShortcuts.pages.querySelectorAll('.inventory-page');
+        let pageHeight =  pageElemList[scrollData.startOffset].clientHeight;
+        // let pageContainerHeight = quickSearchShortcuts.pages.clientHeight;
+        // let observerMargin = (steamToolsUtils.clamp(pageContainerHeight+pageHeight, 1.5*pageHeight, (pageElemList.length-1)*pageHeight) - pageContainerHeight) / 2;
+        let observerOptions = {
+            root: quickSearchShortcuts.pages,
+            rootMargin: '100% 0%',
+            threshold: 1.0
+        };
+        scrollData.observer = new IntersectionObserver(TradeofferWindow.quickSearchDisplayScrollLoadPage, observerOptions);
+
+        for(let page of quickSearchShortcuts.pages.querySelectorAll('.inventory-page')) {
+            scrollData.observer.observe(page);
+            scrollData.pages.push(page);
+        }
+        quickSearchData.currentPage = scrollData.pages[scrollData.startOffset];
+
+        let currentPageNum = parseInt(quickSearchData.currentPage.dataset.page);
+        if(currentPageNum > 2) {
+            quickSearchShortcuts.pages.scroll(scrollData.startOffset*pageHeight);
+        }
+
+        quickSearchData.mode = 1;
+    },
+    quickSearchDisplayScrollLoadPage: function(entries) {
+        entries.forEach((entry) => {
+            let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
+            let { pageCount, pages } = quickSearchData.scrolling;
+
+            if(quickSearchData.mode !== 1) {
+                return;
+            } else if(!entry.isIntersecting) {
+                return;
+            }
+
+            let pageNum = entry.target.dataset.page;
+
+            if(pages[0].dataset.page === pageNum) {
+                let pageElem = pages.pop();
+                pageElem.remove();
+                TradeofferWindow.quickSearchDisplayPopulatePage(pageElem, parseInt(pageNum)-1);
+                quickSearchShortcuts.pages.prepend(pageElem);
+                pages.unshift(pageElem);
+                quickSearchData.currentPage = quickSearchData.currentPage.previousElementSibling;
+            } else if(pages[pageCount-1].dataset.page === pageNum) {
+                let pageElem = pages.shift();
+                pageElem.remove();
+                TradeofferWindow.quickSearchDisplayPopulatePage(pageElem, parseInt(pageNum)+1);
+                quickSearchShortcuts.pages.append(pageElem);
+                pages.push(pageElem);
+                quickSearchData.currentPage = quickSearchData.currentPage.nextElementSibling;
+            }
+        });
+    },
+    quickSearchDisplayPaginateListener: function(event) {
+        let { mode: currentMode, paging: pagingData, inventory: { pageCount: pageNumLast } } = TradeofferWindow.quickSearchData;
+        let pages = pagingData.pages;
+
+        if(currentMode !== 0) {
+            return;
+        } else if(pagingData.isAnimating) {
+            return;
+        }
+
+        let pageStep = parseInt(event.target.dataset.step);
+        if(Number.isNaN(pageStep)) {
+            console.error('TradeofferWindow.quickSearchPaginateListener(): Page step is not a number!?!?');
+            return;
+        } else if(!(pageStep < 0) && !(pageStep > 0)) {
+            console.warn('TradeofferWindow.quickSearchPaginateListener(): Page step of 0 is not useful...');
+            return;
+        }
+
+        let targetPage = steamToolsUtils.clamp(parseInt(pages.fg.dataset.page)+pageStep, 1, Math.max(1, pageNumLast));
+
+        if(targetPage !== pages.bg.dataset.page) {
+            TradeofferWindow.quickSearchDisplayPopulatePage(pages.bg, targetPage);
+        }
+
+        // start animation setup
+        let animationObj1, animationObj2;
+        let isPositive = pageStep > 0;
+        let exitDirection = isPositive ? 'exitLeft' : 'exitRight';
+        let enterDirection = isPositive ? 'enterRight' : 'enterLeft';
+
+        pagingData.isAnimating = true;
+        animationObj1 = pages.fg.animate(pagingData.keyframes[exitDirection], pagingData.options);
+        animationObj2 = pages.bg.animate(pagingData.keyframes[enterDirection], pagingData.options);
+        pagingData.finishAnimation(animationObj2, () => {
+            TradeofferWindow.quickSearchDisplayUpdatePageNavigationBar(targetPage);
+        });
+
+        pages.fg.classList.remove('active');
+        pages.bg.classList.add('active');
+        let tmpPage = pages.fg;
+        pages.fg = pages.bg;
+        pages.bg = tmpPage;
+        TradeofferWindow.quickSearchData.currentPage = pages.fg;
+    },
+    quickSearchDisplayUpdatePageNavigationBar: function(pageNum) {
+        let { quickSearchShortcuts } = TradeofferWindow;
+        let { pageCount: pageNumLast } = TradeofferWindow.quickSearchData.inventory;
+        let pageNumsElem = TradeofferWindow.quickSearchShortcuts.pageNumbers;
+        pageNumsElem.querySelector('.number.current').textContent = pageNum;
+
+        // update page numbers
+        if(pageNum < 3) {
+            if(pageNum <= 1) {
+                pageNumsElem.querySelector('.number.previous').classList.add('hidden');
+            } else {
+                let pagePrevNumElem = pageNumsElem.querySelector('.number.previous');
+                pagePrevNumElem.textContent = 1;
+                pagePrevNumElem.classList.remove('hidden');
+            }
+            pageNumsElem.querySelector('.number.first').classList.add('hidden');
+            pageNumsElem.querySelector('.ellipsis.first').classList.add('hidden');
+        } else {
+            pageNumsElem.querySelector('.number.first').classList.remove('hidden');
+            pageNumsElem.querySelector('.ellipsis.first').classList.remove('hidden');
+            let pagePrevNumElem = pageNumsElem.querySelector('.number.previous');
+            pagePrevNumElem.textContent = pageNum-1;
+            pagePrevNumElem.classList.remove('hidden');
+        }
+        if(pageNumLast-pageNum < 2) {
+            if(pageNum >= pageNumLast) {
+                pageNumsElem.querySelector('.number.next').classList.add('hidden');
+            } else {
+                let pageNextNumElem = pageNumsElem.querySelector('.number.next');
+                pageNextNumElem.textContent = pageNumLast;
+                pageNextNumElem.classList.remove('hidden');
+            }
+            pageNumsElem.querySelector('.number.last').classList.add('hidden');
+            pageNumsElem.querySelector('.ellipsis.last').classList.add('hidden');
+        } else {
+            pageNumsElem.querySelector('.number.last').classList.remove('hidden');
+            pageNumsElem.querySelector('.ellipsis.last').classList.remove('hidden');
+            let pageNextNumElem = pageNumsElem.querySelector('.number.next');
+            pageNextNumElem.textContent = pageNum+1;
+            pageNextNumElem.classList.remove('hidden');
+        }
+
+        // update button disability
+        let navBtnElems = quickSearchShortcuts.pageNavigationBar.querySelectorAll('.inventory-page-nav-btn[data-step^="-"]');
+        for(let navBtnElem of navBtnElems) {
+            navBtnElem.disabled = pageNum <= 1;
+        }
+
+        navBtnElems = quickSearchShortcuts.pageNavigationBar.querySelectorAll('.inventory-page-nav-btn:not([data-step^="-"])');
+        for(let navBtnElem of navBtnElems) {
+            navBtnElem.disabled = pageNum >= pageNumLast;
+        }
+    },
+    quickSearchDisplayGeneratePageHTMLString: function(pageNum) {
+        console.warn('TradeofferWindow.quickSearchDisplayGeneratePageHTMLString(): WIP');
+
+        let { quickSearchData } = TradeofferWindow;
+        let { inventory } = quickSearchData;
+
+        if(pageNum < 1 || pageNum > inventory.pageCount) {
+            return `<div class="inventory-page hidden" data-page="0">`
+              +     'END'
+              + '</div>';
+        }
+
+        let rowsHTMLString = '';
+        let pageItemCount = quickSearchData.display.rows * quickSearchData.display.columns;
+        let startRowIndex = (pageNum-1) * pageItemCount;
+        let lastRowIndex = Math.min(startRowIndex+pageItemCount, inventory.dataListFiltered.length);
+        for(let i=startRowIndex; i<lastRowIndex; i+=quickSearchData.display.columns) {
+            rowsHTMLString += TradeofferWindow.quickSearchRowGenerateHTMLString(i);
+        }
+
+        return `<div class="inventory-page" data-page="${pageNum}">`
+          +     rowsHTMLString
+          + '</div>';
+    },
+    quickSearchRowGenerateHTMLString: function(startIndex) {
+        let { quickSearchData } = TradeofferWindow;
+
+        let itemsHTMLString = '';
+        let lastIndex = Math.min(startIndex+quickSearchData.display.columns, quickSearchData.inventory.dataListFiltered.length);
+        for(let i=startIndex; i<lastIndex; i++) {
+            itemsHTMLString += TradeofferWindow.quickSearchItemGenerateHTMLString(quickSearchData.inventory.dataListFiltered[i]);
+        }
+
+        return '<div class="inventory-page-row">'
+          +     itemsHTMLString
+          + '</div>';
+    },
+    quickSearchItemGenerateHTMLString: function(itemData) {
+        let { inventory } = TradeofferWindow.quickSearchData;
+        let descript = inventory.descriptions[`${itemData.classid}_${itemData.instanceid}`];
+
+        let imgUrl = descript.icon_url ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f` : '';
+        return `<div class="inventory-item-container${itemData.disabled ? ' disabled' : ''}${itemData.selected ? ' selected' : ''}" data-id="${itemData.id}">`
+          +     (imgUrl ? `<img src="${imgUrl}">` : descript.name)
+          + '</div>';
+    },
+    quickSearchDisplayPopulatePage: function(pageElem, pageNum) {
+        console.warn('TradeofferWindow.quickSearchPopulatePage(): WIP');
+
+        let { quickSearchData } = TradeofferWindow;
+        let { inventory } = quickSearchData;
+
+        if(quickSearchData.mode === 1 && (pageNum < 1 || pageNum > inventory.pageCount)) {
+            pageElem.classList.add('hidden');
+            pageElem.dataset.page = '0';
+            pageElem.innerHTML = 'END';
+            return;
+        } else {
+            pageElem.classList.remove('hidden');
+            if(pageElem.innerHTML === 'END') {
+                pageElem.innerHTML = '';
+            }
+        }
+
+        let pageItemCount = quickSearchData.display.rows * quickSearchData.display.columns;
+        let itemIndex = (pageNum-1) * pageItemCount;
+        let lastIndex = Math.min(itemIndex+pageItemCount, inventory.dataListFiltered.length);
+        let rowElemList = pageElem.querySelectorAll('.inventory-page-row');
+        let rowsNeeded = Math.min(Math.ceil((lastIndex-itemIndex)/quickSearchData.display.columns), quickSearchData.display.rows) - rowElemList.length;
+
+        for(let rowElem of rowElemList) {
+            if(itemIndex >= lastIndex) {
+                break;
+            }
+
+            let itemElemList = rowElem.querySelectorAll('.inventory-item-container');
+            let containersNeeded = Math.min(lastIndex-itemIndex, quickSearchData.display.columns) - itemElemList.length;
+
+            for(let itemElem of itemElemList) {
+                if(itemIndex >= lastIndex) {
+                    break;
+                }
+
+                TradeofferWindow.quickSearchItemUpdateElement(itemElem, inventory.dataListFiltered[itemIndex++]);
+            }
+
+            if(containersNeeded < 0) {
+                for(; containersNeeded; containersNeeded++) {
+                    itemElemList[itemElemList.length+containersNeeded].remove();
+                }
+            } else if(containersNeeded > 0) {
+                let itemsHTMLString = '';
+                while(containersNeeded--) {
+                    itemsHTMLString += TradeofferWindow.quickSearchItemGenerateHTMLString(inventory.dataListFiltered[itemIndex++]);
+                }
+                rowElem.insertAdjacentHTML('beforeend', itemsHTMLString);
+            }
+        }
+
+        if(rowsNeeded < 0) {
+            for(; rowsNeeded; rowsNeeded++) {
+                rowElemList[rowElemList.length+rowsNeeded].remove();
+            }
+        } else if(rowsNeeded > 0) {
+            let rowsHTMLString = '';
+            while(rowsNeeded--) {
+                rowsHTMLString += TradeofferWindow.quickSearchRowGenerateHTMLString(itemIndex);
+                itemIndex += quickSearchData.display.columns;
+            }
+            pageElem.insertAdjacentHTML('beforeend', rowsHTMLString);
+        }
+
+        pageElem.dataset.page = pageNum;
+    },
+    quickSearchItemUpdateElement: function(itemElem, itemData) {
+        let { inventory } = TradeofferWindow.quickSearchData;
+        let descript = inventory.descriptions[`${itemData.classid}_${itemData.instanceid}`];
+
+        itemElem.dataset.id = itemData.id;
+        itemElem.classList[ itemData.disabled ? 'add' : 'remove' ]('disabled');
+        itemElem.classList[ itemData.selected ? 'add' : 'remove' ]('selected');
+        let imgElem = itemElem.querySelector('img');
+        if(imgElem) {
+            imgElem.src = descript.icon_url ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f` : '';
+        }
+    },
+
+
+
+
+
+    itemsSelectorShortcuts: {},
+
+    itemsSelectorSetup: function() {
+        console.log('Items Selector WIP');
+
+        if (TradeofferWindow.itemsSelectorShortcuts.body !== undefined) {
+            return;
+        }
+
+        // generate prefilter body and attach to overlay body
+    },
+
+
+
+
+
+    messageShortcuts: {},
+
+    messageSetup: function() {
+        console.log('Message WIP');
+
+        if (TradeofferWindow.messageShortcuts.body !== undefined) {
+            return;
+        }
+
+        // generate prefilter body and attach to overlay body
+    },
+
+
+
+
+
+    summaryShortcuts: {},
+
+    summarySetup: function() {
+        console.log('Summary WIP');
+
+        if (TradeofferWindow.summaryShortcuts.body !== undefined) {
+            return;
+        }
+
+        // generate prefilter body and attach to overlay body
+    },
+
+
+
+
+
+    selectorData: {
+        blankImg: 'https://community.akamai.steamstatic.com/public/images/economy/blank_gameicon.gif'
+    },
+
+    getSelectorData: function() {
+        function saveContexts(source, target) {
+            for(let appid in source) {
+                let contextList = [];
+                for(let contextid in source[appid]) {
+                    let contextData = source[appid][contextid];
+                    if(typeof contextData === 'object' && contextData.asset_count !== 0) {
+                        contextList.push(String(contextData.id));
+                    }
+                }
+                if(contextList.length) {
+                    target[appid] = contextList;
+                }
+            }
+        }
+
+        let { selectorData } = TradeofferWindow;
+
+        if(!selectorData.you) {
+            selectorData.you = {};
+            saveContexts(unsafeWindow.UserYou.rgContexts, selectorData.you);
+        }
+        if(!selectorData.them) {
+            selectorData.them = {};
+            saveContexts(unsafeWindow.UserThem.rgContexts, selectorData.them);
+        }
+    },
+    generateSelectorOptionHTMLString: function(optionText, dataAttr = {}, imgUrl) {
+        let dataAttrString = '';
+        for(let attr in dataAttr) {
+            dataAttrString += ` data-${attr}="${dataAttr[attr]}"`;
+        }
+
+        let HTMLString = `<div class="main-control-selector-option"${dataAttrString}>`;
+        if(imgUrl) {
+            HTMLString += `<img src="${imgUrl}">`;
+        }
+        HTMLString += optionText
+          + '</div>';
+
+        return HTMLString;
+    },
+    generateAppSelectorHTMLString: function({ useUserApps = true, usePartnerApps = true, id, placeholderText, disabled = false }) {
+        TradeofferWindow.getSelectorData();
+
+        let { selectorData } = TradeofferWindow;
+        let applist = [];
+        let optionsHTMLString = '';
+
+        if(useUserApps) {
+            let appInfoYou = unsafeWindow.UserYou.rgAppInfo;
+            for(let appid in selectorData.you) {
+                if(applist.includes(appid)) {
+                    continue;
+                }
+
+                let appInfo = appInfoYou[appid];
+                optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(appInfo.name, { id: appid }, appInfo.icon);
+                applist.push(appid);
+            }
+        }
+
+        if(usePartnerApps) {
+            let appInfoThem = unsafeWindow.UserThem.rgAppInfo;
+            for(let appid in selectorData.them) {
+                if(applist.includes(appid)) {
+                    continue;
+                }
+
+                let appInfo = appInfoThem[appid];
+                optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(appInfo.name, { id: appid }, appInfo.icon);
+                applist.push(appid);
+            }
+        }
+
+        let selectorParams = {
+            id: id,
+            // placeholderData: -1,
+            placeholderText: placeholderText || 'Choose App',
+            placeholderImg: TradeofferWindow.selectorData.blankImg,
+            width: 16,
+            disabled: disabled
+        };
+        return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, selectorParams);
+    },
+    generateProfileSelectorHTMLString: function({ id, placeholderText, disabled = false }) {
+        let optionsHTMLString = '';
+        let myProfileData = TradeofferWindow.data.me;
+        let theirProfileData = TradeofferWindow.data.them;
+        optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(myProfileData.name, { id: myProfileData.id }, myProfileData.img);
+        optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(theirProfileData.name, { id: theirProfileData.id }, theirProfileData.img);
+
+        let selectorParams = {
+            id: id,
+            // placeholderData: -1,
+            placeholderText: placeholderText || 'Choose Profile',
+            placeholderImg: TradeofferWindow.selectorData.blankImg,
+            width: 12,
+            disabled: disabled
+        };
+        return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, selectorParams);
+    },
+    generateContextSelectorHTMLString: function(userIsMe, appid, { id, disabled = false }) {
+        TradeofferWindow.getSelectorData();
+
+        let { selectorData } = TradeofferWindow;
+        let optionsHTMLString = '';
+        if( !(userIsMe === undefined || appid === undefined) ) {
+            let contextInfoList = unsafeWindow[userIsMe ? 'UserYou' : 'UserThem'].rgAppInfo[appid].rgContexts;
+
+            for(let contextid of selectorData[userIsMe ? 'you' : 'them'][appid]) {
+                let contextInfo = contextInfoList[contextid];
+                if(parseInt(contextid) === 0) {
+                    continue;
+                }
+                optionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(contextInfo.name, { id: contextInfo.id });
+            }
+        }
+
+        return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, { id: id, placeholderData: 0, placeholderText: '', width: 10, disabled: disabled });
+    },
+    generateSelectorHTMLString: function(optionsHTMLString,
+      { id, placeholderText = 'Select...', placeholderData = -1, placeholderImg, width, disabled } =
+        { placeholderText: 'Select...', placeholderData: -1, /* id, placeholderImg, width */}
+    ) {
+
+        if(typeof optionsHTMLString !== 'string') {
+            throw 'TradeofferWindow.generateSelectorHTMLString(): invalid data type for optionsHTMLString!';
+        }
+
+        let idAttrString = id !== undefined ? `id="${id}"` : '';
+        let widthAttrString = width !== undefined ? `style="--selector-width: ${width}em"` : '';
+        let selectorDataAttrString = placeholderData !== undefined ? ` data-id="${placeholderData}"` : '';
+        let selectorContentHTMLString = (placeholderImg !== undefined ? `<img src="${placeholderImg}">` : '')
+          + (placeholderText ?? '');
+        let disabledClassString = disabled ? ' disabled' : '';
+
+        return `<div ${idAttrString} class="main-control-selector-container${disabledClassString}" ${widthAttrString} ${selectorDataAttrString}>`
+          +     `<div class="main-control-selector-select">`
+          +         selectorContentHTMLString
+          +     '</div>'
+          +     '<div class="main-control-selector-options">'
+          +         optionsHTMLString
+          +     '</div>'
+          + '</div>';
+    },
+
+    generateTagsHTMLStrings: function(tags) {
+        const generateTagHTMLString = (tag, i) => {
+            return `<div class="prefilter-tag-container" data-id="${tag.id}" data-index="${i}">`
+              +     `<span class="prefilter-tag-title">${tag.name}</span>`
+              + '</div>';
+        };
+
+        let tagsHTMLString = '';
+        let tagsHTMLStringExcluded = '';
+        for(let i=0; i<tags.length; ++i) {
+            let tagData = tags[i];
+            if(tagData.excluded) {
+                tagsHTMLStringExcluded += generateTagHTMLString(tagData, i);
+            } else {
+                tagsHTMLString += generateTagHTMLString(tagData, i);
+            }
+        }
+
+        return [tagsHTMLStringExcluded, tagsHTMLString];
+    },
+    generateCategoryHTMLString: function(categoryData) {
+        let searchbarHTMLString = categoryData.tags.length < TradeofferWindow.MIN_TAG_SEARCH
+          ? ''
+          : '<div class="prefilter-tag-category-searchbar">'
+            +     `<input class="userscript-input" type="text" placeholder="Search ${categoryData.name.toLowerCase()} tags">`
+            + '</div>';
+
+        let categoryidAttr = categoryData.id ? ` data-id="${categoryData.id}"` : '';
+        let tagsHTMLStrings = TradeofferWindow.generateTagsHTMLStrings(categoryData.tags);
+
+        return `<div class="prefilter-tag-category"${categoryidAttr}>`
+          +     `<div class="prefilter-tag-category-title">${categoryData.name}</div>`
+          +     searchbarHTMLString
+          +     '<div class="prefilter-tag-category-reset">Reset</div>'
+          +     '<div class="prefilter-tags-selected">'
+          +         tagsHTMLStrings[0]
+          +     '</div>'
+          +     '<div class="prefilter-tags">'
+          +         tagsHTMLStrings[1]
+          +     '</div>'
+          + '</div>';
+    },
+
+
+
+
+
+    getMarketFilterData: async function(appid) {
+        appid = String(appid);
+        let configFilterData = TradeofferWindow.filterLookupGet(appid);
+
+        if(configFilterData?.fetched) {
+            return configFilterData;
+        }
+
+        let urlString = `https://steamcommunity.com/market/appfilters/${appid}`;
+
+        let response = await fetch(urlString);
+        let resdata = await response.json();
+        if(!resdata.success) {
+            throw 'TradeofferWindow.getMarketFilterData(): failed to fetch market filter data!';
+        }
+
+        // Why is this an array?
+        if(Array.isArray(resdata.facets) ) {
+            if(!resdata.facets.length) {
+                console.warn('TradeofferWindow.getMarketFilterData(): Why is the data an empty array?');
+            } else {
+                console.warn('TradeofferWindow.getMarketFilterData(): Why is the data a populated array?');
+                console.log(resdata.facets);
+            }
+            return;
+        }
+
+        let filterData = {
+            id: appid,
+            fetched: true,
+            categories: Object.values(resdata.facets).map(categoryData => ({
+                id: categoryData.name,
+                name: categoryData.localized_name,
+                pOpened: false,
+                qOpened: false,
+                tags: Object.entries(categoryData.tags).map(([tagName, tagData]) => ({
+                    id: tagName,
+                    name: tagData.localized_name,
+                    excluded: false,
+                    filtered: false
+                }) )
+            }) )
+        };
+
+        if(!configFilterData) {
+            filterData.categories.sort((a, b) => a.tags.length - b.tags.length);
+            globalSettings.tradeofferConfig.filter.apps.push(filterData);
+            return filterData;
+        }
+
+        // Move over config settings to the new filter data object
+        for(let configCategoryData of configFilterData.categories) {
+            let filterCategoryData = filterData.categories.find(x => x.id === configCategoryData.id);
+
+            if(!filterCategoryData) {
+                filterData.categories.push(configCategoryData);
+                continue;
+            }
+
+            filterCategoryData.pOpened = configCategoryData.pOpened;
+            filterCategoryData.qOpened = configCategoryData.qOpened;
+            for(let configTagData of configCategoryData.tags) {
+                let filterTagData = filterCategoryData.tags.find(x => x.id === configTagData.id);
+
+                if(!filterTagData) {
+                    filterCategoryData.tags.push(configTagData);
+                    continue;
+                }
+
+                filterTagData.excluded = configTagData.excluded;
+                filterTagData.filtered = configTagData.filtered;
+            }
+        }
+
+        Object.assign(configFilterData, filterData);
+        configFilterData.categories.sort((a, b) => a.tags.length - b.tags.length);
+        TradeofferWindow.filterLookupUpdateApp(configFilterData);
+
+        return configFilterData;
+    },
+    getTradeInventoryFast: function(profileid, appid, contextids, filterFn) {
+        // Send requests in regular intervals in an attempt to shorten overall load time for multiple requests
+        // Connection speed dependent: someone with a slower connect could accumulate many requests in progress
+
+        const controller = new AbortController();
+        const { signal } = controller;
+
+        const delayedFetch = (url, delay, optionalInfo) => {
+            return steamToolsUtils.sleep(delay).then(() => {
+                if(cancelled) {
+                    return null;
+                }
+
+                return fetch(url, { signal }).then(
+                    response => {
+                        if(response.status !== 200) {
+                            throw 'TradeofferWindow.getTradeInventoryFast(): status ' + response.status;
+                        }
+                        return response.json();
+                    }
+                ).then(
+                    data => {
+                        return filterFn ? filterFn(data, optionalInfo) : data;
+                    },
+                    err => {
+                        cancelled = true;
+                        controller.abort();
+                        console.error('Fetch error: ' + err);
+                        return null;
+                    }
+                );
+            });
+        };
+
+        if(typeof contextids === 'number' || typeof contextids === 'string') {
+            contextids = [String(contextids)];
+        } else if(!Array.isArray(contextids)) {
+            throw 'TradeofferWindow.getTradeInventoryFast(): invalid data type for contexts!';
+        }
+
+        let promises = [];
+        let cancelled = false;
+        let inventorySize;
+        let url;
+        let requestCount = 0;
+
+        for(let contextid of contextids) {
+            if(contextid === '0') {
+                continue;
+            }
+
+            if(steamToolsUtils.getMySteamId() === profileid) {
+                url = new URL(unsafeWindow.g_strInventoryLoadURL + `${appid}/${contextid}`
+                  + '/?trading=1'
+                );
+                inventorySize = unsafeWindow.g_rgAppContextData[appid]?.rgContexts[contextid]?.asset_count;
+            } else {
+                url = new URL(unsafeWindow.g_strTradePartnerInventoryLoadURL
+                  + '?sessionid=' + steamToolsUtils.getSessionId()
+                  + '&partner=' + profileid
+                  + '&appid=' + appid
+                  + '&contextid=' + contextid
+                );
+                inventorySize = unsafeWindow.g_rgPartnerAppContextData[appid]?.rgContexts[contextid]?.asset_count;
+            }
+            inventorySize = parseInt(inventorySize);
+            if(!Number.isInteger(inventorySize)) {
+                throw `TradeofferWindow.getTradeInventoryFast(): invalid inventory size to be requested: ${inventorySize}`;
+            }
+
+            for(let i=0, pages=Math.ceil(inventorySize/2000); i<pages; i++, requestCount++) {
+                if(i !== 0) {
+                    url.searchParams.set('start', i*2000);
+                }
+
+                promises.push(delayedFetch(url.href, 250*requestCount, { profileid, appid, contextid }));
+            }
+        }
+
+        return Promise.all(promises).then(TradeofferWindow.mergeInventory);
+    },
+    getTradeInventoryFast2: function(profileid, appid, contextids, filterFn) {
+        // Send requests with a maximum number of simultaneous requests at any time
+        // Connection speed independent: throttled by number of requests in the task queue
+
+        if(typeof contextids === 'number' || typeof contextids === 'string') {
+            contextids = [String(contextids)];
+        } else if(!Array.isArray(contextids)) {
+            throw 'TradeofferWindow.getTradeInventoryFast(): invalid data type for contexts!';
+        }
+
+        let urlList = [];
+        let inventorySize;
+        let url;
+
+        for(let contextid of contextids) {
+            if(contextid === '0') {
+                continue;
+            }
+
+            if(steamToolsUtils.getMySteamId() === profileid) {
+                url = new URL(unsafeWindow.g_strInventoryLoadURL + `${appid}/${contextid}`
+                  + '/?trading=1'
+                );
+                inventorySize = unsafeWindow.g_rgAppContextData[appid]?.rgContexts[contextid]?.asset_count;
+            } else {
+                url = new URL(unsafeWindow.g_strTradePartnerInventoryLoadURL
+                  + '?sessionid=' + steamToolsUtils.getSessionId()
+                  + '&partner=' + profileid
+                  + '&appid=' + appid
+                  + '&contextid=' + contextid
+                );
+                inventorySize = unsafeWindow.g_rgPartnerAppContextData[appid]?.rgContexts[contextid]?.asset_count;
+            }
+            inventorySize = parseInt(inventorySize);
+            if(!Number.isInteger(inventorySize)) {
+                throw `TradeofferWindow.getTradeInventoryFast2(): invalid inventory size to be requested: ${inventorySize}`;
+            }
+
+            for(let i=0, pages=Math.ceil(inventorySize/2000); i<pages; i++) {
+                if(i !== 0) {
+                    url.searchParams.set('start', i*2000);
+                }
+
+                urlList.push({ url: url.href, optionalInfo: { profileid, appid, contextid } });
+            }
+        }
+
+        return steamToolsUtils.createFetchQueue(urlList, 3, filterFn).then(TradeofferWindow.mergeInventory);
+    },
+    mergeInventory: function(invBlocks) {
+        if(!Array.isArray(invBlocks)) {
+            throw 'TradeofferWindow.getTradeInventoryFast(): Promise.all did not pass an array!?!?';
+        }
+
+        let mergedInventory = {
+            full_load: true,
+            rgInventory: {},
+            rgCurrency: {},
+            rgDescriptions: {}
+        };
+
+        for(let invBlock of invBlocks) {
+            if(!invBlock?.success) {
+                mergedInventory.full_load = false;
+                continue;
+            }
+
+            mergedInventory.more = invBlock.more;
+            mergedInventory.more_start = invBlock.more_start;
+
+            if(Array.isArray(invBlock.rgInventory)) {
+                if(invBlock.rgInventory.length) {
+                    console.error('TradeofferWindow.getTradeInventoryFast(): Promise.all inventory block has a populated array?!?!');
+                    console.log(invBlock);
+                    continue;
+                }
+            } else {
+                Object.assign(mergedInventory.rgInventory, invBlock.rgInventory);
+            }
+
+            if(Array.isArray(invBlock.rgCurrency)) {
+                if(invBlock.rgCurrency.length) {
+                    console.error('TradeofferWindow.getTradeInventoryFast(): Promise.all currency block has a populated array?!?!');
+                    console.log(invBlock);
+                    continue;
+                }
+            } else {
+                Object.assign(mergedInventory.rgCurrency, invBlock.rgCurrency);
+            }
+
+            if(Array.isArray(invBlock.rgDescriptions)) {
+                if(invBlock.rgDescriptions.length) {
+                    console.error('TradeofferWindow.getTradeInventoryFast(): Promise.all description block has a populated array?!?!');
+                    console.log(invBlock);
+                    continue;
+                }
+            } else {
+                Object.assign(mergedInventory.rgDescriptions, invBlock.rgDescriptions);
+            }
+        }
+
+        return mergedInventory;
+    }
+};
+
+const BadgepageFilter = {
+    SETTINGSDEFAULTS: {
+        applist: {
+            // object of appids, array/set of profileids
+        },
+        includeCacheMatching: false
+    },
+
+    shortcuts: {},
+    data: {},
+
+    setup: async function() {
+        Object.assign(BadgepageFilter.data, {
+            isMyPage: document.getElementById('global_actions').querySelector(':scope > a').href.includes(document.querySelector('.profile_small_header_texture > a').href),
+            itemIds: {},
+            cardInfoList: [],
+            appid: document.querySelector('a.whiteLink:nth-child(5)').href.match(/\d+(?=\/$)/g)[0],
+            isFoilPage: window.location.search.includes('border=1'),
+            friendsCardStock: {},
+            // cachedProfiles: added from globalSettings
+            // me: added from processing my badgepage
+        });
+
+        let { isMyPage, cardInfoList } = BadgepageFilter.data;
+
+        let config = await SteamToolsDbManager.getToolConfig('badgepageFilter');
+
+        globalSettings.badgepageFilter = config.badgepageFilter ?? steamToolsUtils.deepClone(BadgepageFilter.SETTINGSDEFAULTS);
+        globalSettings.badgepageFilter.applist[BadgepageFilter.data.appid] ??= [];
+        BadgepageFilter.data.cachedProfiles = steamToolsUtils.deepClone(globalSettings.badgepageFilter.applist[BadgepageFilter.data.appid]);
+
+        if(isMyPage) {
+            await BadgepageFilter.processMyPage();
+        } else {
+            await BadgepageFilter.processOthersPage(document);
+        }
+
+        for(let cardEntry of document.querySelectorAll('.badge_card_set_card')) {
+            let textNodes = cardEntry.querySelector('.badge_card_set_text').childNodes;
+            cardInfoList.push({
+                name: textNodes[textNodes.length-3].textContent.trim(),
+                img: cardEntry.querySelector('img').src
+            });
+        }
+
+        addSvgBlock(document.getElementById('responsive_page_template_content'));
+        GM_addStyle(cssGlobal);
+        GM_addStyle(cssEnhanced);
+        GM_addStyle(cssMatcher);
+
+        let friendMatchHTMLString = '<div id="page-match-options" class="enhanced-options right userscript-vars">'
+          +     '<button id="good-swaps" class="userscript-btn purple wide">Display Good Swaps</button>'
+          +     '<button id="balance-cards" class="userscript-btn purple wide">Balance Cards</button>'
+          +     '<button id="help-others" class="userscript-btn purple wide">Help Friends!</button>'
+          + '</div>';
+        if(isMyPage) {
+            let headerLinkElem = document.querySelector('.badge_cards_to_collect');
+            headerLinkElem.insertAdjacentHTML('beforebegin', friendMatchHTMLString);
+        } else {
+            let headerLinkElem = document.querySelector('.badge_row_inner');
+            headerLinkElem.insertAdjacentHTML('beforeend', friendMatchHTMLString);
+        }
+
+        BadgepageFilter.shortcuts.main = document.querySelector('.badge_row_inner');
+        BadgepageFilter.shortcuts.options = document.getElementById('page-match-options');
+        BadgepageFilter.shortcuts.main.insertAdjacentHTML('beforeend', cssAddThrobber());
+        BadgepageFilter.shortcuts.throbber = document.querySelector('.userscript-throbber');
+
+        document.getElementById('good-swaps').addEventListener('click', BadgepageFilter.showGoodSwapsListener);
+        document.getElementById('balance-cards').addEventListener('click', BadgepageFilter.mutualOnlyMatchingListener);
+        document.getElementById('help-others').addEventListener('click', BadgepageFilter.helpOthersListener);
+
+        if(isMyPage) {
+            let moreFilterOptionsHTMLString = '<div>'
+              +       `<input type="checkbox" id="include-cached-profiles" ${globalSettings.badgepageFilter.includeCacheMatching ? 'checked' : ''}>`
+              +       '<label for="include-cached-profiles">Include Past Matches</label>'
+              +    '</div>'
+              +    '<button id="friend-filter" class="userscript-btn purple wide">Filter Friends</button>';
+            BadgepageFilter.shortcuts.options.insertAdjacentHTML('afterbegin', moreFilterOptionsHTMLString);
+            document.getElementById('include-cached-profiles').addEventListener('click', BadgepageFilter.updateCacheFlagListener);
+            document.getElementById('friend-filter').addEventListener('click', BadgepageFilter.filterFriendsWithCardsListener);
+        } else {
+            let dividerHTMLString = '<div class="badge_detail_tasks footer"></div>';
+            BadgepageFilter.shortcuts.options.insertAdjacentHTML('beforebegin', dividerHTMLString);
+        }
+    },
+    getCardStock: function(pageElem) {
+        if(!pageElem.querySelector('.badge_card_set_cards')) {
+            return null;
+        }
+
+        let cardStock = [];
+        for(let cardEntry of pageElem.querySelectorAll('.badge_card_set_card')) {
+            let cardEntryNodes = cardEntry.children[1].childNodes;
+            let cardAmount = cardEntryNodes.length === 5 ? parseInt(cardEntryNodes[1].textContent.replace(/[()]/g, '')) : 0;
+            cardStock.push(parseInt(cardAmount));
+        }
+
+        return cardStock;
+    },
+    processMyPage: async function() {
+        if(BadgepageFilter.data.me) {
+            return;
+        }
+
+        let { isMyPage, itemIds } = BadgepageFilter.data;
+
+        let doc;
+        if(isMyPage) {
+            doc = document;
+        } else {
+            let myHomepage = document.getElementById('global_actions').querySelector(':scope > a').href;
+            let { appid, isFoilPage } = BadgepageFilter.data;
+            let urlString = `${myHomepage}/gamecards/${appid}/${isFoilPage ? '?border=1' : ''}`;
+
+            let response = await fetch(urlString);
+            let parser = new DOMParser();
+            doc = parser.parseFromString(await response.text(), 'text/html');
+        }
+
+        let stock = BadgepageFilter.getCardStock(doc);
+        let missing = new Set();
+        let possible = new Set();
+
+        if(!stock.some(x => x)) {
+            if(BadgepageFilter.shortcuts.options) {
+                for(let button of BadgepageFilter.shortcuts.options.querySelectorAll('button')) {
+                    button.setAttribute('disabled', '');
+                }
+            }
+
+            BadgepageFilter.data.me = null;
+            return;
+        }
+
+        for(let i=0; i<stock.length; ++i) {
+            if(stock[i]>=2) {
+                possible.add(i);
+            } else if(stock[i]==0) {
+                missing.add(i);
+            }
+        }
+
+        for(let missingCardElem of doc.querySelectorAll('.badge_card_to_collect')) {
+            let itemId = parseInt(missingCardElem.querySelector('img').id.slice(9));
+            let index = parseInt(missingCardElem.querySelector('.badge_card_collect_text > :last-child').textContent.match(/\d+/)) - 1;
+            itemIds[index] = itemId;
+        }
+
+        BadgepageFilter.data.me = { stock, missing, possible };
+    },
+    getFriendPage: async function(target) {
+        let { friendsCardStock, isFoilPage, appid } = BadgepageFilter.data;
+        let isString = typeof target === 'string';
+        let profileUrl = isString
+          ? target
+          : target.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
+
+        if(!Object.hasOwn(friendsCardStock, profileUrl)) {
+            let steamId3 = isString ? undefined : target?.querySelector('.btn_grey_grey ').onclick.toString().match(/\d+/g)[0];
+            let urlString = `https://steamcommunity.com/${profileUrl}/gamecards/${appid}/${isFoilPage ? '?border=1' : ''}`;
+
+            let response = await fetch(urlString);
+            let parser = new DOMParser();
+            let doc = parser.parseFromString(await response.text(), "text/html");
+
+            friendsCardStock[profileUrl] = {
+                id3: steamId3
+            };
+
+            await BadgepageFilter.processOthersPage(doc, profileUrl);
+        }
+
+        return friendsCardStock[profileUrl];
+    },
+    processOthersPage: async function(doc, targetUrl) {
+        let { friendsCardStock } = BadgepageFilter.data;
+
+        if(!doc.querySelector('.badge_gamecard_page')) {
+            if(targetUrl) {
+                friendsCardStock[targetUrl] = null;
+                await BadgepageFilter.profileCacheRemove(targetUrl);
+            }
+            return;
+        }
+
+        let badgepageHeaderElem = doc.querySelector('.profile_small_header_texture');
+        let profileLink = badgepageHeaderElem.querySelector('.profile_small_header_name > a').href;
+        let profileUrl = profileLink.replace('https://steamcommunity.com/', '');
+        let name = badgepageHeaderElem.querySelector('.profile_small_header_name').textContent.trim();
+        let avatarElem = badgepageHeaderElem.querySelector('.playerAvatar');
+        let state = avatarElem.classList.contains('offline')
+          ? 'offline' : avatarElem.classList.contains('online')
+          ? 'online' : avatarElem.classList.contains('in-game')
+          ? 'in-game' : null;
+        let imgLink = avatarElem.children[avatarElem.children.length-1].src.replace('_medium', '');
+
+        let stock = BadgepageFilter.getCardStock(doc);
+
+        if(!stock?.some(x => x)) {
+            await BadgepageFilter.profileCacheRemove(profileUrl);
+            friendsCardStock[profileUrl] = null;
+        } else {
+            await BadgepageFilter.profileCacheAdd(profileUrl);
+
+            friendsCardStock[profileUrl] ??= {};
+            Object.assign(friendsCardStock[profileUrl], {
+                name,
+                profileLink,
+                pfp: imgLink,
+                state,
+                stock
+            });
+        }
+
+        return friendsCardStock[profileUrl];
+    },
+    updateCacheFlagListener: async function(event) {
+        globalSettings.badgepageFilter.includeCacheMatching = event.target.checked;
+        await BadgepageFilter.saveConfig();
+    },
+    getPossibleMatches: function(profile, partnerMissingCards, partnerPossibleCards) {
+        let { stock, lowestCards: profileLowestCards, possibleCards: profilePossibleCards } = profile;
+
+        if(profileLowestCards && profilePossibleCards) {
+            return { profileLowestCards, profilePossibleCards };
+        }
+
+        let minVal = Math.min(...stock);
+        let lowestCards = new Set(stock.reduce((arr, x, i) => {
+            if(x==minVal) {
+                arr.push(i);
+            }
+            return arr;
+        }, []));
+
+        let possibleCards = Array(stock.length);
+        for(let i=0; i<possibleCards.length; ++i) {
+            possibleCards[i] =[];
+        }
+
+        for(let partnerMissingCard of partnerMissingCards) {
+            for(let partnerPossibleCard of partnerPossibleCards) {
+                if(partnerMissingCard === partnerPossibleCard) {
+                    throw 'getPossibleMatches(): Missing card and possible card cannot have same index in both, something is wrong!';
+                }
+
+                if(stock[partnerMissingCard]<2) {
+                    continue;
+                }
+                if(stock[partnerMissingCard]-stock[partnerPossibleCard] >= 2) {
+                    possibleCards[partnerMissingCard].push(partnerPossibleCard);
+                }
+            }
+        }
+
+        profile.lowestCards = lowestCards;
+        profile.possibleCards = possibleCards;
+
+        return { lowestCards, possibleCards };
+    },
+    // provides only mutually beneficial matches with any duplicates cards being fair game
+    filterFriendsWithCardsListener: async function() {
+        document.getElementById('friend-filter').setAttribute('disabled', '');
+
+        let { friendsCardStock, isMyPage, me } = BadgepageFilter.data;
+
+        if(!isMyPage) {
+            console.error('badgepageFilterFilterFriendsWithCardsListener(): This is not a user badgepage, it should not have been called!');
+            return;
+        }
+
+        for(let missingCardElem of document.querySelectorAll('.badge_card_to_collect')) {
+            let index = missingCardElem.querySelector('.badge_card_collect_text').lastElementChild.textContent.match(/^\d+/g)[0];
+            index = parseInt(index)-1;
+
+            for(let profileContainerElem of missingCardElem.querySelectorAll('.badge_friendwithgamecard')) {
+                let profileElem = profileContainerElem.querySelector('.persona');
+                let profileUrl = profileElem.href.match(/(id|profiles)\/[^/]+$/g);
+
+                await BadgepageFilter.getFriendPage(profileContainerElem);
+
+                if(!friendsCardStock[profileUrl]?.stock) {
+                    profileContainerElem.style.backgroundColor = '#111';
+                    return;
+                }
+
+                BadgepageFilter.getPossibleMatches(friendsCardStock[profileUrl], me.missing, me.possible);
+
+                if(!friendsCardStock[profileUrl]?.possibleCards?.[index].length) {
+                    profileContainerElem.style.display = 'none';
+                }
+            }
+        }
+    },
+    // provides only mutually beneficial matches with any duplicates cards being fair game
+    showGoodSwapsListener: async function() {
+        const generateMatchItemsHTMLString = function(indices, priority) {
+            let { cardInfoList } = BadgepageFilter.data;
+            return indices.map(x => `<div class="match-item${priority.has(x) ? ' good' : ''}" title="${cardInfoList[x].name}"><img src="${cardInfoList[x].img + '/96fx96f?allow_animated=1'}" alt="${cardInfoList[x].name}"></div>`).join('');
+        };
+        const generateMatchRowHTMLString = function(profileid3, index, goodMatches, priority) {
+            let { appid, itemIds } = BadgepageFilter.data;
+            return '<div class="match-item-row align-right">'
+              +    '<div class="match-item-list left">'
+              +       generateMatchItemsHTMLString(goodMatches, priority)
+              +    '</div>'
+              +    `<div class="match-item-action trade" title="Offer a Trade..." onclick="StartTradeOffer( ${profileid3}, {for_tradingcard: '${appid + '_' + itemIds[index]}'} );"></div>`
+              +    '<div class="match-item-list right">'
+              +       generateMatchItemsHTMLString([index], priority)
+              +    '</div>'
+              + '</div>';
+        };
+        const generateMatchRowsHTMLString = (profileid3, matches, priority) => matches.map((x, i) => x.length ? generateMatchRowHTMLString(profileid3, i, x, priority) : '').join('');
+        const checkAndDisplayPossibleSingleSwaps = async function(target) {
+            let steamId3;
+            let profileUrl;
+            if(typeof target === 'object') {
+                steamId3 = BadgepageFilter.extractSteamId3(target);
+                profileUrl = target.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
+            } else if(typeof target === 'string') {
+                profileUrl = target;
+            } else {
+                // improper parameter type
+                return;
+            }
+
+            if(processedFriends.has(profileUrl)) {
+                return;
+            }
+
+            let profile = await BadgepageFilter.getFriendPage(target);
+
+            if(!profile?.stock) {
+                return;
+            }
+
+            let { lowestCards, possibleCards } = BadgepageFilter.getPossibleMatches(profile, myMissingCards, myPossibleCards);
+            if(!possibleCards?.some(x => x.length)) {
+                return;
+            }
+
+            let profileGoodSwapHTMLString = '<div class="match-container-outer">'
+              +    '<div class="match-container max3">'
+              +       '<div class="match-header">'
+              +          '<div class="match-name">'
+              +             `<a href="${profile.profileLink}" class="avatar ${profile.state ?? 'offline'}">`
+              +                `<img src="${profile.pfp}">`
+              +             '</a>'
+              +             profile.name
+              +          '</div>'
+              +       '</div>'
+              +       generateMatchRowsHTMLString(steamId3, possibleCards, lowestCards)
+              +    '</div>'
+              + '</div>';
+            goodSwapListElem.insertAdjacentHTML('beforeend', profileGoodSwapHTMLString);
+
+            processedFriends.add(profileUrl);
+        };
+
+        document.getElementById('good-swaps').setAttribute('disabled', '');
+        BadgepageFilter.shortcuts.main.classList.add('loading');
+
+        let goodSwapListElem = BadgepageFilter.addGroup('good-swaps', 'Good Matches');
+
+        let processedFriends = new Set();
+        await BadgepageFilter.processMyPage();
+
+        if(!BadgepageFilter.data.me) {
+            console.error('badgepageFilterShowGoodSwapsListener(): My badgepage data not available!');
+            return;
+        }
+
+        let myMissingCards = BadgepageFilter.data.me.missing;
+        let myPossibleCards = BadgepageFilter.data.me.possible;
+
+        if(BadgepageFilter.data.isMyPage) {
+            for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
+                 await checkAndDisplayPossibleSingleSwaps(profileElem);
+            }
+
+            if(globalSettings.includeCacheMatching) {
+                for(let profile of BadgepageFilter.data.cachedProfiles) {
+                    if(profile.url) {
+                        await checkAndDisplayPossibleSingleSwaps('id/'+profile.url);
+                    } else {
+                        await checkAndDisplayPossibleSingleSwaps('profiles/'+profile.id);
+                    }
+                }
+            }
+        } else {
+            for(let profileUrl in BadgepageFilter.data.friendsCardStock) {
+                await checkAndDisplayPossibleSingleSwaps(profileUrl);
+            }
+        }
+
+        BadgepageFilter.shortcuts.main.classList.remove('loading');
+    },
+    mutualOnlyMatchingListener: function() {
+        BadgepageFilter.balanceCards('balance-match', 'Balance Cards', false);
+    },
+    helpOthersListener: function() {
+        BadgepageFilter.balanceCards('helper-match', 'Helping Friends', true);
+    },
+    balanceCards: async function(elemId, headerTitle, helperMode) {
+        const checkAndDisplayPossibleMatches = async function(target) {
+            let profileUrl;
+            if(typeof target === 'object') {
+                profileUrl = target.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
+            } else if(typeof target === 'string') {
+                profileUrl = target;
+            } else {
+                // improper parameter type
+                return;
+            }
+
+            if(processedFriends.has(profileUrl)) {
+                return;
+            }
+
+            let profile = await BadgepageFilter.getFriendPage(target);
+
+            if(!profile?.stock) {
+                return;
+            }
+
+            let balanceResult = Matcher.balanceVariance(myStock, profile.stock, false, (helperMode ? 1 : -1) );
+            if(!balanceResult.swap.some(x => x)) {
+                return;
+            }
+
+            let profileBalancedMatchingHTMLString = BadgepageFilter.generateMatchResultHTML(profile, balanceResult);
+            balanceMatchingListElem.insertAdjacentHTML('beforeend', profileBalancedMatchingHTMLString);
+
+            processedFriends.add(profileUrl);
+        };
+
+        if(helperMode) {
+            document.getElementById('help-others').setAttribute('disabled', '');
+        } else {
+            document.getElementById('balance-cards').setAttribute('disabled', '');
+        }
+        BadgepageFilter.shortcuts.main.classList.add('loading');
+
+        let balanceMatchingListElem = BadgepageFilter.addGroup(elemId, headerTitle);
+
+        let processedFriends = new Set();
+        await BadgepageFilter.processMyPage();
+
+        if(!BadgepageFilter.data.me) {
+            console.error('badgepageFilterShowGoodSwapsListener(): My badgepage data not available!');
+            return;
+        }
+
+        let myStock = BadgepageFilter.data.me.stock;
+
+        if(BadgepageFilter.data.isMyPage) {
+            for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
+                let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
+                await checkAndDisplayPossibleMatches(profileUrl);
+            }
+
+            if(globalSettings.includeCacheMatching) {
+                for(let profile of BadgepageFilter.data.cachedProfiles) {
+                    if(profile.url) {
+                        await checkAndDisplayPossibleMatches('id/'+profile.url);
+                    } else {
+                        await checkAndDisplayPossibleMatches('profiles/'+profile.id);
+                    }
+                }
+            }
+        } else {
+            for(let profileUrl in BadgepageFilter.data.friendsCardStock) {
+                await checkAndDisplayPossibleMatches(profileUrl);
+            }
+        }
+
+        BadgepageFilter.shortcuts.main.classList.remove('loading');
+    },
+    generateMatchResultHTML: function(profileData, balanceResult) {
+        let { cardInfoList } = BadgepageFilter.data;
+
+        const generateMatchItemHTMLString = (qty, i) => {
+            return `<div class="match-item" data-qty="${Math.abs(qty)}" title="${cardInfoList[i].name}">`
+              +    `<img src="${cardInfoList[i].img + '/96fx96f?allow_animated=1'}" alt="${cardInfoList[i].name}">`
+              + '</div>';
+        };
+
+        const generateMatchItemsHTMLString = (matchResult, leftSide = true) => {
+            return matchResult.map((swapAmount, index) =>
+                leftSide
+                  ? (swapAmount<0 ? generateMatchItemHTMLString(swapAmount, index) : '')
+                  : (swapAmount>0 ? generateMatchItemHTMLString(swapAmount, index) : '')
+            ).join('');
+        };
+
+        const generateMatchRowHTMLString = (matchResult) => {
+            return '<div class="match-item-row align-right">'
+              +    '<div class="match-item-list left">'
+              +       generateMatchItemsHTMLString(matchResult, true)
+              +    '</div>'
+              +    `<div class="match-item-action trade"></div>`
+              +    '<div class="match-item-list right">'
+              +       generateMatchItemsHTMLString(matchResult, false)
+              +    '</div>'
+              + '</div>';
+        };
+
+        return '<div class="match-container-outer">'
+          +    '<div class="match-container">'
           +       '<div class="match-header">'
           +          '<div class="match-name">'
-          +             `<a href="${profile.profileLink}" class="avatar ${profile.state ?? 'offline'}">`
-          +                `<img src="${profile.pfp}">`
+          +             `<a href="${profileData.profileLink}" class="avatar ${profileData.state ?? 'offline'}">`
+          +                `<img src="${profileData.pfp}">`
           +             '</a>'
-          +             profile.name
+          +             profileData.name
           +          '</div>'
           +       '</div>'
-          +       generateMatchRowsHTMLString(steamId3, possibleCards, lowestCards)
+          +       generateMatchRowHTMLString(balanceResult.swap)
           +    '</div>'
           + '</div>';
-        goodSwapListElem.insertAdjacentHTML('beforeend', profileGoodSwapHTMLString);
+    },
+    extractSteamId3: function(elem) {
+        return elem?.querySelector('.btn_grey_grey ').onclick.toString().match(/\d+/g)?.[0];
+    },
+    addGroup: function(id, title) {
+        let HTMLString = '<div class="badge_detail_tasks footer"></div>'
+          + `<div id="${id}-results" class="enhanced-section">`
+          +    `<div class="enhanced-header">${title}</div>`
+          +    '<div class="enhanced-body"></div>'
+          + '</div>';
+        BadgepageFilter.shortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
 
-        processedFriends.add(profileUrl);
-    }
-
-    document.getElementById('good-swaps').setAttribute('disabled', '');
-    badgepageFilterShortcuts.main.classList.add('loading');
-
-    let goodSwapListElem = badgepageFilterAddGroup('good-swaps', 'Good Matches');
-
-    let processedFriends = new Set();
-    await badgepageFilterprocessMyBadgepage();
-
-    if(!badgepageFilterData.me) {
-        console.error('badgepageFilterShowGoodSwapsListener(): My badgepage data not available!');
-        return;
-    }
-
-    let myMissingCards = badgepageFilterData.me.missing;
-    let myPossibleCards = badgepageFilterData.me.possible;
-
-    if(badgepageFilterData.isMyPage) {
-        for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
-             await checkAndDisplayPossibleSingleSwaps(profileElem);
-        }
-
-        if(globalSettings.includeCacheMatching) {
-            for(let profile of badgepageFilterData.cachedProfiles) {
-                if(profile.url) {
-                    await checkAndDisplayPossibleSingleSwaps('id/'+profile.url);
-                } else {
-                    await checkAndDisplayPossibleSingleSwaps('profiles/'+profile.id);
-                }
-            }
-        }
-    } else {
-        for(let profileUrl in badgepageFilterData.friendsCardStock) {
-            await checkAndDisplayPossibleSingleSwaps(profileUrl);
-        }
-    }
-
-    badgepageFilterShortcuts.main.classList.remove('loading');
-}
-
-function badgepageFilterMutualOnlyMatchingListener() {
-    badgepageFilterBalanceCards('balance-match', 'Balance Cards', false);
-}
-
-function badgepageFilterHelpOthersListener() {
-    badgepageFilterBalanceCards('helper-match', 'Helping Friends', true);
-}
-
-async function badgepageFilterBalanceCards(elemId, headerTitle, helperMode) {
-    async function checkAndDisplayPossibleMatches(target) {
-        let profileUrl;
-        if(typeof target === 'object') {
-            profileUrl = target.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
-        } else if(typeof target === 'string') {
-            profileUrl = target;
+        return document.querySelector(`#${id}-results > .enhanced-body`);
+    },
+    profileCacheAdd: async function(profileUrl) {
+        let { appid } = BadgepageFilter.data;
+        let profileInstance = await Profile.findProfile(profileUrl.replace(/(id|profiles)\/+/g, ''));
+        if(profileInstance) {
+            globalSettings.badgepageFilter.applist[appid].push({
+                id: profileInstance.id,
+                url: profileInstance.url,
+                token: profileInstance.tradeToken
+            });
+            await BadgepageFilter.saveConfig();
         } else {
-            // improper parameter type
-            return;
+            console.warn(`badgepageFilterProfileCacheAdd(): Failed to find profile ${profileUrl}!`);
         }
-
-        if(processedFriends.has(profileUrl)) {
-            return;
+    },
+    profileCacheRemove: async function(profileUrl) {
+        let { appid } = BadgepageFilter.data;
+        let cachedProfiles = globalSettings.badgepageFilter.applist[appid];
+        cachedProfiles.splice(cachedProfiles.indexOf(profileUrl), 1);
+        await BadgepageFilter.saveConfig();
+    },
+    saveConfig: async function() {
+        await SteamToolsDbManager.setToolConfig('badgepageFilter');
+    },
+    loadConfig: async function() {
+        let config = await SteamToolsDbManager.getToolConfig('badgepageFilter');
+        if(config.badgepageFilter) {
+            globalSettings.badgepageFilter = config.badgepageFilter;
         }
-
-        let profile = await badgepageFilterGetFriendBadgepage(target);
-
-        if(!profile?.stock) {
-            return;
-        }
-
-        let balanceResult = Matcher.balanceVariance(myStock, profile.stock, false, (helperMode ? 1 : -1) );
-        if(!balanceResult.swap.some(x => x)) {
-            return;
-        }
-
-        let profileBalancedMatchingHTMLString = badgepageFilterGenerateMatchResultHTML(profile, balanceResult);
-        balanceMatchingListElem.insertAdjacentHTML('beforeend', profileBalancedMatchingHTMLString);
-
-        processedFriends.add(profileUrl);
     }
+};
 
-    if(helperMode) {
-        document.getElementById('help-others').setAttribute('disabled', '');
-    } else {
-        document.getElementById('balance-cards').setAttribute('disabled', '');
-    }
-    badgepageFilterShortcuts.main.classList.add('loading');
-
-    let balanceMatchingListElem = badgepageFilterAddGroup(elemId, headerTitle);
-
-    let processedFriends = new Set();
-    await badgepageFilterprocessMyBadgepage();
-
-    if(!badgepageFilterData.me) {
-        console.error('badgepageFilterShowGoodSwapsListener(): My badgepage data not available!');
-        return;
-    }
-
-    let myStock = badgepageFilterData.me.stock;
-
-    if(badgepageFilterData.isMyPage) {
-        for(let profileElem of document.querySelectorAll('.badge_friendwithgamecard')) {
-            let profileUrl = profileElem.querySelector('.persona').href.match(/(id|profiles)\/[^/]+$/g)[0];
-            await checkAndDisplayPossibleMatches(profileUrl);
-        }
-
-        if(globalSettings.includeCacheMatching) {
-            for(let profile of badgepageFilterData.cachedProfiles) {
-                if(profile.url) {
-                    await checkAndDisplayPossibleMatches('id/'+profile.url);
-                } else {
-                    await checkAndDisplayPossibleMatches('profiles/'+profile.id);
-                }
-            }
-        }
-    } else {
-        for(let profileUrl in badgepageFilterData.friendsCardStock) {
-            await checkAndDisplayPossibleMatches(profileUrl);
-        }
-
-    }
-
-    badgepageFilterShortcuts.main.classList.remove('loading');
-}
-
-function badgepageFilterGenerateMatchResultHTML(profileData, balanceResult) {
-    let { cardInfoList } = badgepageFilterData;
-
-    const generateMatchItemHTMLString = (qty, i) => {
-        return `<div class="match-item" data-qty="${Math.abs(qty)}" title="${cardInfoList[i].name}">`
-          +    `<img src="${cardInfoList[i].img + '/96fx96f?allow_animated=1'}" alt="${cardInfoList[i].name}">`
-          + '</div>';
-    };
-
-    const generateMatchItemsHTMLString = (matchResult, leftSide = true) => {
-        return matchResult.map((swapAmount, index) =>
-            leftSide
-              ? (swapAmount<0 ? generateMatchItemHTMLString(swapAmount, index) : '')
-              : (swapAmount>0 ? generateMatchItemHTMLString(swapAmount, index) : '')
-        ).join('');
-    };
-
-    const generateMatchRowHTMLString = (matchResult) => {
-        return '<div class="match-item-row align-right">'
-          +    '<div class="match-item-list left">'
-          +       generateMatchItemsHTMLString(matchResult, true)
-          +    '</div>'
-          +    `<div class="match-item-action trade"></div>`
-          +    '<div class="match-item-list right">'
-          +       generateMatchItemsHTMLString(matchResult, false)
-          +    '</div>'
-          + '</div>';
-    };
-
-    return '<div class="match-container-outer">'
-      +    '<div class="match-container">'
-      +       '<div class="match-header">'
-      +          '<div class="match-name">'
-      +             `<a href="${profileData.profileLink}" class="avatar ${profileData.state ?? 'offline'}">`
-      +                `<img src="${profileData.pfp}">`
-      +             '</a>'
-      +             profileData.name
-      +          '</div>'
-      +       '</div>'
-      +       generateMatchRowHTMLString(balanceResult.swap)
-      +    '</div>'
-      + '</div>';
-}
-
-function badgepageFilterExtractSteamId3(elem) {
-    return elem?.querySelector('.btn_grey_grey ').onclick.toString().match(/\d+/g)?.[0];
-}
-
-function badgepageFilterAddGroup(id, title) {
-    let HTMLString = '<div class="badge_detail_tasks footer"></div>'
-      + `<div id="${id}-results" class="enhanced-section">`
-      +    `<div class="enhanced-header">${title}</div>`
-      +    '<div class="enhanced-body"></div>'
-      + '</div>';
-    badgepageFilterShortcuts.throbber.insertAdjacentHTML('beforebegin', HTMLString);
-
-    return document.querySelector(`#${id}-results > .enhanced-body`);
-}
-
-async function badgepageFilterProfileCacheAdd(profileUrl) {
-    let { appid } = badgepageFilterData;
-    let profileInstance = Profile.findProfile(profileUrl.replace(/(id|profiles)\/+/g, ''));
-    if(profileInstance) {
-        globalSettings.badgepageFilter.applist[appid].push({
-            id: profileInstance.id,
-            url: profileInstance.url,
-            token: profileInstance.tradeToken
-        });
-        await badgepageFilterSaveConfig();
-    } else {
-        console.warn(`badgepageFilterProfileCacheAdd(): Failed to find profile ${profileUrl}!`);
-    }
-}
-
-async function badgepageFilterProfileCacheRemove(profileUrl) {
-    let { appid } = badgepageFilterData;
-    let cachedProfiles = globalSettings.badgepageFilter.applist[appid];
-    cachedProfiles.splice(cachedProfiles.indexOf(profileUrl), 1);
-    await badgepageFilterSaveConfig();
-}
-
-async function badgepageFilterSaveConfig() {
-    await SteamToolsDbManager.setToolConfig('badgepageFilter');
-}
-
-async function badgepageFilterLoadConfig() {
-    let config = await SteamToolsDbManager.getToolConfig('badgepageFilter');
-    if(config.badgepageFilter) {
-        globalSettings.badgepageFilter = config.badgepageFilter;
-    }
-}
-
+TOOLS_MENU.push(...[
+    { name: 'Main Page', href: 'https://steamcommunity.com/groups/tradingcards/discussions/2/3201493200068346848/', htmlString: undefined, entryFn: undefined },
+    { name: 'Matcher', href: undefined, htmlString: undefined, entryFn: SteamItemMatcher.setup },
+    { name: 'Booster Crafter', href: 'https://steamcommunity.com/tradingcards/boostercreator/enhanced', htmlString: undefined, entryFn: undefined },
+]);
 
 function generateSuperNav() {
     let navContainer = document.querySelector('#global_header .supernav_container');
-    if(!navContainer) {
+    if (!navContainer) {
         return;
     }
 
     let nextNavHeader = navContainer.querySelector('.submenu_Profile'); // steam modified on 2024/5/2
-    if(!nextNavHeader) {
+    if (!nextNavHeader) {
         return;
     }
 
@@ -5624,9 +8179,9 @@ function generateSuperNav() {
     htmlMenu.setAttribute('class', 'submenu_tools');
     htmlMenu.setAttribute('style', 'display: none;');
     htmlMenu.setAttribute('data-submenuid', 'tools');
-    for(let toolMenuEntry of TOOLS_MENU) {
+    for (let toolMenuEntry of TOOLS_MENU) {
         htmlMenu.insertAdjacentHTML('beforeend', `<a class="submenuitem" name="${toolMenuEntry.name.toLowerCase().replace(/\s/g, '-')}" ${toolMenuEntry.href ? `href="${toolMenuEntry.href}"` : ''}>${toolMenuEntry.htmlString || toolMenuEntry.name}</a>`);
-        if(!toolMenuEntry.href && toolMenuEntry.entryFn) {
+        if (!toolMenuEntry.href && toolMenuEntry.entryFn) {
             htmlMenu.lastElementChild.addEventListener('click', toolMenuEntry.entryFn);
         }
     }
@@ -5635,7 +8190,7 @@ function generateSuperNav() {
     nextNavHeader.insertAdjacentHTML('afterend', htmlStringHeader);
 
     unsafeWindow.$J(function($) {
-        $('#global_header .supernav').v_tooltip({'location':'bottom', 'destroyWhenDone': false, 'tooltipClass': 'supernav_content', 'offsetY':-6, 'offsetX': 1, 'horizontalSnap': 4, 'tooltipParent': '#global_header .supernav_container', 'correctForScreenSize': false});
+        $('#global_header .supernav').v_tooltip({ 'location': 'bottom', 'destroyWhenDone': false, 'tooltipClass': 'supernav_content', 'offsetY': -6, 'offsetX': 1, 'horizontalSnap': 4, 'tooltipParent': '#global_header .supernav_container', 'correctForScreenSize': false });
     });
 }
 
@@ -5643,16 +8198,21 @@ async function main() {
     await SteamToolsDbManager.setup();
     await DataCollectors.scrapePage();
 
-    if(!steamToolsUtils.getMySteamId()) {
+    if (!steamToolsUtils.getMySteamId()) {
         return;
     }
 
-    if(/^\/(id|profiles)\/[^/]+\/gamecards\/\d+\/?/.test(window.location.pathname) && document.querySelector('.badge_card_set_card')) {
-        setupBadgepageFilter();
+    if(/^\/(id|profiles)\/[^/]+\/+gamecards\/\d+\/?/.test(window.location.pathname) && document.querySelector('.badge_card_set_card')) {
+        BadgepageFilter.setup();
+        BadgepageExtras.setup();
     }
 
-    if(window.location.pathname.includes('/tradingcards/boostercreator/enhanced')) {
-        setupBoosterCrafter();
+    if(window.location.pathname.startsWith('/tradingcards/boostercreator/enhanced')) {
+        BoosterCrafter.setup();
+    }
+
+    if(window.location.pathname.startsWith('/tradeoffer/new/')) {
+        TradeofferWindow.setup();
     }
 
     generateSuperNav();
@@ -7098,3 +9658,607 @@ input.userscript-input[type="range"] {
 .match-icon:hover {
    background: #54a5d4;
 }`;
+
+ const cssTradeofferWindow = `.inventory_user_tabs > .inventory_user_tab {
+    width: auto;
+
+    &.userscript-tab {
+        float: right;
+    }
+    &.userscript-tab:hover {
+        background: linear-gradient(to bottom, #41375C 5%, #1D1D1D 95%);
+        cursor: pointer;
+    }
+    > div {
+        padding: 0 0.75em;
+        text-align: center;
+    }
+}
+
+.overlay > .userscript-trade-overlay {
+    display: block;
+}
+.userscript-trade-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 50;
+}
+.userscript-trade-overlay-header {
+    padding: 1rem 0 2rem;
+    font-size: 2.5rem;
+    text-align: center;
+}
+.userscript-trade-overlay-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    z-index: 55;
+}
+.userscript-trade-overlay-close::before {
+    position: absolute;
+    top: -0.5rem;
+    content: '🗙';
+    font-size: x-large;
+    text-align: center;
+}
+.userscript-trade-overlay-close:hover::before {
+    text-shadow: 0 0 0.5em white;
+}
+
+
+
+/*** Selector START ***/
+
+.main-control-section {
+    height: 100%;
+    display: inline-flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+
+.main-control-selector-container {
+    --selector-width: 12em;
+    font-size: smaller;
+    user-select: none;
+
+    &.disabled {
+        pointer-events: none;
+        opacity: 0.5;
+    }
+
+    img {
+        height: 100%;
+        margin-right: 0.25rem;
+        line-height: 2rem;
+        vertical-align: top;
+        object-fit: contain;
+    }
+}
+
+.main-control-selector-select {
+    padding: 0.25em 1.25em 0.25em 0.25em;
+    background: #000;
+    height: 2rem;
+    min-width: calc(var(--selector-width) - 2px);
+    line-height: 2rem;
+    white-space: nowrap;
+    position: relative;
+    border: 1px solid #707070;
+}
+
+.selector-detail {
+    font-size: xx-small;
+}
+
+.main-control-selector-options {
+    display: none;
+    position: absolute;
+    z-index: 65;
+}
+
+.main-control-selector-container.active>.main-control-selector-options {
+    display: block;
+}
+
+.main-control-selector-option {
+    padding: 0.25em 1.25em 0.25em 0.25em;
+    background: #111;
+    height: 2rem;
+    min-width: var(--selector-width);
+    white-space: nowrap;
+    line-height: 2rem;
+    /*   border: 1px solid #707070; */
+}
+
+.main-control-selector-option:hover {
+    background: indigo;
+}
+
+.main-control-selector-select::after {
+    display: block;
+    content: '▼';
+    background: grey;
+    padding: 0.25em 0.0625em;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    border: 1px solid #707070;
+}
+
+/**** Selector END ****/
+
+
+
+/***********************/
+/*** Prefilter START ***/
+/***********************/
+
+.userscript-trade-overlay-body[data-name="prefilter"] > .prefilter-body {
+    display: block;
+}
+.prefilter-body {
+    display: none;
+    padding: 0.5rem;
+}
+
+.prefilter-main-control {
+    display: flex;
+    justify-content: center;
+}
+
+.prefilter-tag-category-containers {
+    --reset-btn-width: 4rem;
+    margin-top: 1rem;
+    padding: 0.5rem;
+}
+
+.prefilter-tag-category {
+    margin: 0.5rem 0;
+    padding: 1rem;
+    background: black;
+    position: relative;
+}
+
+.prefilter-tag-category-title {
+    font-size: 1.75rem;
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+.prefilter-tag-category-searchbar {}
+
+.prefilter-tag-category-reset {
+    padding: 0.25rem;
+    height: 1.5rem;
+    background: indigo;
+    text-align: center;
+    line-height: 1.5rem;
+    cursor: pointer;
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+
+    &:hover {
+        background: red;
+    }
+}
+
+.prefilter-tags-selected {
+    margin-block: 0.75rem;
+
+    .prefilter-tag-container {
+        border-color: red;
+        color: red;
+    }
+}
+
+.prefilter-tags {}
+
+.prefilter-tags-selected,
+.prefilter-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25em;
+}
+
+.prefilter-tag-container {
+    background: black;
+    padding: 0.5em;
+    border: 1px solid #333;
+    border-radius: 3px;
+    user-select: none;
+    color: #888;
+    font-size: smaller;
+
+    &:hover {
+        border-color: #aaa;
+        color: #ccc;
+    }
+
+    &.hidden {
+        display: none;
+    }
+}
+
+/***********************/
+/**** Prefilter END ****/
+/***********************/
+
+
+
+
+
+/**************************/
+/*** Quick Search START ***/
+/**************************/
+
+.userscript-trade-overlay-body[data-name="quickSearch"] > .quick-search-body {
+    display: grid;
+}
+.quick-search-body {
+    display: none;
+    height: 100%;
+    grid-template:
+        'inv-head  inv-head' 5rem
+        'inv-facet inv-display' 35rem / 15rem 1fr;
+    gap: 0.25rem;
+    justify-content: stretch;
+    align-items: stretch;
+
+    > * {
+        background: #111;
+    }
+}
+
+.quick-search-main-control {
+    grid-area: inv-head;
+}
+
+.quick-search-inventory-facet {
+    grid-area: inv-facet;
+}
+
+.quick-search-inventory-display {
+    grid-area: inv-display;
+}
+
+.quick-search-main-control {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.75rem;
+    background: #0008;
+    color: #ccc;
+
+    button {
+        padding: 0.5em 1em;
+        background: linear-gradient(to right, #47bfff 0%, #1a44c2 60%);
+        background-position: 25%;
+        background-size: 330% 100%;
+        border: none;
+        border-radius: 2px;
+        color: #eee;
+        font-weight: bold;
+    }
+}
+
+.facet-container {
+    --list-title-height: 1.5rem;
+    box-sizing: border-box;
+    padding: 0.75rem;
+    width: 100%;
+    height: 100%;
+    background: #0008;
+    color: #ccc;
+
+    ol,
+    ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        /*     max-width: 100%; */
+    }
+
+    input.userscript-input[type="text"] {
+        margin: 3px;
+    }
+}
+
+.facet-section {
+    padding-top: 0.5rem;
+    padding-bottom: 0.25rem;
+    overflow-y: hidden;
+}
+
+.facet-section.hidden {
+    /* Specifically use entry container if we ever want
+     * to selectively show only selected with :has
+     */
+    .facet-list-entry-container {
+        height: 0;
+    }
+    .facet-list-searchbar {
+        height: 0;
+    }
+    .facet-section-title::after {
+        transform: rotate(0);
+    }
+}
+
+.facet-section-title {
+    --dropdown-arrow-width: 1.25em;
+    padding-right: var(--dropdown-arrow-width);
+    height: var(--list-title-height);
+    font-weight: bolder;
+    position: relative;
+    line-height: var(--list-title-height);
+    user-select: none;
+
+    &::after {
+        display: block;
+        height: var(--list-title-height);
+        width: var(--dropdown-arrow-width);
+        text-align: center;
+        line-height: var(--list-title-height);
+        content: '⯆';
+        color: #555;
+        position: absolute;
+        top: 0;
+        right: 0;
+        transform: rotate(180deg);
+    }
+    &:hover::after {
+        color: red;
+    }
+}
+
+.facet-list-searchbar {
+    overflow: hidden;
+}
+
+.facet-list {
+    max-height: 25rem;
+    overflow: auto;
+    scrollbar-width: thin;
+}
+
+.facet-list-entry-container.hidden {
+    display: none;
+}
+
+.facet-list-entry-label {
+    display: block;
+    padding-left: 20px;
+    position: relative;
+    font-size: small;
+}
+
+.facet-list input[type="checkbox"]+*::before {
+    display: inline;
+    position: absolute;
+    top: 0.25em;
+    left: 0.3em;
+    content: '';
+    height: 0.75em;
+    width: 0.75em;
+    background: black;
+    border: 1px solid grey;
+    border-radius: 0.2em;
+    z-index: 55;
+}
+
+.facet-list input[type="checkbox"]:checked+*::before {
+    background: #57cbde;
+}
+
+.facet-list input[type="checkbox"] {
+    margin: 1px 4px;
+    position: absolute;
+    left: 0;
+    opacity: 0;
+    z-index: 51;
+    appearance: none;
+}
+
+.facet-entry-title {}
+
+.facet-entry-detail {
+    color: #aaa;
+    font-size: xx-small;
+}
+
+.inventory-display-container {
+    box-sizing: border-box;
+    --item-container-width: 5.25rem;
+    --item-container-height: 5.25rem;
+    --item-gap: 0.5rem;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    width: 688px;
+    height: 560px;
+    padding: 0.75rem;
+    background: #0008;
+}
+
+.inventory-display-container.paging {
+    .inventory-pages-container {
+        height: calc(var(--item-container-height) * 5 + var(--item-gap) * 6);
+        width: calc(var(--item-container-width) * 6 + var(--item-gap) * 7);
+        overflow: hidden;
+        position: relative;
+    }
+
+    .inventory-page {
+        position: absolute;
+        z-index: 55;
+    }
+
+    .inventory-page.active {
+        z-index: 60;
+    }
+
+    .inventory-page.from-right {
+        animation: 1s ease reverse to-right;
+    }
+
+    .inventory-page.to-left {
+        animation: 1s ease to-left;
+    }
+
+    .inventory-page.from-left {
+        animation: 1s ease reverse to-left;
+    }
+
+    .inventory-page.to-right {
+        animation: 1s ease to-right;
+    }
+
+    .inventory-page-nav {
+        display: flex;
+    }
+}
+
+.inventory-display-container.scrolling {
+    .inventory-pages-container {
+        height: 100%;
+        /* width: calc(var(--item-container-width) * 6 + var(--item-gap) * 7); */
+        scrollbar-width: none;
+
+        &>*+* {
+            padding-top: 0;
+        }
+    }
+}
+
+.inventory-pages-container {
+    min-height: calc(var(--item-container-height) * 5 + var(--item-gap) * 6);
+    min-width: calc(var(--item-container-width) * 6 + var(--item-gap) * 7);
+    max-height: 100%;
+    display: inline-flex;
+    flex-direction: column;
+    overflow: auto;
+    background: black;
+    border: 1px solid #494949;
+    user-select: none;
+}
+
+.inventory-pages-container>*+* {
+    /* margin-top: var(--item-gap); */
+}
+
+.inventory-page {
+    box-sizing: border-box;
+    padding: var(--item-gap);
+    display: inline-flex;
+    height: 100%;
+    width: 100%;
+    flex-direction: column;
+    gap: var(--item-gap);
+    background: black;
+}
+
+.inventory-page-row {
+    display: inline-flex;
+    gap: var(--item-gap);
+}
+
+.inventory-item-container {
+    box-sizing: border-box;
+    width: var(--item-container-width);
+    height: var(--item-container-height);
+    border: 1px solid #333;
+    border-radius: 4px;
+
+    &.selected {
+        background-color: #43167b;
+    }
+
+    &.disabled {
+        filter: brightness(0.4);
+    }
+
+    img {
+        height: inherit;
+        width: inherit;
+        max-height: 100%;
+        max-width: 100%;
+        object-fit: contain;
+    }
+}
+
+.inventory-page-nav {
+    flex: 1;
+    display: none;
+    gap: 0.75rem;
+    align-items: center;
+
+    button {
+        width: 2.75rem;
+        display: inline-block;
+        padding: 0.25em 0.75em;
+        background: #000;
+        border: none;
+        font-size: 1rem;
+        font-family: inherit;
+        line-height: 1.1rem;
+        border: 1px solid #444;
+        border-radius: 4px;
+        color: #67C1F5;
+        text-align: center;
+
+        &:not([disabled]):hover {
+            border: 1px solid #AAA;
+        }
+    }
+}
+
+.inventory-page-nav-numbers {
+    display: flex;
+    min-width: 12rem;
+    justify-content: space-between;
+    align-items: center;
+    text-align: center;
+    gap: 0.25em;
+
+    > * {
+        flex: 4 0 0;
+    }
+}
+
+.inventory-page-nav-text {
+    color: #ccc;
+
+    &.hidden {
+        visibility: hidden;
+    }
+}
+
+.inventory-page-nav-text.number {}
+
+.inventory-page-nav-text.first {}
+
+.inventory-page-nav-text.current {
+    font-size: larger;
+    font-weight: bolder;
+    flex: 6 0 0;
+    color: #43167b;
+}
+
+.inventory-page-nav-text.last {}
+
+.inventory-page-nav-text.ellipsis {
+    flex: 3 0 0;
+}
+
+/**************************/
+/**** Quick Search END ****/
+/**************************/
+`;
