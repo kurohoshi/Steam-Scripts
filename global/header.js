@@ -25,7 +25,6 @@
 // https://stackoverflow.com/questions/72545851/how-to-make-userscript-auto-update-from-private-domain-github
 
 const globalSettings = {};
-const GLOBALSETTINGSDEFAULTS = {};
 const TOOLS_MENU = [];
 const DB_OBJECTSTORE_CONFIGS = [
     { name: 'config', keypath: undefined, autoincr: undefined },

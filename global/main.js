@@ -43,7 +43,7 @@ async function main() {
         return;
     }
 
-    if(/^\/(id|profiles)\/[^/]+\/gamecards\/\d+\/?/.test(window.location.pathname) && document.querySelector('.badge_card_set_card')) {
+    if(/^\/(id|profiles)\/[^/]+\/+gamecards\/\d+\/?/.test(window.location.pathname) && document.querySelector('.badge_card_set_card')) {
         BadgepageFilter.setup();
     }
 

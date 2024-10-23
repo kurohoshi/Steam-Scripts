@@ -909,6 +909,7 @@ const BoosterCrafter = {
                     }
                 }
             }
+            prevIndex ??= 0;
 
             if(prevIndex === currIndex) {
                 return;
