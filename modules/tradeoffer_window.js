@@ -430,7 +430,7 @@ const TradeofferWindow = {
         let prefilterCategoryIndex = 0;
 
         while(categoryElemIndex<categoryElemList.length && prefilterCategoryIndex<filterData.categories.length) {
-            TradeofferWindow.repopulateCategoryElement(categoryElemList[categoryElemIndex++], filterData.categories[prefilterCategoryIndex++]);
+            TradeofferWindow.prefilterRepopulateCategoryElement(categoryElemList[categoryElemIndex++], filterData.categories[prefilterCategoryIndex++]);
         }
 
         if(categoryElemIndex===categoryElemList.length) {
@@ -466,6 +466,37 @@ const TradeofferWindow = {
         // save config
 
         // the event bubbling will take care of toggling the selector menu back off
+    },
+    // TODO: collapsable category containers, hides only unselected tags
+    prefilterRepopulateCategoryElement: function(categoryElem, categoryData) {
+        if(!(categoryElem instanceof Element) || !categoryElem.matches('.prefilter-tag-category')) {
+            throw 'TradeofferWindow.prefilterRepopulateCategoryElement(): Invalid category container element!'
+        }
+
+        categoryElem.dataset.id = categoryData.id;
+        categoryElem.querySelector('.prefilter-tag-category-title').textContent = categoryData.name;
+        let searchbarElem = categoryElem.querySelector('.prefilter-tag-category-searchbar');
+        let excludeSearchbar = categoryData.tags.length < TradeofferWindow.MIN_TAG_SEARCH;
+
+        if(searchbarElem && excludeSearchbar) {
+            searchbarElem.remove();
+        } else if(!searchbarElem && !excludeSearchbar) {
+            const searchbarHTMLString = '<div class="prefilter-tag-category-searchbar">'
+              +     `<input class="userscript-input" type="text" placeholder="Search ${categoryData.name.toLowerCase()} tags">`
+              + '</div>';
+
+            categoryElem.querySelector('.prefilter-tag-category-title')
+              .insertAdjacentHTML('afterend', searchbarHTMLString);
+        }
+
+        let tagsHTMLStrings = TradeofferWindow.generateTagsHTMLStrings(categoryData.tags);
+        categoryElem.querySelector('.prefilter-tags-selected').innerHTML = tagsHTMLStrings[0];
+        categoryElem.querySelector('.prefilter-tags').innerHTML = tagsHTMLStrings[1];
+
+        let isOpened = categoryElem.classList.contains('hidden');
+        if(isOpened !== categoryData.pOpened) {
+            categoryElem.classList.toggle('hidden');
+        }
     },
     prefilterCategoryToggleListener: function(event) {
         let categoryElem = event.currentTarget.parentElement;
@@ -999,37 +1030,6 @@ const TradeofferWindow = {
           + '</div>';
     },
 
-    // TODO: collapsable category containers, hides only unselected tags
-    repopulateCategoryElement: function(categoryElem, categoryData) {
-        if(!(categoryElem instanceof Element) || !categoryElem.matches('.prefilter-tag-category')) {
-            throw 'TradeofferWindow.repopulateCategoryElement(): Invalid category container element!'
-        }
-
-        categoryElem.dataset.id = categoryData.id;
-        categoryElem.querySelector('.prefilter-tag-category-title').textContent = categoryData.name;
-        let searchbarElem = categoryElem.querySelector('.prefilter-tag-category-searchbar');
-        let excludeSearchbar = categoryData.tags.length < TradeofferWindow.MIN_TAG_SEARCH;
-
-        if(searchbarElem && excludeSearchbar) {
-            searchbarElem.remove();
-        } else if(!searchbarElem && !excludeSearchbar) {
-            const searchbarHTMLString = '<div class="prefilter-tag-category-searchbar">'
-              +     `<input class="userscript-input" type="text" placeholder="Search ${categoryData.name.toLowerCase()} tags">`
-              + '</div>';
-
-            categoryElem.querySelector('.prefilter-tag-category-title')
-              .insertAdjacentHTML('afterend', searchbarHTMLString);
-        }
-
-        let tagsHTMLStrings = TradeofferWindow.generateTagsHTMLStrings(categoryData.tags);
-        categoryElem.querySelector('.prefilter-tags-selected').innerHTML = tagsHTMLStrings[0];
-        categoryElem.querySelector('.prefilter-tags').innerHTML = tagsHTMLStrings[1];
-
-        let isOpened = categoryElem.classList.contains('hidden');
-        if(isOpened !== categoryData.pOpened) {
-            categoryElem.classList.toggle('hidden');
-        }
-    },
     generateTagsHTMLStrings: function(tags) {
         const generateTagHTMLString = (tag, i) => {
             return `<div class="prefilter-tag-container" data-id="${tag.id}" data-index="${i}">`
