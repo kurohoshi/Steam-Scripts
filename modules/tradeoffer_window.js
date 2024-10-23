@@ -707,6 +707,7 @@ const TradeofferWindow = {
 
         let { quickSearchShortcuts } = TradeofferWindow;
 
+        TradeofferWindow.quickSearchDisplaySelectResetAll();
         TradeofferWindow.quickSearchOfferItemsUpdate();
 
         if (quickSearchShortcuts.body !== undefined) {
@@ -1146,6 +1147,126 @@ const TradeofferWindow = {
             newSelectorContextOptionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(contextInfo.name, { id: contextInfo.id });
         }
         quickSearchShortcuts.selectorOptionsContext.innerHTML = newSelectorContextOptionsHTMLString;
+    },
+    quickSearchDisplaySelectItemsListener: function(event) {
+        let itemElem = event.target.closest('.inventory-item-container');
+        if(!itemElem) {
+            return;
+        }
+
+        let { select: selectData, mode, inventory } = TradeofferWindow.quickSearchData;
+        if(!event.shiftKey && !event.ctrlKey) {
+            // let selectedElemList = event.currentTarget.querySelectorAll('.selected');
+            // for(let selectedElem of selectedElemList) {
+            //     let itemData = inventory.data[selectedElem.dataset.id];
+            //     if(itemData) {
+            //         itemData.selected = false;
+            //     }
+            //     selectedElem.classList.remove('selected');
+            // }
+
+            // if(!(selectedElemList.length === 1 && itemElem.dataset.id === selectData.lastSelected.dataset.id) && !itemElem.classList.contains('disabled')) {
+            //     let itemData = inventory.data[itemElem.dataset.id];
+            //     if(itemData) {
+            //         itemData.selected = true;
+            //         itemElem.classList.add('selected');
+            //     }
+            // }
+
+            let itemData = inventory.data[itemElem.dataset.id];
+            if(itemData) {
+                itemData.selected = !itemData.selected;
+                itemElem.classList.toggle('selected');
+            }
+        } else if(event.shiftKey) {
+            let prevIndex, currIndex;
+            let itemElemList;
+            if(mode === 0) {
+                itemElemList = itemElem.closest('.inventory-page').querySelectorAll('.inventory-item-container');
+            } else {
+                itemElemList = event.currentTarget.querySelectorAll('.inventory-item-container');
+            }
+
+            for(let i=0; i<itemElemList.length; i++) {
+                if(itemElemList[i].dataset.id === selectData.lastSelected?.dataset.id) {
+                    prevIndex = i;
+                    if(currIndex !== undefined) {
+                        break;
+                    }
+                }
+                if(itemElemList[i].dataset.id === itemElem.dataset.id) {
+                    currIndex = i;
+                    if(prevIndex !== undefined) {
+                        break;
+                    }
+                }
+            }
+            prevIndex ??= 0;
+
+            if(prevIndex === currIndex) {
+                return;
+            }
+
+            let minIndex = Math.min(prevIndex, currIndex);
+            let maxIndex = Math.max(prevIndex, currIndex);
+
+            for(let i=minIndex+1; i<maxIndex; i++) {
+                let itemData = inventory.data[itemElemList[i].dataset.id];
+                if(itemData?.disabled) {
+                    continue;
+                }
+
+                itemData.selected = true;
+                itemElemList[i].classList.add('selected');
+            }
+            let itemData = inventory.data[itemElemList[currIndex].dataset.id];
+            if(!itemData?.disabled) {
+                itemData.selected = true;
+                itemElemList[currIndex].classList.add('selected');
+            }
+        } else if(event.ctrlKey) {
+            let itemData = inventory.data[itemElem.dataset.id];
+            if(itemData) {
+                itemData.selected = !itemData.selected;
+                itemElem.classList.toggle('selected');
+            }
+        }
+
+        selectData.lastSelected = itemElem;
+    },
+    quickSearchDisplaySelectResetAll: function() {
+        let { quickSearchData, quickSearchShortcuts } = TradeofferWindow;
+        let { select, inventory } = quickSearchData;
+
+        if(!quickSearchShortcuts.pages || !inventory) {
+            return;
+        }
+
+        for(let assetid in inventory.data) {
+            inventory.data[assetid].selected = false;
+        }
+
+        for(let itemElem of quickSearchShortcuts.pages.querySelectorAll('.selected')) {
+            itemElem.classList.remove('selected');
+        }
+
+        select.lastSelected = null;
+    },
+    quickSearchDisplaySelectResetPage: function(pageElem) {
+        let { select, inventory } = TradeofferWindow.quickSearchData;
+
+        let lastSelectedId = select.lastSelected?.dataset.id;
+        for(let itemElem of pageElem.querySelectorAll('.selected')) {
+            let itemData = inventory.data[itemElem.dataset.id];
+            if(itemData) {
+                itemData.selected = false;
+            }
+            itemElem.classList.remove('selected');
+
+            if(itemElem.dataset.id === lastSelectedId) {
+                select.lastSelected = null;
+            }
+        }
     },
 
     quickSearchFacetGenerate: function(facetList) {
