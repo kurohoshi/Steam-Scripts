@@ -1148,6 +1148,259 @@ const TradeofferWindow = {
         quickSearchShortcuts.selectorOptionsContext.innerHTML = newSelectorContextOptionsHTMLString;
     },
 
+    quickSearchFacetGenerate: function(facetList) {
+        const generateFacetEntryHTMLString = (entryData) => {
+            return `<div class="facet-list-entry-container" data-id="${entryData.id}">`
+              +     '<label class="facet-list-entry-label">'
+              +         `<input type="checkbox"${entryData.filtered ? ' checked' : ''}>`
+              +         `<span class="facet-entry-title">${entryData.name}</span>`
+              +         `<span class="facet-entry-detail">(${entryData.count})</span>`
+              +     '<label>'
+              + '</div>';
+        };
+
+        let facetElem = TradeofferWindow.quickSearchShortcuts.facet;
+
+        let facetListsHTMLString = '';
+        for(let category of facetList) {
+            let facetSectionTitleHTMLString = `<div class="facet-section-title">${category.name}</div>`;
+            let facetSectionSearchHTMLString = '';
+            if(category.tags.length >= TradeofferWindow.MIN_TAG_SEARCH) {
+                facetSectionSearchHTMLString = '<div class="facet-list-searchbar">'
+                  +     `<input class="userscript-input" type="text" placeholder="Search ${category.name.toLowerCase()}">`
+                  + '</div>';
+            }
+
+            let facetSectionEntriesHTMLString = '';
+            for(let entry of category.tags) {
+                facetSectionEntriesHTMLString += generateFacetEntryHTMLString(entry);
+            }
+
+            facetListsHTMLString += `<div class="facet-section${category.open ? '' : ' hidden'}" data-id="${category.id}">`
+              +     facetSectionTitleHTMLString
+              +     facetSectionSearchHTMLString
+              +     `<div class="facet-list">`
+              +         facetSectionEntriesHTMLString
+              +     '</div>'
+              + '</div>';
+        }
+
+        for(let facetSectionElem of facetElem.querySelectorAll('.facet-section')) {
+            facetSectionElem.remove();
+        }
+        facetElem.insertAdjacentHTML('beforeend', facetListsHTMLString);
+
+        for(let facetTitleElem of facetElem.querySelectorAll('.facet-section-title')) {
+            facetTitleElem.addEventListener('click', TradeofferWindow.quickSearchFacetCategoryToggleListener);
+        }
+        for(let facetSearchElem of facetElem.querySelectorAll('.facet-list-searchbar .userscript-input')) {
+            facetSearchElem.addEventListener('input', steamToolsUtils.debounceFunction(TradeofferWindow.quickSearchFacetSearchCategoryInputListener, TradeofferWindow.INPUT_DELAY));
+        }
+        for(let facetListElem of facetElem.querySelectorAll('.facet-list')) {
+            facetListElem.addEventListener('change', TradeofferWindow.quickSearchFacetTagSelectListener);
+        }
+    },
+    quickSearchFacetCategoryToggleListener(event) {
+        let { quickSearchData } = TradeofferWindow;
+        let facetCategoryElem = event.target.closest('.facet-section');
+        if(!facetCategoryElem) {
+            throw 'TradeofferWindow.quickSearchFacetCategoryToggleListener(): facet section not found?!?! Is the document formatted correctly?';
+        }
+
+        facetCategoryElem.classList.toggle('hidden');
+        let categoryConfig = TradeofferWindow.filterLookupGet(quickSearchData.currentContext.app, facetCategoryElem.dataset.id);
+        if(categoryConfig) {
+            categoryConfig.qOpened = !categoryConfig.qOpened;
+        }
+
+        let categoryFacet = quickSearchData.facet.find(x => x.id === facetCategoryElem.dataset.id);
+        if(!categoryFacet) {
+            throw 'TradeofferWindow.quickSearchFacetCategoryToggleListener(): facet data not found?!?!';
+        }
+        categoryFacet.open = !categoryFacet.open;
+
+        // save config
+    },
+    quickSearchFacetSearchCategoryInputListener(event) {
+        // NOTE: May or may not need to change simple string comparisons into regex matching, or maybe split string matching
+
+        let searchText = event.target.value.toLowerCase() ?? '';
+        let facetSectionElem = event.target.closest('.facet-section');
+        if(!facetSectionElem) {
+            throw 'TradeofferWindow.quickSearchFacetSearchCategoryInputListener(): target is not within a facet section????';
+        }
+
+        for(let facetEntryElem of facetSectionElem.querySelectorAll('.facet-list .facet-list-entry-container')) {
+            if(facetEntryElem.dataset.id.toLowerCase().includes(searchText) || facetEntryElem.textContent.toLowerCase().includes(searchText)) {
+                facetEntryElem.classList.remove('hidden');
+            } else {
+                facetEntryElem.classList.add('hidden');
+            }
+        }
+    },
+    quickSearchFacetSearchInventoryInputListener(event) {
+        let { quickSearchData } = TradeofferWindow;
+
+        if(!quickSearchData.inventory) {
+            return;
+        }
+
+        let searchText = event.target.value;
+        let searchTextOld = quickSearchData.searchText;
+        quickSearchData.searchText = searchText;
+
+        if(searchText.includes(searchTextOld)) {
+            TradeofferWindow.quickSearchApplyFilter(searchText);
+        } else {
+            TradeofferWindow.quickSearchApplyFilter();
+        }
+    },
+    quickSearchFacetTagSelectListener(event) {
+        let { quickSearchData } = TradeofferWindow;
+
+        let facetEntryElem = event.target.closest('.facet-list-entry-container');
+        if(!facetEntryElem) {
+            throw 'TradeofferWindow.quickSearchFacetTagSelectListener(): tag container not found?!?! Is the document formatted correctly?';
+        }
+
+        let facetCategoryElem = facetEntryElem.closest('.facet-section');
+        if(!facetCategoryElem) {
+            throw 'TradeofferWindow.quickSearchFacetTagSelectListener(): facet section not found?!?! Is the document formatted correctly?';
+        }
+
+        let tagConfig = TradeofferWindow.filterLookupGet(quickSearchData.currentContext.app, facetCategoryElem.dataset.id, facetEntryElem.dataset.id);
+        tagConfig.filtered = event.target.checked;
+
+        let categoryFacet = quickSearchData.facet.find(x => x.id === facetCategoryElem.dataset.id);
+        if(!categoryFacet) {
+            throw 'TradeofferWindow.quickSearchFacetTagSelectListener(): facet category data not found?!?!';
+        }
+
+        let tagFacet = categoryFacet.tags.find(x => x.id === facetEntryElem.dataset.id);
+        if(!tagFacet) {
+            throw 'TradeofferWindow.quickSearchFacetTagSelectListener(): facet tag data not found?!?!';
+        }
+
+        let filterOnCount = categoryFacet.tags.reduce((count, tag) => tag.filtered ? ++count : count, 0);
+        let toggleFilterOn = !tagFacet.filtered && event.target.checked;
+        tagFacet.filtered = event.target.checked;
+        categoryFacet.isFiltering = !(filterOnCount === 1 && !toggleFilterOn);
+
+        toggleFilterOn ? quickSearchData.filtersSelected++ : quickSearchData.filtersSelected--;
+
+        if(filterOnCount === 0 && toggleFilterOn) {
+            TradeofferWindow.quickSearchApplyFilter({ category: categoryFacet.id, tag: tagFacet.id, diff: false });
+        } else if(filterOnCount > 1 && !toggleFilterOn) {
+            TradeofferWindow.quickSearchApplyFilter({ category: categoryFacet.id, tag: tagFacet.id, diff: true });
+        } else {
+            TradeofferWindow.quickSearchApplyFilter();
+        }
+
+        // save config
+    },
+    quickSearchApplyFilter(filter) {
+        // NOTE: May or may not need to change simple string comparisons into regex matching, or maybe split string matching
+
+        let { quickSearchData } = TradeofferWindow;
+        let { inventory, facet, searchText, filtersSelected } = quickSearchData;
+
+        if(!inventory) {
+            return;
+        }
+
+        if(filter) {
+            if(typeof filter === 'string') {
+                filter = filter.toLowerCase();
+                inventory.dataListFiltered = inventory.dataListFiltered.filter(item => {
+                    let descript = inventory.descriptions[`${item.classid}_${item.instanceid}`];
+                    return descript.name.toLowerCase().includes(filter) || descript.type.toLowerCase().includes(filter);
+                });
+            } else if(steamToolsUtils.isSimplyObject(filter)) {
+                inventory.dataListFiltered = inventory.dataListFiltered.filter(item => {
+                    let descript = inventory.descriptions[`${item.classid}_${item.instanceid}`];
+
+                    let itemTag = descript.tags.find(x => x.category === filter.category);
+                    if(!itemTag) {
+                        return false;
+                    }
+
+                    if(itemTag.internal_name === filter.tag) {
+                        return !filter.diff;
+                    }
+
+                    return filter.diff;
+                });
+            } else {
+                console.warn('TradeofferWindow.quickSearchApplyFilter(): invalid filter type! Inventory not filtered...');
+            }
+        } else {
+            searchText = typeof searchText === 'string' ? searchText.toLowerCase() : '';
+            inventory.dataListFiltered = inventory.dataList.filter(item => {
+                let descript = inventory.descriptions[`${item.classid}_${item.instanceid}`];
+                if(typeof searchText === 'string') {
+                    if(!descript.name.toLowerCase().includes(searchText) && !descript.type.toLowerCase().includes(searchText)) {
+                        return false;
+                    }
+                }
+
+                if(filtersSelected === 0) {
+                    return true;
+                }
+
+                for(let facetCategory of facet) {
+                    if(!facetCategory.isFiltering) {
+                        continue;
+                    }
+
+                    let itemTag = descript.tags.find(x => x.category === facetCategory.id);
+                    if(!itemTag) {
+                        return false;
+                    }
+
+                    let facetTag = facetCategory.tags.find(x => x.id === itemTag.internal_name);
+                    if(!facetTag) {
+                        console.warn('TradeofferWindow.quickSearchApplyFilter(): tag not found in facet data?!?! Item will not be filtered out...');
+                        return true;
+                    }
+
+                    if(!facetTag.filtered) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+        }
+
+        inventory.pageCount = Math.ceil(quickSearchData.inventory.dataListFiltered.length / (quickSearchData.display.rows*quickSearchData.display.columns));
+        TradeofferWindow.quickSearchShortcuts.pageNumbers.querySelector('.number.last').textContent = inventory.pageCount;
+
+        // re-render pages if needed
+        if(quickSearchData.mode === 0) {
+            let fgPage = quickSearchData.paging.pages.fg;
+            let fgPageNum = parseInt(fgPage.dataset.page);
+            if(fgPageNum > inventory.pageCount) {
+                fgPageNum = Math.max(1, inventory.pageCount);
+            }
+            TradeofferWindow.quickSearchDisplayPopulatePage(fgPage, fgPageNum);
+            TradeofferWindow.quickSearchDisplayUpdatePageNavigationBar(fgPageNum);
+        } else if(quickSearchData.mode === 1) {
+            let pages = quickSearchData.scrolling.pages;
+            let pageOffset = 0;
+            for(let i=pages.length-1; i>=0; i--) {
+                let pageElem = pages[i];
+                let pageNum = parseInt(pageElem.dataset.page);
+                if(pageNum === 0) {
+                    continue;
+                } else if(pageNum > inventory.pageCount && pageOffset === 0) {
+                    pageOffset = pageNum - inventory.pageCount;
+                }
+
+                TradeofferWindow.quickSearchDisplayPopulatePage(pageElem, pageNum-pageOffset);
+            }
+        }
+    },
+
 
 
 
