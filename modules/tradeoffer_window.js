@@ -68,17 +68,7 @@ const TradeofferWindow = {
         GM_addStyle(cssTradeofferWindow);
 
         // load config
-        let config = await SteamToolsDbManager.getToolConfig('tradeofferConfig');
-        if(config.tradeofferConfig) {
-            globalSettings.tradeofferConfig = config.tradeofferConfig;
-        } else {
-            globalSettings.tradeofferConfig = steamToolsUtils.deepClone(TradeofferWindow.SETTINGSDEFAULTS);
-        }
-
-        TradeofferWindow.filterLookupReset();
-        if(globalSettings.tradeofferConfig.filter.apps.length) {
-            TradeofferWindow.filterLookupUpdateApp(globalSettings.tradeofferConfig.filter.apps);
-        }
+        await TradeofferWindow.configLoad();
 
         // set up overlay
         const overlayHTMLString = '<div class="userscript-trade-overlay">'
@@ -112,7 +102,7 @@ const TradeofferWindow = {
         TradeofferWindow.data.me.img = document.getElementById('trade_yours').querySelector('.avatarIcon img').src;
 
         // add app entries into filter
-        TradeofferWindow.addAppFilterApps();
+        await TradeofferWindow.addAppFilterApps();
 
         // Add tabs to the user_tabs section
         const generateUserTabHTMLString = (featureName, featureData) => {
@@ -124,7 +114,7 @@ const TradeofferWindow = {
         };
         let newTabsHTMLString = '';
         for(let tabName in TradeofferWindow.FEATURE_LIST) {
-            if(!globalSettings.tradeofferConfig.disabled.includes(tabName)) {
+            if(!globalSettings.tradeoffer.disabled.includes(tabName)) {
                 newTabsHTMLString += generateUserTabHTMLString(tabName, TradeofferWindow.FEATURE_LIST[tabName]);
             }
         }
@@ -163,8 +153,8 @@ const TradeofferWindow = {
         TradeofferWindow.shortcuts.overlayBody.dataset.name = tabElem.dataset.name;
         TradeofferWindow.shortcuts.overlay.parentElement.classList.add('overlay');
     },
-    addAppFilterApps: function() {
-        let filterData = globalSettings.tradeofferConfig.filter;
+    addAppFilterApps: async function() {
+        let filterData = globalSettings.tradeoffer.filter;
 
         const storeAppFilterEntry = (appInfo) => {
             for(let appid in appInfo) {
@@ -183,12 +173,12 @@ const TradeofferWindow = {
         storeAppFilterEntry(unsafeWindow.g_rgAppContextData);
         storeAppFilterEntry(unsafeWindow.g_rgPartnerAppContextData);
 
-        // save config
+        await TradeofferWindow.configSave();
     },
 
     filterLookupReset: function() {
         TradeofferWindow.data.filterLookup = {
-            data: globalSettings.tradeofferConfig.filter,
+            data: globalSettings.tradeoffer.filter,
             apps: {}
         };
     },
@@ -395,7 +385,7 @@ const TradeofferWindow = {
         prefilterShortcuts.selector.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
         prefilterShortcuts.selectorOptions.addEventListener('click', TradeofferWindow.prefilterAppSelectorMenuSelectListener);
 
-        let lastSelectedApp = globalSettings.tradeofferConfig.filter.pLastSelected;
+        let lastSelectedApp = globalSettings.tradeoffer.filter.pLastSelected;
         if(lastSelectedApp) {
             prefilterShortcuts.selectorOptions.querySelector(`[data-id="${lastSelectedApp}"]`)?.click();
         }
@@ -463,8 +453,8 @@ const TradeofferWindow = {
             }
         }
 
-        globalSettings.tradeofferConfig.filter.pLastSelected = optionId;
-        // save config
+        globalSettings.tradeoffer.filter.pLastSelected = optionId;
+        await TradeofferWindow.configSave();
 
         // the event bubbling will take care of toggling the selector menu back off
     },
@@ -499,7 +489,7 @@ const TradeofferWindow = {
             categoryElem.classList.toggle('hidden');
         }
     },
-    prefilterCategoryToggleListener: function(event) {
+    prefilterCategoryToggleListener: async function(event) {
         let categoryElem = event.currentTarget.parentElement;
         let tagsElem = categoryElem.querySelector('.prefilter-tags');
         if(!event.currentTarget.matches('.prefilter-collapse-bar')) {
@@ -520,9 +510,9 @@ const TradeofferWindow = {
         }
 
         categoryConfig.pOpened = !categoryConfig.pOpened;
-        // save config
+        await TradeofferWindow.configSave();
     },
-    prefilterCategoryResetListener: function(event) {
+    prefilterCategoryResetListener: async function(event) {
         let categoryElem = event.currentTarget.parentElement;
         if(!event.currentTarget.matches('.prefilter-tag-category-reset')) {
             throw 'TradeofferWindow.prefilterCategoryResetListener(): Not attached to the correct element class!';
@@ -564,7 +554,7 @@ const TradeofferWindow = {
             tag.excluded = false;
         }
 
-        // save config
+        await TradeofferWindow.configSave();
     },
     prefilterCategorySearchInputListener: function(event) {
         let tagElemList = event.target;
@@ -586,7 +576,7 @@ const TradeofferWindow = {
             }
         }
     },
-    prefilterCategoryTagsExludeToggleListener: function(event) {
+    prefilterCategoryTagsExludeToggleListener: async function(event) {
         let categoryElem = event.currentTarget.parentElement;
         if(!event.currentTarget.matches('.prefilter-tags, .prefilter-tags-selected')) {
             throw 'TradeofferWindow.prefilterCategoryTagsExludeToggleListener(): Not attached to a tags container!';
@@ -635,7 +625,7 @@ const TradeofferWindow = {
         }
 
         tagConfig.excluded = !tagConfig.excluded;
-        // save config
+        await TradeofferWindow.configSave();
     },
 
 
@@ -923,7 +913,7 @@ const TradeofferWindow = {
 
         // deactivate loading animation
 
-        // save config
+        await TradeofferWindow.configSave();
     },
     quickSearchFilterInventoryBlock: function(data, { profileid, appid, contextid }) {
         let filterData = TradeofferWindow.filterLookupGet(appid);
@@ -933,7 +923,7 @@ const TradeofferWindow = {
                 fetched: false,
                 categories: []
             };
-            globalSettings.tradeofferConfig.filter.apps.push(filterData);
+            globalSettings.tradeoffer.filter.apps.push(filterData);
             TradeofferWindow.filterLookupUpdateApp(filterData);
         }
         let { quickSearchData } = TradeofferWindow;
@@ -1356,7 +1346,7 @@ const TradeofferWindow = {
             facetListElem.addEventListener('change', TradeofferWindow.quickSearchFacetTagSelectListener);
         }
     },
-    quickSearchFacetCategoryToggleListener(event) {
+    quickSearchFacetCategoryToggleListener: async function(event) {
         let { quickSearchData } = TradeofferWindow;
         let facetCategoryElem = event.target.closest('.facet-section');
         if(!facetCategoryElem) {
@@ -1375,7 +1365,7 @@ const TradeofferWindow = {
         }
         categoryFacet.open = !categoryFacet.open;
 
-        // save config
+        await TradeofferWindow.configSave();
     },
     quickSearchFacetSearchCategoryInputListener(event) {
         // NOTE: May or may not need to change simple string comparisons into regex matching, or maybe split string matching
@@ -1411,7 +1401,7 @@ const TradeofferWindow = {
             TradeofferWindow.quickSearchApplyFilter();
         }
     },
-    quickSearchFacetTagSelectListener(event) {
+    quickSearchFacetTagSelectListener: async function(event) {
         let { quickSearchData } = TradeofferWindow;
 
         let facetEntryElem = event.target.closest('.facet-list-entry-container');
@@ -1452,7 +1442,7 @@ const TradeofferWindow = {
             TradeofferWindow.quickSearchApplyFilter();
         }
 
-        // save config
+        await TradeofferWindow.configSave();
     },
     quickSearchApplyFilter(filter) {
         // NOTE: May or may not need to change simple string comparisons into regex matching, or maybe split string matching
@@ -1563,7 +1553,7 @@ const TradeofferWindow = {
         TradeofferWindow.quickSearchDisplaySetup();
     },
     quickSearchDisplaySetup: function() {
-        let { displayMode } = globalSettings.tradeofferConfig;
+        let { displayMode } = globalSettings.tradeoffer;
         if(displayMode === undefined) {
             TradeofferWindow.quickSearchDisplaySetupPaging();
         }
@@ -2231,7 +2221,7 @@ const TradeofferWindow = {
 
         if(!configFilterData) {
             filterData.categories.sort((a, b) => a.tags.length - b.tags.length);
-            globalSettings.tradeofferConfig.filter.apps.push(filterData);
+            globalSettings.tradeoffer.filter.apps.push(filterData);
             return filterData;
         }
 
@@ -2448,5 +2438,29 @@ const TradeofferWindow = {
         }
 
         return mergedInventory;
-    }
+    },
+
+
+
+
+
+    configSave: async function() {
+        await SteamToolsDbManager.setToolConfig('tradeoffer');
+    },
+    configLoad: async function() {
+        let config = await SteamToolsDbManager.getToolConfig('tradeoffer');
+        if(config.tradeoffer) {
+            globalSettings.tradeoffer = config.tradeoffer;
+            TradeofferWindow.filterLookupReset();
+            if(globalSettings.tradeoffer.filter.apps.length) {
+                TradeofferWindow.filterLookupUpdateApp(globalSettings.tradeoffer.filter.apps);
+            }
+        } else {
+            TradeofferWindow.configReset();
+        }
+    },
+    configReset: function() {
+        globalSettings.tradeoffer = TradeofferWindow.SETTINGSDEFAULTS;
+        TradeofferWindow.filterLookupReset();
+    },
 };
