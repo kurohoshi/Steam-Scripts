@@ -659,7 +659,6 @@ const TradeofferWindow = {
         },
         scrolling: {
             pageCount: 5,
-            startOffset: 3,
             pages: [],
             // observer: created and saved on setup
         },
@@ -709,7 +708,7 @@ const TradeofferWindow = {
           +     '<div class="main-control-section">'
           +         TradeofferWindow.generateProfileSelectorHTMLString({ id: 'selector-quick-search-profile' })
           +         TradeofferWindow.generateAppSelectorHTMLString({ useUserApps: false, usePartnerApps: false, id: 'selector-quick-search-app', placeholderText: 'Select profile first', disabled: true })
-          +         TradeofferWindow.generateContextSelectorHTMLString(undefined, undefined, { id: 'selector-quick-search-context', placeholder: 'Select profile/app first', disabled: true })
+          +         TradeofferWindow.generateContextSelectorHTMLString(undefined, undefined, { id: 'selector-quick-search-context', placeholderText: 'Select profile/app first', disabled: true })
           +         '<button id="quick-search-load-inventory" class="main-control-selector-action">'
           +             'Load'
           +         '</button>'
@@ -868,8 +867,14 @@ const TradeofferWindow = {
         quickSearchData.filtersSelected = 0;
 
         // activate loading animation
+
+        // hide facet lists
+        quickSearchShortcuts.facet.classList.add('loading');
+
         // clear inventory display items
-        // clear facet lists
+        for(let pageElem of quickSearchShortcuts.pages.querySelectorAll('.inventory-page')) {
+            TradeofferWindow.quickSearchDisplayPageReset(pageElem);
+        }
 
         let inventory = await TradeofferWindow.getTradeInventoryFast2(profileid, appid, contextid, TradeofferWindow.quickSearchFilterInventoryBlock);
 
@@ -912,6 +917,9 @@ const TradeofferWindow = {
         TradeofferWindow.quickSearchDisplaySetup();
 
         // deactivate loading animation
+
+        // show facet lists
+        quickSearchShortcuts.facet.classList.remove('loading');
 
         await TradeofferWindow.configSave();
     },
@@ -1061,7 +1069,7 @@ const TradeofferWindow = {
         // close overlay
         TradeofferWindow.overlayCloseListener();
     },
-    quickSearchSelectorProfileSelectListener(event) {
+    quickSearchSelectorProfileSelectListener: function(event) {
         if(!event.currentTarget.matches('.main-control-selector-options')) {
             throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
         } else if(!event.currentTarget.parentElement.matches('.main-control-selector-container')) {
@@ -1092,7 +1100,7 @@ const TradeofferWindow = {
         quickSearchShortcuts.selectorContext.dataset.id = '-1';
 
         let selectorContextSelectElem = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-select');
-        selectorContextSelectElem.textContent = '';
+        selectorContextSelectElem.textContent = 'Select app first';
         selectorContextSelectElem.dataset.id = '-1';
 
         let selectorAppSelectElem = quickSearchShortcuts.selectorApp.querySelector('.main-control-selector-select');
@@ -1163,7 +1171,7 @@ const TradeofferWindow = {
             throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): profile id is not user nor partner!?!?!';
         }
 
-        let newSelectorContextOptionsHTMLString = 'Select app first';
+        let newSelectorContextOptionsHTMLString = '';
         for(let contextid of contextOptions) {
             let contextInfo = contextsData[contextid];
             if(parseInt(contextid) === 0) {
@@ -1367,7 +1375,7 @@ const TradeofferWindow = {
 
         await TradeofferWindow.configSave();
     },
-    quickSearchFacetSearchCategoryInputListener(event) {
+    quickSearchFacetSearchCategoryInputListener: function(event) {
         // NOTE: May or may not need to change simple string comparisons into regex matching, or maybe split string matching
 
         let searchText = event.target.value.toLowerCase() ?? '';
@@ -1384,7 +1392,7 @@ const TradeofferWindow = {
             }
         }
     },
-    quickSearchFacetSearchInventoryInputListener(event) {
+    quickSearchFacetSearchInventoryInputListener: function(event) {
         let { quickSearchData } = TradeofferWindow;
 
         if(!quickSearchData.inventory) {
@@ -1525,24 +1533,29 @@ const TradeofferWindow = {
         if(quickSearchData.mode === 0) {
             let fgPage = quickSearchData.paging.pages.fg;
             let fgPageNum = parseInt(fgPage.dataset.page);
-            if(fgPageNum > inventory.pageCount) {
+            if(!Number.isInteger(fgPageNum)) {
+                fgPageNum = 1;
+            } if(fgPageNum > inventory.pageCount) {
                 fgPageNum = Math.max(1, inventory.pageCount);
             }
             TradeofferWindow.quickSearchDisplayPopulatePage(fgPage, fgPageNum);
             TradeofferWindow.quickSearchDisplayUpdatePageNavigationBar(fgPageNum);
         } else if(quickSearchData.mode === 1) {
             let pages = quickSearchData.scrolling.pages;
-            let pageOffset = 0;
-            for(let i=pages.length-1; i>=0; i--) {
-                let pageElem = pages[i];
-                let pageNum = parseInt(pageElem.dataset.page);
-                if(pageNum === 0) {
-                    continue;
-                } else if(pageNum > inventory.pageCount && pageOffset === 0) {
-                    pageOffset = pageNum - inventory.pageCount;
-                }
+            let currentPageNum = parseInt(quickSearchData.currentPage.dataset.page);
+            if(!Number.isInteger(currentPageNum) || currentPageNum < 1) {
+                currentPageNum = 1;
+            } else if(currentPageNum > inventory.pageCount) {
+                currentPageNum = Math.max(1, inventory.pageCount);
+            }
 
-                TradeofferWindow.quickSearchDisplayPopulatePage(pageElem, pageNum-pageOffset);
+            let pageOffset = Math.floor(quickSearchData.scrolling.pageCount/2);
+            quickSearchData.scrolling.observer.disconnect();
+            for(let i=0; i<pages.length; i++) {
+                TradeofferWindow.quickSearchDisplayPopulatePage(pages[i], i+currentPageNum-pageOffset);
+            }
+            for(let pageElem of quickSearchData.scrolling.pages) {
+                quickSearchData.scrolling.observer.observe(pageElem);
             }
         }
     },
@@ -1556,14 +1569,15 @@ const TradeofferWindow = {
         let { displayMode } = globalSettings.tradeoffer;
         if(displayMode === undefined) {
             TradeofferWindow.quickSearchDisplaySetupPaging();
+            // TradeofferWindow.quickSearchDisplaySetupScrolling();
         }
 
         let currentMode = TradeofferWindow.quickSearchData.mode;
         if(currentMode === undefined || displayMode !== currentMode) {
             if(displayMode === 0) {
-                TradeofferWindow.quickSearchSetupDisplayPaging();
+                TradeofferWindow.quickSearchDisplaySetupPaging();
             } else if(displayMode === 1) {
-                TradeofferWindow.quickSearchSetupDisplayScrolling();
+                TradeofferWindow.quickSearchDisplaySetupScrolling();
             }
         }
     },
@@ -1572,6 +1586,8 @@ const TradeofferWindow = {
         let { paging: pagingData, inventory: { pageCount: pageNumLast } } = quickSearchData;
 
         if(quickSearchData.mode === 0) {
+            TradeofferWindow.quickSearchDisplayPopulatePage(quickSearchData.paging.pages.fg, 1);
+            TradeofferWindow.quickSearchDisplayUpdatePageNavigationBar(1);
             return;
         }
 
@@ -1590,10 +1606,9 @@ const TradeofferWindow = {
         }
 
         quickSearchShortcuts.display.classList.add('paging');
-        let pageNumCurrent = quickSearchData.currentPage ? parseInt(quickSearchData.currentPage.dataset.page) : null;
-        if(pageNumCurrent !== null && (pageNumCurrent < 1 || pageNumCurrent > pageNumLast)) {
-            // reuse current page and set active
-            quickSearchShortcuts.pages.insertAdjacentElement('afterbegin', quickSearchData.currentPage);
+        if(quickSearchData.currentPage) {
+            TradeofferWindow.quickSearchDisplayPopulatePage(quickSearchData.currentPage, 1);
+            quickSearchShortcuts.pages.prepend(quickSearchData.currentPage);
             quickSearchData.currentPage.classList.add('active');
             pagingData.pages.fg = quickSearchData.currentPage;
         } else {
@@ -1615,9 +1630,24 @@ const TradeofferWindow = {
         quickSearchData.mode = 0;
     },
     quickSearchDisplaySetupScrolling: function() {
+        // WARNING: Need enough pages for scrolling intersection observer to work,
+        //          otherwise scrolling can get stuck, or rapid scrolling can occur.
+        // WARNING: Need enough root margin so that scrollbar doesnt reach either end,
+        //          which results in rapid scrolling to first/last page.
+        // WARNING: Need to disconnect observer and reconnect after when abruptly repopulating
+        //          pages since hiding pages might trigger an observer target
         let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
         let { scrolling: scrollData } = quickSearchData;
+        let startOffset = Math.floor(scrollData.pageCount/2);
+
         if(quickSearchData.mode === 1) {
+            scrollData.observer.disconnect();
+            for(let i=0; i<scrollData.pages.length; i++) {
+                TradeofferWindow.quickSearchDisplayPopulatePage(scrollData.pages[i], i+1-startOffset);
+            }
+            for(let pageElem of scrollData.pages) {
+                scrollData.observer.observe(pageElem);
+            }
             return;
         }
 
@@ -1637,7 +1667,7 @@ const TradeofferWindow = {
         quickSearchShortcuts.display.classList.add('scrolling');
         let pageNumCurrent = quickSearchData.currentPage ? parseInt(quickSearchData.currentPage.dataset.page) : null;
         let pagesHTMLString = '';
-        for(let i=(pageNumCurrent ?? 1)-scrollData.startOffset, end=i+scrollData.pageCount; i<end; i++) {
+        for(let i=(pageNumCurrent ?? 1)-startOffset, end=i+scrollData.pageCount; i<end; i++) {
             if(i === pageNumCurrent) {
                 pagesHTMLString += quickSearchData.currentPage.outerHTML;
             } else {
@@ -1647,12 +1677,12 @@ const TradeofferWindow = {
         quickSearchShortcuts.pages.insertAdjacentHTML('afterbegin', pagesHTMLString);
 
         let pageElemList = quickSearchShortcuts.pages.querySelectorAll('.inventory-page');
-        let pageHeight =  pageElemList[scrollData.startOffset].clientHeight;
+        let pageHeight =  pageElemList[startOffset].clientHeight;
         // let pageContainerHeight = quickSearchShortcuts.pages.clientHeight;
         // let observerMargin = (steamToolsUtils.clamp(pageContainerHeight+pageHeight, 1.5*pageHeight, (pageElemList.length-1)*pageHeight) - pageContainerHeight) / 2;
         let observerOptions = {
             root: quickSearchShortcuts.pages,
-            rootMargin: '100% 0%',
+            rootMargin: '120% 0%',
             threshold: 1.0
         };
         scrollData.observer = new IntersectionObserver(TradeofferWindow.quickSearchDisplayScrollLoadPage, observerOptions);
@@ -1661,20 +1691,21 @@ const TradeofferWindow = {
             scrollData.observer.observe(page);
             scrollData.pages.push(page);
         }
-        quickSearchData.currentPage = scrollData.pages[scrollData.startOffset];
+        quickSearchData.currentPage = scrollData.pages[startOffset];
 
         let currentPageNum = parseInt(quickSearchData.currentPage.dataset.page);
         if(currentPageNum > 2) {
-            quickSearchShortcuts.pages.scroll(scrollData.startOffset*pageHeight);
+            quickSearchShortcuts.pages.scroll(startOffset*pageHeight);
         }
 
         quickSearchData.mode = 1;
     },
     quickSearchDisplayScrollLoadPage: function(entries) {
-        entries.forEach((entry) => {
-            let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
-            let { pageCount, pages } = quickSearchData.scrolling;
+        let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
+        let { pageCount, pages } = quickSearchData.scrolling;
+        let pageHeightWithoutTop = quickSearchData.display.rows * (5.25+0.5);
 
+        entries.forEach((entry) => {
             if(quickSearchData.mode !== 1) {
                 return;
             } else if(!entry.isIntersecting) {
@@ -1698,6 +1729,11 @@ const TradeofferWindow = {
                 pages.push(pageElem);
                 quickSearchData.currentPage = quickSearchData.currentPage.nextElementSibling;
             }
+
+            // let pageMargin = Math.max(0, parseInt(pages[0].dataset.page)-1);
+            // quickSearchShortcuts.pages.style.paddingTop = pageMargin > 0
+            //   ? `${(pageMargin*pageHeightWithoutTop) + 0.5}rem`
+            //   : '0rem';
         });
     },
     quickSearchDisplayPaginateListener: function(event) {
@@ -1862,6 +1898,8 @@ const TradeofferWindow = {
             }
         }
 
+        TradeofferWindow.quickSearchDisplayPageReset(pageElem);
+
         let pageItemCount = quickSearchData.display.rows * quickSearchData.display.columns;
         let itemIndex = (pageNum-1) * pageItemCount;
         let lastIndex = Math.min(itemIndex+pageItemCount, inventory.dataListFiltered.length);
@@ -1921,8 +1959,25 @@ const TradeofferWindow = {
         itemElem.classList[ itemData.selected ? 'add' : 'remove' ]('selected');
         let imgElem = itemElem.querySelector('img');
         if(imgElem) {
-            imgElem.src = descript.icon_url ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f` : '';
+            imgElem.src = descript.icon_url
+              ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f`
+              : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        } else {
+            let newImgElem = new Image();
+            newImgElem.src = descript.icon_url
+              ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f`
+              : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+            itemElem.prepend(newImgElem);
         }
+    },
+    quickSearchDisplayPageReset: function(pageElem) {
+        let itemElemList = pageElem.querySelectorAll('.inventory-item-container');
+        for(let itemElem of itemElemList) {
+            delete itemElem.dataset.id;
+            itemElem.innerHTML = '';
+        }
+
+        delete pageElem.dataset.page;
     },
 
 
@@ -2083,7 +2138,7 @@ const TradeofferWindow = {
         };
         return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, selectorParams);
     },
-    generateContextSelectorHTMLString: function(userIsMe, appid, { id, disabled = false }) {
+    generateContextSelectorHTMLString: function(userIsMe, appid, { id, placeholderText, disabled = false }) {
         TradeofferWindow.getSelectorData();
 
         let { selectorData } = TradeofferWindow;
@@ -2100,7 +2155,15 @@ const TradeofferWindow = {
             }
         }
 
-        return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, { id: id, placeholderData: 0, placeholderText: '', width: 10, disabled: disabled });
+        let selectorParams = {
+            id: id,
+            placeholderData: -1,
+            placeholderText: placeholderText ?? '',
+            width: 11,
+            disabled: disabled
+        };
+
+        return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, selectorParams);
     },
     generateSelectorHTMLString: function(optionsHTMLString,
       { id, placeholderText = 'Select...', placeholderData = -1, placeholderImg, width, disabled } =

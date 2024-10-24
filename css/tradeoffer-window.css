@@ -306,6 +306,10 @@
     input.userscript-input[type="text"] {
         margin: 3px;
     }
+
+    &.loading .facet-section {
+        display: none;
+    }
 }
 
 .facet-section {
@@ -470,10 +474,14 @@
         height: 100%;
         /* width: calc(var(--item-container-width) * 6 + var(--item-gap) * 7); */
         scrollbar-width: none;
+    }
 
-        &>*+* {
-            padding-top: 0;
-        }
+    .inventory-page.hidden {
+        display: none;
+    }
+
+    .inventory-page:not(.hidden) + .inventory-page {
+        padding-top: 0;
     }
 }
 
