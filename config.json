@@ -1,0 +1,44 @@
+{
+    "metadata": {
+        "name": "Steam Tools (PLACEHOLDER)",
+        "namespace": "https://steamcommunity.com/id/KurohoshiZ",
+        "description": "Set of tools to help with Steam Community activities",
+        "author": "KurohoshiZ",
+        "match": [
+            "*://steamcommunity.com/*"
+        ],
+        "exclude": [
+            "https://steamcommunity.com/chat/",
+            "https://steamcommunity.com/tradeoffer/"
+        ],
+        "icon": "https://avatars.akamai.steamstatic.com/5d8f69062e0e8f51e500cecc6009547675ebc93c_full.jpg",
+        "allowedConnections": [
+            "asf.justarchi.net"
+        ],
+        "grantPermissions": [
+            "GM_xmlhttpRequest",
+            "GM_addStyle",
+            "GM_log"
+        ],
+        "homepage": "https://github.com/kurohoshi/Steam-Scripts",
+        "download": "https://raw.githubusercontent.com/kurohoshi/Steam-Scripts/dev/script.user.js",
+        "update": "https://raw.githubusercontent.com/kurohoshi/Steam-Scripts/dev/script.user.js",
+        "comments": [
+            "Script inspired by the following Userscripts:",
+            "https://github.com/Rudokhvist/ASF-STM/",
+            "https://github.com/Tithen-Firion/STM-UserScript",
+            "",
+            "Resources Related to Userscript dev:",
+            "https://stackoverflow.com/questions/72545851/how-to-make-userscript-auto-update-from-private-domain-github"
+        ]
+    },
+    "globalPriorities": {
+        "header":     -10,
+        "utils":       -9,
+        "db_manager":  -8,
+        "profile":     -5,
+        "matcher":     -4,
+        "css_helpers": 10,
+        "main":         9
+    }
+}
