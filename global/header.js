@@ -1,29 +1,3 @@
-// ==UserScript==
-// @name         Steam Tools (PLACEHOLDER)
-// @namespace    https://steamcommunity.com/id/KuroHoshiZ/
-// @version      2024-10-23
-// @description  Set of tools to help with Steam Community activities
-// @author       KurohoshiZ
-// @match        *://steamcommunity.com/*
-// @exclude      https://steamcommunity.com/chat/
-// @exclude      https://steamcommunity.com/tradeoffer/
-// @icon         https://avatars.akamai.steamstatic.com/5d8f69062e0e8f51e500cecc6009547675ebc93c_full.jpg
-// @connect      asf.justarchi.net
-// @grant        GM_xmlhttpRequest
-// @grant        GM_addStyle
-// @grant        GM_log
-// @homepageURL  https://github.com/kurohoshi/Steam-Scripts
-// @downloadURL  https://raw.githubusercontent.com/kurohoshi/Steam-Scripts/dev/userscript.js
-// @updateURL    https://raw.githubusercontent.com/kurohoshi/Steam-Scripts/dev/userscript.js
-// ==/UserScript==
-
-// Script inspired by the following Userscripts:
-// https://github.com/Rudokhvist/ASF-STM/
-// https://github.com/Tithen-Firion/STM-UserScript
-
-// Resources Related to Userscript dev:
-// https://stackoverflow.com/questions/72545851/how-to-make-userscript-auto-update-from-private-domain-github
-
 const globalSettings = {};
 const TOOLS_MENU = [];
 const DB_OBJECTSTORE_CONFIGS = [
