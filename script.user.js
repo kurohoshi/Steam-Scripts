@@ -1,28 +1,31 @@
 // ==UserScript==
 // @name         Steam Tools (PLACEHOLDER)
-// @namespace    https://steamcommunity.com/id/KuroHoshiZ/
-// @version      2024-10-23
+// @namespace    https://steamcommunity.com/id/KurohoshiZ
+// @version      2024-10-29
 // @description  Set of tools to help with Steam Community activities
 // @author       KurohoshiZ
 // @match        *://steamcommunity.com/*
 // @exclude      https://steamcommunity.com/chat/
 // @exclude      https://steamcommunity.com/tradeoffer/
 // @icon         https://avatars.akamai.steamstatic.com/5d8f69062e0e8f51e500cecc6009547675ebc93c_full.jpg
-// @connect      asf.justarchi.net
+// @connnect     asf.justarchi.net
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        GM_log
 // @homepageURL  https://github.com/kurohoshi/Steam-Scripts
-// @downloadURL  https://raw.githubusercontent.com/kurohoshi/Steam-Scripts/dev/userscript.js
-// @updateURL    https://raw.githubusercontent.com/kurohoshi/Steam-Scripts/dev/userscript.js
+// @downloadURL  https://raw.githubusercontent.com/kurohoshi/Steam-Scripts/dev/script.user.js
+// @updateURL    https://raw.githubusercontent.com/kurohoshi/Steam-Scripts/dev/script.user.js
 // ==/UserScript==
 
 // Script inspired by the following Userscripts:
 // https://github.com/Rudokhvist/ASF-STM/
 // https://github.com/Tithen-Firion/STM-UserScript
-
+// 
 // Resources Related to Userscript dev:
 // https://stackoverflow.com/questions/72545851/how-to-make-userscript-auto-update-from-private-domain-github
+
+
+
 
 const globalSettings = {};
 const TOOLS_MENU = [];
@@ -40,6 +43,10 @@ const DB_OBJECTSTORE_CONFIGS = [
 ];
 
 const MONTHS_ARRAY = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+
+
+
 
 const steamToolsUtils = {
     INV_FETCH_DELAY1: 3*1000, // for trade offer window or own inv
@@ -177,6 +184,10 @@ const steamToolsUtils = {
         });
     }
 };
+
+
+
+
 
 
 const SteamToolsDbManager = {
@@ -483,6 +494,10 @@ SteamToolsDbManager.getItemNameIds = async function(appid, hashnames) {
 SteamToolsDbManager.setItemNameId = async function(appid, hashname, item_nameid) {
     await this.set("item_nameids", item_nameid, `${appid}/${hashname}`);
 }
+
+
+
+
 
 class Profile {
     static me;
@@ -1559,6 +1574,10 @@ class Profile {
     }
 }
 
+
+
+
+
 let Matcher = {
     MAX_MATCH_ITER: 5,
     MATCH_TYPE_LIST: ["card", "background", "emoticon"],
@@ -2126,6 +2145,10 @@ let Matcher = {
         }
     },
 }
+
+
+
+
 
 
 const SteamItemMatcher = {
@@ -3227,6 +3250,10 @@ const SteamItemMatcher = {
     }
 };
 
+
+
+
+
 const BadgepageExtras = {
     setup: function() {
         let badgepageUrl = document.querySelector('.profile_small_header_text').lastElementChild.href
@@ -3235,36 +3262,69 @@ const BadgepageExtras = {
             throw 'BadgepageForumButton.setup(): appid not found?';
         }
 
-        // Add forum button link
+
+
         let badgepageButtonsElem = document.querySelector('.gamecards_inventorylink');
         if(!badgepageButtonsElem) {
-            throw 'BadgepageForumButton.setup(): buttons list not found?';
+            console.warn('BadgepageForumButton.setup(): buttons list not found?');
+        } else {
+            let htmlStringList = [];
+
+            // Add forum button link
+            let forumButtonHTMLString = `<a target="_blank" class="btn_grey_grey btn_medium" href="https://steamcommunity.com/app/${appid}/tradingforum">`
+              +     '<span>Visit Trade Forum</span>'
+              + '</a>';
+            htmlStringList.push(forumButtonHTMLString);
+
+            // Add foil/normal badgepage button link
+            let isFoilPage = window.location.search.includes('border=1');
+            let badgepageUrlString = badgepageUrl;
+            if(!isFoilPage) {
+                badgepageUrlString += '?border=1';
+            }
+            let foilToggleButtonHTMLString = `<a class="btn_grey_grey btn_medium" href="${badgepageUrlString}">`
+              +     `<span>${isFoilPage ? 'Normal' : 'Foil'} Badge Page</span>`
+              + '</a>';
+            htmlStringList.push(foilToggleButtonHTMLString);
+
+            badgepageButtonsElem.insertAdjacentHTML('afterbegin', htmlStringList.join(' '));
         }
 
-        let htmlStringList = [];
 
-        let forumButtonHTMLString = `<a target="_blank" class="btn_grey_grey btn_medium" href="https://steamcommunity.com/app/${appid}/tradingforum">`
-          +     '<span>Visit Trade Forum</span>'
-          + '</a>';
-        htmlStringList.push(forumButtonHTMLString);
 
-        // Add foil/normal badgepage button link
-        let isFoilPage = window.location.search.includes('border=1');
-        let badgepageUrlString = badgepageUrl;
-        if(!isFoilPage) {
-            badgepageUrlString += '?border=1';
+        // Set unowned cards to the proper overlay/border
+        // WARNING: Currently causes quick flash of owned cards before getting changed to unowned
+        let cardElemSetUnowned = (elem) => {
+            elem.classList.remove('owned');
+            elem.classList.add('unowned');
+            if(!elem.querySelector('.game_card_unowned_border')) {
+                elem.firstElementChild.insertAdjacentHTML('afterbegin', '<div class="game_card_unowned_border"></div>');
+            }
+        };
+
+        for(let cardElem of document.querySelectorAll('.badge_card_set_card')) {
+            let cardQtyElem = cardElem.querySelector('.badge_card_set_text_qty');
+            if(!cardQtyElem) {
+                if(cardElem.classList.contains('owned')) {
+                    cardElemSetUnowned(cardElem);
+                }
+                continue;
+            }
+
+            let cardQty = parseInt(cardQtyElem.textContent.replace(/^\(|\)$/g, ''));
+            if((!Number.isInteger(cardQty) || cardQty === 0) && cardElem.classList.contains('owned')) {
+                cardElemSetUnowned(cardElem);
+            }
         }
-        let foilToggleButtonHTMLString = `<a class="btn_grey_grey btn_medium" href="${badgepageUrlString}">`
-          +     `<span>${isFoilPage ? 'Normal' : 'Foil'} Badge Page</span>`
-          + '</a>';
-        htmlStringList.push(foilToggleButtonHTMLString);
-
-        badgepageButtonsElem.insertAdjacentHTML('afterbegin', htmlStringList.join(' '));
 
         // Optional: delete other trade forum buttons in the friends with cards section
         // WARNING: May or may not break other modules that might use these buttons
     }
 };
+
+
+
+
 
 const DataCollectors = {};
 DataCollectors.scrapePage = async function() {
@@ -3430,6 +3490,10 @@ DataCollectors.scrapeTradeTokens = async function() {
         }
     }
 }
+
+
+
+
 
 const BoosterCrafter = {
     SETTINGSDEFAULTS: {
@@ -5138,6 +5202,10 @@ const BoosterCrafter = {
     }
 };
 
+
+
+
+
 const TradeofferWindow = {
     SETTINGSDEFAULTS: {
         disabled: [], // disable any unwanted tabs here
@@ -5208,17 +5276,7 @@ const TradeofferWindow = {
         GM_addStyle(cssTradeofferWindow);
 
         // load config
-        let config = await SteamToolsDbManager.getToolConfig('tradeofferConfig');
-        if(config.tradeofferConfig) {
-            globalSettings.tradeofferConfig = config.tradeofferConfig;
-        } else {
-            globalSettings.tradeofferConfig = steamToolsUtils.deepClone(TradeofferWindow.SETTINGSDEFAULTS);
-        }
-
-        TradeofferWindow.filterLookupReset();
-        if(globalSettings.tradeofferConfig.filter.apps.length) {
-            TradeofferWindow.filterLookupUpdateApp(globalSettings.tradeofferConfig.filter.apps);
-        }
+        await TradeofferWindow.configLoad();
 
         // set up overlay
         const overlayHTMLString = '<div class="userscript-trade-overlay">'
@@ -5252,7 +5310,7 @@ const TradeofferWindow = {
         TradeofferWindow.data.me.img = document.getElementById('trade_yours').querySelector('.avatarIcon img').src;
 
         // add app entries into filter
-        TradeofferWindow.addAppFilterApps();
+        await TradeofferWindow.addAppFilterApps();
 
         // Add tabs to the user_tabs section
         const generateUserTabHTMLString = (featureName, featureData) => {
@@ -5264,7 +5322,7 @@ const TradeofferWindow = {
         };
         let newTabsHTMLString = '';
         for(let tabName in TradeofferWindow.FEATURE_LIST) {
-            if(!globalSettings.tradeofferConfig.disabled.includes(tabName)) {
+            if(!globalSettings.tradeoffer.disabled.includes(tabName)) {
                 newTabsHTMLString += generateUserTabHTMLString(tabName, TradeofferWindow.FEATURE_LIST[tabName]);
             }
         }
@@ -5303,8 +5361,8 @@ const TradeofferWindow = {
         TradeofferWindow.shortcuts.overlayBody.dataset.name = tabElem.dataset.name;
         TradeofferWindow.shortcuts.overlay.parentElement.classList.add('overlay');
     },
-    addAppFilterApps: function() {
-        let filterData = globalSettings.tradeofferConfig.filter;
+    addAppFilterApps: async function() {
+        let filterData = globalSettings.tradeoffer.filter;
 
         const storeAppFilterEntry = (appInfo) => {
             for(let appid in appInfo) {
@@ -5323,12 +5381,12 @@ const TradeofferWindow = {
         storeAppFilterEntry(unsafeWindow.g_rgAppContextData);
         storeAppFilterEntry(unsafeWindow.g_rgPartnerAppContextData);
 
-        // save config
+        await TradeofferWindow.configSave();
     },
 
     filterLookupReset: function() {
         TradeofferWindow.data.filterLookup = {
-            data: globalSettings.tradeofferConfig.filter,
+            data: globalSettings.tradeoffer.filter,
             apps: {}
         };
     },
@@ -5535,7 +5593,7 @@ const TradeofferWindow = {
         prefilterShortcuts.selector.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
         prefilterShortcuts.selectorOptions.addEventListener('click', TradeofferWindow.prefilterAppSelectorMenuSelectListener);
 
-        let lastSelectedApp = globalSettings.tradeofferConfig.filter.pLastSelected;
+        let lastSelectedApp = globalSettings.tradeoffer.filter.pLastSelected;
         if(lastSelectedApp) {
             prefilterShortcuts.selectorOptions.querySelector(`[data-id="${lastSelectedApp}"]`)?.click();
         }
@@ -5603,8 +5661,8 @@ const TradeofferWindow = {
             }
         }
 
-        globalSettings.tradeofferConfig.filter.pLastSelected = optionId;
-        // save config
+        globalSettings.tradeoffer.filter.pLastSelected = optionId;
+        await TradeofferWindow.configSave();
 
         // the event bubbling will take care of toggling the selector menu back off
     },
@@ -5639,7 +5697,7 @@ const TradeofferWindow = {
             categoryElem.classList.toggle('hidden');
         }
     },
-    prefilterCategoryToggleListener: function(event) {
+    prefilterCategoryToggleListener: async function(event) {
         let categoryElem = event.currentTarget.parentElement;
         let tagsElem = categoryElem.querySelector('.prefilter-tags');
         if(!event.currentTarget.matches('.prefilter-collapse-bar')) {
@@ -5660,9 +5718,9 @@ const TradeofferWindow = {
         }
 
         categoryConfig.pOpened = !categoryConfig.pOpened;
-        // save config
+        await TradeofferWindow.configSave();
     },
-    prefilterCategoryResetListener: function(event) {
+    prefilterCategoryResetListener: async function(event) {
         let categoryElem = event.currentTarget.parentElement;
         if(!event.currentTarget.matches('.prefilter-tag-category-reset')) {
             throw 'TradeofferWindow.prefilterCategoryResetListener(): Not attached to the correct element class!';
@@ -5704,7 +5762,7 @@ const TradeofferWindow = {
             tag.excluded = false;
         }
 
-        // save config
+        await TradeofferWindow.configSave();
     },
     prefilterCategorySearchInputListener: function(event) {
         let tagElemList = event.target;
@@ -5726,7 +5784,7 @@ const TradeofferWindow = {
             }
         }
     },
-    prefilterCategoryTagsExludeToggleListener: function(event) {
+    prefilterCategoryTagsExludeToggleListener: async function(event) {
         let categoryElem = event.currentTarget.parentElement;
         if(!event.currentTarget.matches('.prefilter-tags, .prefilter-tags-selected')) {
             throw 'TradeofferWindow.prefilterCategoryTagsExludeToggleListener(): Not attached to a tags container!';
@@ -5775,7 +5833,7 @@ const TradeofferWindow = {
         }
 
         tagConfig.excluded = !tagConfig.excluded;
-        // save config
+        await TradeofferWindow.configSave();
     },
 
 
@@ -5809,7 +5867,6 @@ const TradeofferWindow = {
         },
         scrolling: {
             pageCount: 5,
-            startOffset: 3,
             pages: [],
             // observer: created and saved on setup
         },
@@ -5859,7 +5916,7 @@ const TradeofferWindow = {
           +     '<div class="main-control-section">'
           +         TradeofferWindow.generateProfileSelectorHTMLString({ id: 'selector-quick-search-profile' })
           +         TradeofferWindow.generateAppSelectorHTMLString({ useUserApps: false, usePartnerApps: false, id: 'selector-quick-search-app', placeholderText: 'Select profile first', disabled: true })
-          +         TradeofferWindow.generateContextSelectorHTMLString(undefined, undefined, { id: 'selector-quick-search-context', placeholder: 'Select profile/app first', disabled: true })
+          +         TradeofferWindow.generateContextSelectorHTMLString(undefined, undefined, { id: 'selector-quick-search-context', placeholderText: 'Select profile/app first', disabled: true })
           +         '<button id="quick-search-load-inventory" class="main-control-selector-action">'
           +             'Load'
           +         '</button>'
@@ -6018,8 +6075,14 @@ const TradeofferWindow = {
         quickSearchData.filtersSelected = 0;
 
         // activate loading animation
+
+        // hide facet lists
+        quickSearchShortcuts.facet.classList.add('loading');
+
         // clear inventory display items
-        // clear facet lists
+        for(let pageElem of quickSearchShortcuts.pages.querySelectorAll('.inventory-page')) {
+            TradeofferWindow.quickSearchDisplayPageReset(pageElem);
+        }
 
         let inventory = await TradeofferWindow.getTradeInventoryFast2(profileid, appid, contextid, TradeofferWindow.quickSearchFilterInventoryBlock);
 
@@ -6063,7 +6126,10 @@ const TradeofferWindow = {
 
         // deactivate loading animation
 
-        // save config
+        // show facet lists
+        quickSearchShortcuts.facet.classList.remove('loading');
+
+        await TradeofferWindow.configSave();
     },
     quickSearchFilterInventoryBlock: function(data, { profileid, appid, contextid }) {
         let filterData = TradeofferWindow.filterLookupGet(appid);
@@ -6073,7 +6139,7 @@ const TradeofferWindow = {
                 fetched: false,
                 categories: []
             };
-            globalSettings.tradeofferConfig.filter.apps.push(filterData);
+            globalSettings.tradeoffer.filter.apps.push(filterData);
             TradeofferWindow.filterLookupUpdateApp(filterData);
         }
         let { quickSearchData } = TradeofferWindow;
@@ -6211,7 +6277,7 @@ const TradeofferWindow = {
         // close overlay
         TradeofferWindow.overlayCloseListener();
     },
-    quickSearchSelectorProfileSelectListener(event) {
+    quickSearchSelectorProfileSelectListener: function(event) {
         if(!event.currentTarget.matches('.main-control-selector-options')) {
             throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
         } else if(!event.currentTarget.parentElement.matches('.main-control-selector-container')) {
@@ -6242,7 +6308,7 @@ const TradeofferWindow = {
         quickSearchShortcuts.selectorContext.dataset.id = '-1';
 
         let selectorContextSelectElem = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-select');
-        selectorContextSelectElem.textContent = '';
+        selectorContextSelectElem.textContent = 'Select app first';
         selectorContextSelectElem.dataset.id = '-1';
 
         let selectorAppSelectElem = quickSearchShortcuts.selectorApp.querySelector('.main-control-selector-select');
@@ -6313,7 +6379,7 @@ const TradeofferWindow = {
             throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): profile id is not user nor partner!?!?!';
         }
 
-        let newSelectorContextOptionsHTMLString = 'Select app first';
+        let newSelectorContextOptionsHTMLString = '';
         for(let contextid of contextOptions) {
             let contextInfo = contextsData[contextid];
             if(parseInt(contextid) === 0) {
@@ -6496,7 +6562,7 @@ const TradeofferWindow = {
             facetListElem.addEventListener('change', TradeofferWindow.quickSearchFacetTagSelectListener);
         }
     },
-    quickSearchFacetCategoryToggleListener(event) {
+    quickSearchFacetCategoryToggleListener: async function(event) {
         let { quickSearchData } = TradeofferWindow;
         let facetCategoryElem = event.target.closest('.facet-section');
         if(!facetCategoryElem) {
@@ -6515,9 +6581,9 @@ const TradeofferWindow = {
         }
         categoryFacet.open = !categoryFacet.open;
 
-        // save config
+        await TradeofferWindow.configSave();
     },
-    quickSearchFacetSearchCategoryInputListener(event) {
+    quickSearchFacetSearchCategoryInputListener: function(event) {
         // NOTE: May or may not need to change simple string comparisons into regex matching, or maybe split string matching
 
         let searchText = event.target.value.toLowerCase() ?? '';
@@ -6534,7 +6600,7 @@ const TradeofferWindow = {
             }
         }
     },
-    quickSearchFacetSearchInventoryInputListener(event) {
+    quickSearchFacetSearchInventoryInputListener: function(event) {
         let { quickSearchData } = TradeofferWindow;
 
         if(!quickSearchData.inventory) {
@@ -6551,7 +6617,7 @@ const TradeofferWindow = {
             TradeofferWindow.quickSearchApplyFilter();
         }
     },
-    quickSearchFacetTagSelectListener(event) {
+    quickSearchFacetTagSelectListener: async function(event) {
         let { quickSearchData } = TradeofferWindow;
 
         let facetEntryElem = event.target.closest('.facet-list-entry-container');
@@ -6592,7 +6658,7 @@ const TradeofferWindow = {
             TradeofferWindow.quickSearchApplyFilter();
         }
 
-        // save config
+        await TradeofferWindow.configSave();
     },
     quickSearchApplyFilter(filter) {
         // NOTE: May or may not need to change simple string comparisons into regex matching, or maybe split string matching
@@ -6675,24 +6741,29 @@ const TradeofferWindow = {
         if(quickSearchData.mode === 0) {
             let fgPage = quickSearchData.paging.pages.fg;
             let fgPageNum = parseInt(fgPage.dataset.page);
-            if(fgPageNum > inventory.pageCount) {
+            if(!Number.isInteger(fgPageNum)) {
+                fgPageNum = 1;
+            } if(fgPageNum > inventory.pageCount) {
                 fgPageNum = Math.max(1, inventory.pageCount);
             }
             TradeofferWindow.quickSearchDisplayPopulatePage(fgPage, fgPageNum);
             TradeofferWindow.quickSearchDisplayUpdatePageNavigationBar(fgPageNum);
         } else if(quickSearchData.mode === 1) {
             let pages = quickSearchData.scrolling.pages;
-            let pageOffset = 0;
-            for(let i=pages.length-1; i>=0; i--) {
-                let pageElem = pages[i];
-                let pageNum = parseInt(pageElem.dataset.page);
-                if(pageNum === 0) {
-                    continue;
-                } else if(pageNum > inventory.pageCount && pageOffset === 0) {
-                    pageOffset = pageNum - inventory.pageCount;
-                }
+            let currentPageNum = parseInt(quickSearchData.currentPage.dataset.page);
+            if(!Number.isInteger(currentPageNum) || currentPageNum < 1) {
+                currentPageNum = 1;
+            } else if(currentPageNum > inventory.pageCount) {
+                currentPageNum = Math.max(1, inventory.pageCount);
+            }
 
-                TradeofferWindow.quickSearchDisplayPopulatePage(pageElem, pageNum-pageOffset);
+            let pageOffset = Math.floor(quickSearchData.scrolling.pageCount/2);
+            quickSearchData.scrolling.observer.disconnect();
+            for(let i=0; i<pages.length; i++) {
+                TradeofferWindow.quickSearchDisplayPopulatePage(pages[i], i+currentPageNum-pageOffset);
+            }
+            for(let pageElem of quickSearchData.scrolling.pages) {
+                quickSearchData.scrolling.observer.observe(pageElem);
             }
         }
     },
@@ -6703,17 +6774,18 @@ const TradeofferWindow = {
         TradeofferWindow.quickSearchDisplaySetup();
     },
     quickSearchDisplaySetup: function() {
-        let { displayMode } = globalSettings.tradeofferConfig;
+        let { displayMode } = globalSettings.tradeoffer;
         if(displayMode === undefined) {
             TradeofferWindow.quickSearchDisplaySetupPaging();
+            // TradeofferWindow.quickSearchDisplaySetupScrolling();
         }
 
         let currentMode = TradeofferWindow.quickSearchData.mode;
         if(currentMode === undefined || displayMode !== currentMode) {
             if(displayMode === 0) {
-                TradeofferWindow.quickSearchSetupDisplayPaging();
+                TradeofferWindow.quickSearchDisplaySetupPaging();
             } else if(displayMode === 1) {
-                TradeofferWindow.quickSearchSetupDisplayScrolling();
+                TradeofferWindow.quickSearchDisplaySetupScrolling();
             }
         }
     },
@@ -6722,6 +6794,8 @@ const TradeofferWindow = {
         let { paging: pagingData, inventory: { pageCount: pageNumLast } } = quickSearchData;
 
         if(quickSearchData.mode === 0) {
+            TradeofferWindow.quickSearchDisplayPopulatePage(quickSearchData.paging.pages.fg, 1);
+            TradeofferWindow.quickSearchDisplayUpdatePageNavigationBar(1);
             return;
         }
 
@@ -6740,10 +6814,9 @@ const TradeofferWindow = {
         }
 
         quickSearchShortcuts.display.classList.add('paging');
-        let pageNumCurrent = quickSearchData.currentPage ? parseInt(quickSearchData.currentPage.dataset.page) : null;
-        if(pageNumCurrent !== null && (pageNumCurrent < 1 || pageNumCurrent > pageNumLast)) {
-            // reuse current page and set active
-            quickSearchShortcuts.pages.insertAdjacentElement('afterbegin', quickSearchData.currentPage);
+        if(quickSearchData.currentPage) {
+            TradeofferWindow.quickSearchDisplayPopulatePage(quickSearchData.currentPage, 1);
+            quickSearchShortcuts.pages.prepend(quickSearchData.currentPage);
             quickSearchData.currentPage.classList.add('active');
             pagingData.pages.fg = quickSearchData.currentPage;
         } else {
@@ -6765,9 +6838,24 @@ const TradeofferWindow = {
         quickSearchData.mode = 0;
     },
     quickSearchDisplaySetupScrolling: function() {
+        // WARNING: Need enough pages for scrolling intersection observer to work,
+        //          otherwise scrolling can get stuck, or rapid scrolling can occur.
+        // WARNING: Need enough root margin so that scrollbar doesnt reach either end,
+        //          which results in rapid scrolling to first/last page.
+        // WARNING: Need to disconnect observer and reconnect after when abruptly repopulating
+        //          pages since hiding pages might trigger an observer target
         let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
         let { scrolling: scrollData } = quickSearchData;
+        let startOffset = Math.floor(scrollData.pageCount/2);
+
         if(quickSearchData.mode === 1) {
+            scrollData.observer.disconnect();
+            for(let i=0; i<scrollData.pages.length; i++) {
+                TradeofferWindow.quickSearchDisplayPopulatePage(scrollData.pages[i], i+1-startOffset);
+            }
+            for(let pageElem of scrollData.pages) {
+                scrollData.observer.observe(pageElem);
+            }
             return;
         }
 
@@ -6787,7 +6875,7 @@ const TradeofferWindow = {
         quickSearchShortcuts.display.classList.add('scrolling');
         let pageNumCurrent = quickSearchData.currentPage ? parseInt(quickSearchData.currentPage.dataset.page) : null;
         let pagesHTMLString = '';
-        for(let i=(pageNumCurrent ?? 1)-scrollData.startOffset, end=i+scrollData.pageCount; i<end; i++) {
+        for(let i=(pageNumCurrent ?? 1)-startOffset, end=i+scrollData.pageCount; i<end; i++) {
             if(i === pageNumCurrent) {
                 pagesHTMLString += quickSearchData.currentPage.outerHTML;
             } else {
@@ -6797,12 +6885,12 @@ const TradeofferWindow = {
         quickSearchShortcuts.pages.insertAdjacentHTML('afterbegin', pagesHTMLString);
 
         let pageElemList = quickSearchShortcuts.pages.querySelectorAll('.inventory-page');
-        let pageHeight =  pageElemList[scrollData.startOffset].clientHeight;
+        let pageHeight =  pageElemList[startOffset].clientHeight;
         // let pageContainerHeight = quickSearchShortcuts.pages.clientHeight;
         // let observerMargin = (steamToolsUtils.clamp(pageContainerHeight+pageHeight, 1.5*pageHeight, (pageElemList.length-1)*pageHeight) - pageContainerHeight) / 2;
         let observerOptions = {
             root: quickSearchShortcuts.pages,
-            rootMargin: '100% 0%',
+            rootMargin: '120% 0%',
             threshold: 1.0
         };
         scrollData.observer = new IntersectionObserver(TradeofferWindow.quickSearchDisplayScrollLoadPage, observerOptions);
@@ -6811,20 +6899,21 @@ const TradeofferWindow = {
             scrollData.observer.observe(page);
             scrollData.pages.push(page);
         }
-        quickSearchData.currentPage = scrollData.pages[scrollData.startOffset];
+        quickSearchData.currentPage = scrollData.pages[startOffset];
 
         let currentPageNum = parseInt(quickSearchData.currentPage.dataset.page);
         if(currentPageNum > 2) {
-            quickSearchShortcuts.pages.scroll(scrollData.startOffset*pageHeight);
+            quickSearchShortcuts.pages.scroll(startOffset*pageHeight);
         }
 
         quickSearchData.mode = 1;
     },
     quickSearchDisplayScrollLoadPage: function(entries) {
-        entries.forEach((entry) => {
-            let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
-            let { pageCount, pages } = quickSearchData.scrolling;
+        let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
+        let { pageCount, pages } = quickSearchData.scrolling;
+        let pageHeightWithoutTop = quickSearchData.display.rows * (5.25+0.5);
 
+        entries.forEach((entry) => {
             if(quickSearchData.mode !== 1) {
                 return;
             } else if(!entry.isIntersecting) {
@@ -6848,6 +6937,11 @@ const TradeofferWindow = {
                 pages.push(pageElem);
                 quickSearchData.currentPage = quickSearchData.currentPage.nextElementSibling;
             }
+
+            // let pageMargin = Math.max(0, parseInt(pages[0].dataset.page)-1);
+            // quickSearchShortcuts.pages.style.paddingTop = pageMargin > 0
+            //   ? `${(pageMargin*pageHeightWithoutTop) + 0.5}rem`
+            //   : '0rem';
         });
     },
     quickSearchDisplayPaginateListener: function(event) {
@@ -7012,6 +7106,8 @@ const TradeofferWindow = {
             }
         }
 
+        TradeofferWindow.quickSearchDisplayPageReset(pageElem);
+
         let pageItemCount = quickSearchData.display.rows * quickSearchData.display.columns;
         let itemIndex = (pageNum-1) * pageItemCount;
         let lastIndex = Math.min(itemIndex+pageItemCount, inventory.dataListFiltered.length);
@@ -7071,8 +7167,25 @@ const TradeofferWindow = {
         itemElem.classList[ itemData.selected ? 'add' : 'remove' ]('selected');
         let imgElem = itemElem.querySelector('img');
         if(imgElem) {
-            imgElem.src = descript.icon_url ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f` : '';
+            imgElem.src = descript.icon_url
+              ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f`
+              : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        } else {
+            let newImgElem = new Image();
+            newImgElem.src = descript.icon_url
+              ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f`
+              : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+            itemElem.prepend(newImgElem);
         }
+    },
+    quickSearchDisplayPageReset: function(pageElem) {
+        let itemElemList = pageElem.querySelectorAll('.inventory-item-container');
+        for(let itemElem of itemElemList) {
+            delete itemElem.dataset.id;
+            itemElem.innerHTML = '';
+        }
+
+        delete pageElem.dataset.page;
     },
 
 
@@ -7233,7 +7346,7 @@ const TradeofferWindow = {
         };
         return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, selectorParams);
     },
-    generateContextSelectorHTMLString: function(userIsMe, appid, { id, disabled = false }) {
+    generateContextSelectorHTMLString: function(userIsMe, appid, { id, placeholderText, disabled = false }) {
         TradeofferWindow.getSelectorData();
 
         let { selectorData } = TradeofferWindow;
@@ -7250,7 +7363,15 @@ const TradeofferWindow = {
             }
         }
 
-        return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, { id: id, placeholderData: 0, placeholderText: '', width: 10, disabled: disabled });
+        let selectorParams = {
+            id: id,
+            placeholderData: -1,
+            placeholderText: placeholderText ?? '',
+            width: 11,
+            disabled: disabled
+        };
+
+        return TradeofferWindow.generateSelectorHTMLString(optionsHTMLString, selectorParams);
     },
     generateSelectorHTMLString: function(optionsHTMLString,
       { id, placeholderText = 'Select...', placeholderData = -1, placeholderImg, width, disabled } =
@@ -7371,7 +7492,7 @@ const TradeofferWindow = {
 
         if(!configFilterData) {
             filterData.categories.sort((a, b) => a.tags.length - b.tags.length);
-            globalSettings.tradeofferConfig.filter.apps.push(filterData);
+            globalSettings.tradeoffer.filter.apps.push(filterData);
             return filterData;
         }
 
@@ -7588,8 +7709,36 @@ const TradeofferWindow = {
         }
 
         return mergedInventory;
-    }
+    },
+
+
+
+
+
+    configSave: async function() {
+        await SteamToolsDbManager.setToolConfig('tradeoffer');
+    },
+    configLoad: async function() {
+        let config = await SteamToolsDbManager.getToolConfig('tradeoffer');
+        if(config.tradeoffer) {
+            globalSettings.tradeoffer = config.tradeoffer;
+            TradeofferWindow.filterLookupReset();
+            if(globalSettings.tradeoffer.filter.apps.length) {
+                TradeofferWindow.filterLookupUpdateApp(globalSettings.tradeoffer.filter.apps);
+            }
+        } else {
+            TradeofferWindow.configReset();
+        }
+    },
+    configReset: function() {
+        globalSettings.tradeoffer = TradeofferWindow.SETTINGSDEFAULTS;
+        TradeofferWindow.filterLookupReset();
+    },
 };
+
+
+
+
 
 const BadgepageFilter = {
     SETTINGSDEFAULTS: {
@@ -8157,6 +8306,10 @@ const BadgepageFilter = {
     }
 };
 
+
+
+
+
 TOOLS_MENU.push(...[
     { name: 'Main Page', href: 'https://steamcommunity.com/groups/tradingcards/discussions/2/3201493200068346848/', htmlString: undefined, entryFn: undefined },
     { name: 'Matcher', href: undefined, htmlString: undefined, entryFn: SteamItemMatcher.setup },
@@ -8219,6 +8372,10 @@ async function main() {
 }
 
 setTimeout(main, 0); // macrotask
+
+
+
+
 
 function addSvgBlock(elem) {
     const svgString = '<div class="userscript-svg-assets">'
@@ -8313,6 +8470,10 @@ function cssAddThrobber() {
       +    '<div class="throbber-bar"></div>'
       + '</div>';
 }
+
+
+
+
 
 
  const cssEnhanced = `.enhanced-section {
@@ -8556,6 +8717,10 @@ function cssAddThrobber() {
    flex-wrap: wrap;
    align-content: start;
 }`;
+
+
+
+
 
  const cssGlobal = `.userscript-svg-assets {
    width: 0;
@@ -9355,6 +9520,10 @@ input.userscript-input[type="range"] {
 }
 `;
 
+
+
+
+
  const cssMatcher = `.match-results {
    margin: 3rem;
    padding: 2rem;
@@ -9658,6 +9827,10 @@ input.userscript-input[type="range"] {
 .match-icon:hover {
    background: #54a5d4;
 }`;
+
+
+
+
 
  const cssTradeofferWindow = `.inventory_user_tabs > .inventory_user_tab {
     width: auto;
@@ -9967,6 +10140,10 @@ input.userscript-input[type="range"] {
     input.userscript-input[type="text"] {
         margin: 3px;
     }
+
+    &.loading .facet-section {
+        display: none;
+    }
 }
 
 .facet-section {
@@ -10131,10 +10308,14 @@ input.userscript-input[type="range"] {
         height: 100%;
         /* width: calc(var(--item-container-width) * 6 + var(--item-gap) * 7); */
         scrollbar-width: none;
+    }
 
-        &>*+* {
-            padding-top: 0;
-        }
+    .inventory-page.hidden {
+        display: none;
+    }
+
+    .inventory-page:not(.hidden) + .inventory-page {
+        padding-top: 0;
     }
 }
 
@@ -10262,3 +10443,7 @@ input.userscript-input[type="range"] {
 /**** Quick Search END ****/
 /**************************/
 `;
+
+
+
+
