@@ -1,0 +1,6 @@
+.badge_friendwithgamecard_actions img {
+    max-height: 16px;
+    min-width: 20px;
+    object-fit: contain;
+    vertical-align: text-top;
+}
