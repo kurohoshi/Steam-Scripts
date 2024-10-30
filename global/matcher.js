@@ -474,9 +474,9 @@ let Matcher = {
         }
 
         // figure out a good way to include game trade post params as a way to send trade offers
-        let generateTradeOfferCreateParams = async (profile1, profile2) => {
+        let generateTradeOfferCreateParams = async () => {
             // preliminary checks means profile2 is either friend or has trade token
-            return (await profile1.isFriend(profileid2))
+            return (await profile1.isFriend(profile2))
               ? {}
               : { trade_offer_access_token: profile2.tradeToken };
         }

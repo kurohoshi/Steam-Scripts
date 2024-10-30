@@ -279,9 +279,9 @@ class Profile {
        }
     }
 
-    static #mergeProfiles(id, url) {
-        // merge together profile instances that are duplicate due to obtaining id and url separately without each others other info
-    }
+    // static #mergeProfiles(id, url) {
+    //     // merge together profile instances that are duplicate due to obtaining id and url separately without each others other info
+    // }
 
     static async findMoreDataForProfile(profile) {
         if(!profile.id && !profile.url) {

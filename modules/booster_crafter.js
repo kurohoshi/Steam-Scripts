@@ -1303,7 +1303,7 @@ const BoosterCrafter = {
     openerListDecrementListener: function() {
         BoosterCrafter.openerListChangeValue(-1);
     },
-    openerListChangeValu: function(value) {
+    openerListChangeValue: function(value) {
         if(typeof value !== 'number') {
             return;
         }

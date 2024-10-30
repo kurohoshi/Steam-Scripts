@@ -88,7 +88,7 @@ o_file.write("\n// ==/UserScript==\n")
 
 # Add header comments
 for comment in config.get('metadata', {}).get('comments') or []:
-    o_file.write('\n// ' + comment)
+    o_file.write(f'\n// {comment}' if len(comment)>0 else '\n')
 o_file.write('\n' * 5)
 
 
@@ -130,4 +130,4 @@ for dir_entry in os.scandir('css'):
         for line in css_file:
             o_file.write(line)
         o_file.write('`;')
-        o_file.write('\n' * 5)
+        o_file.write('\n')
