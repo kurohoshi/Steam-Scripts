@@ -45,7 +45,22 @@ const TradeofferWindow = {
     INPUT_DELAY: 400, // ms
 
     shortcuts: {},
-    data: {},
+    data: {
+        inventories: {
+        /*    appid: {
+         *        contextid: {
+         *            full_load: boolean
+         *            data: {},
+         *            dataList: [],
+         *            currency: {},
+         *            descriptions: {}
+         *        },
+         *        ...
+         *    },
+         *    ...
+         */
+        }
+    },
 
     setup: async function() {
         // resize existing tabs
@@ -642,8 +657,11 @@ const TradeofferWindow = {
         },
         // inventory: {
         //     full_load: boolean
-        //     data: array,
+        //     data: object,
+        //     dataList: array,
         //     dataFiltered: array,
+        //     selectedItems: object,
+        //     disabledItems: object,
         //     pageCount: number,
         //     currency: array,
         //     descriptions: object,
@@ -827,8 +845,11 @@ const TradeofferWindow = {
             if(!asset) {
                 continue;
             }
-            asset.disabled = offerAssetsList.includes(asset.id);
-            asset.selected &&= !asset.disabled;
+
+            inventory.disabledItems[ offerAssetsList.includes(asset.id) ? 'add' : 'delete'](asset.id);
+            if(inventory.selectedItems.has(asset.id) && inventory.disabledItems.has(asset.id)) {
+                inventory.selectedItems.delete(asset.id);
+            }
         }
 
         // update inventory items in DOM
@@ -838,7 +859,7 @@ const TradeofferWindow = {
                 throw 'TradeofferWindow.quickSearchOfferItemsUpdate(): an item in DOM has no item data?!?!';
             }
 
-            if(itemData.disabled) {
+            if(inventory.disabledItems.has(itemData.id)) {
                 itemElem.classList.remove('selected');
                 itemElem.classList.add('disabled');
             } else {
@@ -901,6 +922,8 @@ const TradeofferWindow = {
             data: inventory.rgInventory,
             dataList: assetList,
             dataFiltered: [],
+            selectedItems: new Set(),
+            disabledItems: new Set(),
             pageCount: 0,
             currency: inventory.rgCurrency,
             descriptions: inventory.rgDescriptions
@@ -1017,10 +1040,6 @@ const TradeofferWindow = {
                         quickSearchData.filtersSelected++;
                     }
                 }
-
-                // flag current offer items
-                asset.disabled = offerItemList ? offerItemList.includes(asset.id) : false;
-                asset.selected = false;
             } else {
                 delete data.rgInventory[assetid];
                 excludedDescriptions.push(`${asset.classid}_${asset.instanceid}`);
@@ -1051,13 +1070,10 @@ const TradeofferWindow = {
             throw 'TradeofferWindow.quickSearchAddSelectedListener(): steam inventory is not loaded?!?!';
         }
 
-        for(let assetid in inventory.data) {
+        for(let assetid of inventory.selectedItems) {
             let asset = inventory.data[assetid];
-            if(!asset.selected) {
-                continue;
-            }
 
-            let steamAsset = steamInventory[asset.id];
+            let steamAsset = steamInventory[assetid];
             if(!steamAsset) {
                 console.error('TradeofferWindow.quickSearchAddSelectedListener(): steam asset not found?!?!');
                 continue;
@@ -1208,7 +1224,7 @@ const TradeofferWindow = {
 
             let itemData = inventory.data[itemElem.dataset.id];
             if(itemData) {
-                itemData.selected = !itemData.selected;
+                inventory.selectedItems[ inventory.selectedItems.has(itemData.id) ? 'delete' : 'add' ](itemData.id);
                 itemElem.classList.toggle('selected');
             }
         } else if(event.shiftKey) {
@@ -1245,22 +1261,22 @@ const TradeofferWindow = {
 
             for(let i=minIndex+1; i<maxIndex; i++) {
                 let itemData = inventory.data[itemElemList[i].dataset.id];
-                if(itemData?.disabled) {
+                if(itemData && inventory.disabledItems.has(itemData.id)) {
                     continue;
                 }
 
-                itemData.selected = true;
+                inventory.selectedItems.add(itemData.id);
                 itemElemList[i].classList.add('selected');
             }
             let itemData = inventory.data[itemElemList[currIndex].dataset.id];
-            if(!itemData?.disabled) {
-                itemData.selected = true;
+            if(!(itemData && inventory.disabledItems.has(itemData.id))) {
+                inventory.selectedItems.add(itemData.id);
                 itemElemList[currIndex].classList.add('selected');
             }
         } else if(event.ctrlKey) {
             let itemData = inventory.data[itemElem.dataset.id];
             if(itemData) {
-                itemData.selected = !itemData.selected;
+                inventory.selectedItems[ inventory.selectedItems.has(itemData.id) ? 'delete' : 'add' ](itemData.id);
                 itemElem.classList.toggle('selected');
             }
         }
@@ -1275,9 +1291,7 @@ const TradeofferWindow = {
             return;
         }
 
-        for(let assetid in inventory.data) {
-            inventory.data[assetid].selected = false;
-        }
+        inventory.selectedItems.clear();
 
         for(let itemElem of quickSearchShortcuts.pages.querySelectorAll('.selected')) {
             itemElem.classList.remove('selected');
@@ -1292,7 +1306,7 @@ const TradeofferWindow = {
         for(let itemElem of pageElem.querySelectorAll('.selected')) {
             let itemData = inventory.data[itemElem.dataset.id];
             if(itemData) {
-                itemData.selected = false;
+                inventory.selectedItems.delete(itemData.id);
             }
             itemElem.classList.remove('selected');
 
@@ -1876,7 +1890,9 @@ const TradeofferWindow = {
         let descript = inventory.descriptions[`${itemData.classid}_${itemData.instanceid}`];
 
         let imgUrl = descript.icon_url ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f` : '';
-        return `<div class="inventory-item-container${itemData.disabled ? ' disabled' : ''}${itemData.selected ? ' selected' : ''}" data-id="${itemData.id}">`
+        let classStringDisabled = inventory.disabledItems.has(itemData.id) ? ' disabled' : '';
+        let classStringSelected = inventory.selectedItems.has(itemData.id) ? ' selected' : '';
+        return `<div class="inventory-item-container${classStringDisabled}${classStringSelected}" data-id="${itemData.id}">`
           +     (imgUrl ? `<img src="${imgUrl}">` : descript.name)
           + '</div>';
     },
@@ -1955,8 +1971,8 @@ const TradeofferWindow = {
         let descript = inventory.descriptions[`${itemData.classid}_${itemData.instanceid}`];
 
         itemElem.dataset.id = itemData.id;
-        itemElem.classList[ itemData.disabled ? 'add' : 'remove' ]('disabled');
-        itemElem.classList[ itemData.selected ? 'add' : 'remove' ]('selected');
+        itemElem.classList[ inventory.disabledItems.has(itemData.id) ? 'add' : 'remove' ]('disabled');
+        itemElem.classList[ inventory.selectedItems.has(itemData.id) ? 'add' : 'remove' ]('selected');
         let imgElem = itemElem.querySelector('img');
         if(imgElem) {
             imgElem.src = descript.icon_url
