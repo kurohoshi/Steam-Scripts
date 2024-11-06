@@ -47,13 +47,16 @@ const TradeofferWindow = {
     shortcuts: {},
     data: {
         inventories: {
-        /*    appid: {
-         *        contextid: {
-         *            full_load: boolean
-         *            data: {},
-         *            dataList: [],
-         *            currency: {},
-         *            descriptions: {}
+        /*    profileid: {
+         *        appid: {
+         *            contextid: {
+         *                full_load: boolean
+         *                data: {},
+         *                dataList: [],
+         *                currency: {},
+         *                descriptions: {}
+         *            },
+         *            ...
          *        },
          *        ...
          *    },
@@ -897,7 +900,7 @@ const TradeofferWindow = {
             TradeofferWindow.quickSearchDisplayPageReset(pageElem);
         }
 
-        let inventory = await TradeofferWindow.getTradeInventoryFast2(profileid, appid, contextid, TradeofferWindow.quickSearchFilterInventoryBlock);
+        let inventory = await TradeofferWindow.getTradeInventory(profileid, appid, contextid, TradeofferWindow.quickSearchFilterInventoryBlock);
 
         // put items into an ordered array
         let assetList = [];
@@ -2334,7 +2337,34 @@ const TradeofferWindow = {
 
         return configFilterData;
     },
-    getTradeInventoryFast: function(profileid, appid, contextids, filterFn) {
+    getTradeInventory: function(profileid, appid, contextids, filterfn, forceRequest) {
+        let { inventories } = TradeofferWindow.data;
+        inventories[profileid] ??= {};
+        inventories[profileid][appid] ??= {};
+
+        if(typeof contextids === 'number' || typeof contextids === 'string') {
+            contextids = [String(contextids)];
+        } else if(!Array.isArray(contextids)) {
+            throw 'TradeofferWindow.getTradeInventoryFast(): invalid data type for contexts!';
+        }
+
+        let inventoryCollection = {};
+        return contextids.reduce((promise, contextid) => {
+            inventoryCollection[contextid] = inventories[profileid][appid][contextid];
+            if(!forceRequest && inventoryCollection[contextid] !== undefined) {
+                return promise;
+            }
+
+            return TradeofferWindow.requestTradeInventoryFast2(profileid, appid, contextid, filterfn)
+                .then(inventory => {
+                    inventories[profileid][appid][contextid] = inventory;
+                    inventoryCollection[contextid] = inventory;
+                });
+        }, Promise.resolve()).then(() => {
+            return contextids.length === 1 ? inventoryCollection[contextids[0]] : inventoryCollection;
+        });
+    },
+    requestTradeInventoryFast: function(profileid, appid, contextid, filterFn) {
         // Send requests in regular intervals in an attempt to shorten overall load time for multiple requests
         // Connection speed dependent: someone with a slower connect could accumulate many requests in progress
 
@@ -2368,10 +2398,8 @@ const TradeofferWindow = {
             });
         };
 
-        if(typeof contextids === 'number' || typeof contextids === 'string') {
-            contextids = [String(contextids)];
-        } else if(!Array.isArray(contextids)) {
-            throw 'TradeofferWindow.getTradeInventoryFast(): invalid data type for contexts!';
+        if(typeof contextid !== 'number' && typeof contextid !== 'string') {
+            throw 'TradeofferWindow.getTradeInventoryFast(): invalid data type for context!';
         }
 
         let promises = [];
@@ -2380,86 +2408,72 @@ const TradeofferWindow = {
         let url;
         let requestCount = 0;
 
-        for(let contextid of contextids) {
-            if(contextid === '0') {
-                continue;
+        if(steamToolsUtils.getMySteamId() === profileid) {
+            url = new URL(unsafeWindow.g_strInventoryLoadURL + `${appid}/${contextid}`
+              + '/?trading=1'
+            );
+            inventorySize = unsafeWindow.g_rgAppContextData[appid]?.rgContexts[contextid]?.asset_count;
+        } else {
+            url = new URL(unsafeWindow.g_strTradePartnerInventoryLoadURL
+              + '?sessionid=' + steamToolsUtils.getSessionId()
+              + '&partner=' + profileid
+              + '&appid=' + appid
+              + '&contextid=' + contextid
+            );
+            inventorySize = unsafeWindow.g_rgPartnerAppContextData[appid]?.rgContexts[contextid]?.asset_count;
+        }
+        inventorySize = parseInt(inventorySize);
+        if(!Number.isInteger(inventorySize)) {
+            throw `TradeofferWindow.getTradeInventoryFast(): invalid inventory size to be requested: ${inventorySize}`;
+        }
+
+        for(let i=0, pages=Math.ceil(inventorySize/2000); i<pages; i++, requestCount++) {
+            if(i !== 0) {
+                url.searchParams.set('start', i*2000);
             }
 
-            if(steamToolsUtils.getMySteamId() === profileid) {
-                url = new URL(unsafeWindow.g_strInventoryLoadURL + `${appid}/${contextid}`
-                  + '/?trading=1'
-                );
-                inventorySize = unsafeWindow.g_rgAppContextData[appid]?.rgContexts[contextid]?.asset_count;
-            } else {
-                url = new URL(unsafeWindow.g_strTradePartnerInventoryLoadURL
-                  + '?sessionid=' + steamToolsUtils.getSessionId()
-                  + '&partner=' + profileid
-                  + '&appid=' + appid
-                  + '&contextid=' + contextid
-                );
-                inventorySize = unsafeWindow.g_rgPartnerAppContextData[appid]?.rgContexts[contextid]?.asset_count;
-            }
-            inventorySize = parseInt(inventorySize);
-            if(!Number.isInteger(inventorySize)) {
-                throw `TradeofferWindow.getTradeInventoryFast(): invalid inventory size to be requested: ${inventorySize}`;
-            }
-
-            for(let i=0, pages=Math.ceil(inventorySize/2000); i<pages; i++, requestCount++) {
-                if(i !== 0) {
-                    url.searchParams.set('start', i*2000);
-                }
-
-                promises.push(delayedFetch(url.href, 250*requestCount, { profileid, appid, contextid }));
-            }
+            promises.push(delayedFetch(url.href, 250*requestCount, { profileid, appid, contextid }));
         }
 
         return Promise.all(promises).then(TradeofferWindow.mergeInventory);
     },
-    getTradeInventoryFast2: function(profileid, appid, contextids, filterFn) {
+    requestTradeInventoryFast2: function(profileid, appid, contextid, filterFn) {
         // Send requests with a maximum number of simultaneous requests at any time
         // Connection speed independent: throttled by number of requests in the task queue
 
-        if(typeof contextids === 'number' || typeof contextids === 'string') {
-            contextids = [String(contextids)];
-        } else if(!Array.isArray(contextids)) {
-            throw 'TradeofferWindow.getTradeInventoryFast(): invalid data type for contexts!';
+        if(typeof contextid !== 'number' && typeof contextid !== 'string') {
+            throw 'TradeofferWindow.getTradeInventoryFast(): invalid data type for context!';
         }
 
         let urlList = [];
         let inventorySize;
         let url;
 
-        for(let contextid of contextids) {
-            if(contextid === '0') {
-                continue;
+        if(steamToolsUtils.getMySteamId() === profileid) {
+            url = new URL(unsafeWindow.g_strInventoryLoadURL + `${appid}/${contextid}`
+                + '/?trading=1'
+            );
+            inventorySize = unsafeWindow.g_rgAppContextData[appid]?.rgContexts[contextid]?.asset_count;
+        } else {
+            url = new URL(unsafeWindow.g_strTradePartnerInventoryLoadURL
+                + '?sessionid=' + steamToolsUtils.getSessionId()
+                + '&partner=' + profileid
+                + '&appid=' + appid
+                + '&contextid=' + contextid
+            );
+            inventorySize = unsafeWindow.g_rgPartnerAppContextData[appid]?.rgContexts[contextid]?.asset_count;
+        }
+        inventorySize = parseInt(inventorySize);
+        if(!Number.isInteger(inventorySize)) {
+            throw `TradeofferWindow.getTradeInventoryFast2(): invalid inventory size to be requested: ${inventorySize}`;
+        }
+
+        for(let i=0, pages=Math.ceil(inventorySize/2000); i<pages; i++) {
+            if(i !== 0) {
+                url.searchParams.set('start', i*2000);
             }
 
-            if(steamToolsUtils.getMySteamId() === profileid) {
-                url = new URL(unsafeWindow.g_strInventoryLoadURL + `${appid}/${contextid}`
-                  + '/?trading=1'
-                );
-                inventorySize = unsafeWindow.g_rgAppContextData[appid]?.rgContexts[contextid]?.asset_count;
-            } else {
-                url = new URL(unsafeWindow.g_strTradePartnerInventoryLoadURL
-                  + '?sessionid=' + steamToolsUtils.getSessionId()
-                  + '&partner=' + profileid
-                  + '&appid=' + appid
-                  + '&contextid=' + contextid
-                );
-                inventorySize = unsafeWindow.g_rgPartnerAppContextData[appid]?.rgContexts[contextid]?.asset_count;
-            }
-            inventorySize = parseInt(inventorySize);
-            if(!Number.isInteger(inventorySize)) {
-                throw `TradeofferWindow.getTradeInventoryFast2(): invalid inventory size to be requested: ${inventorySize}`;
-            }
-
-            for(let i=0, pages=Math.ceil(inventorySize/2000); i<pages; i++) {
-                if(i !== 0) {
-                    url.searchParams.set('start', i*2000);
-                }
-
-                urlList.push({ url: url.href, optionalInfo: { profileid, appid, contextid } });
-            }
+            urlList.push({ url: url.href, optionalInfo: { profileid, appid, contextid } });
         }
 
         return steamToolsUtils.createFetchQueue(urlList, 3, filterFn).then(TradeofferWindow.mergeInventory);
