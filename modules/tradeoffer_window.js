@@ -654,8 +654,12 @@ const TradeofferWindow = {
     quickSearchData: {
         currentContext: { profile: null, app: null, context: null },
         offerItems: { // items already selected in offer
-            // appid: {
-            //     contextid: { you: [assetids], them: [assetids] }
+            // profileid: {
+            //     appid: {
+            //         contextid: {
+            //             assetid: number
+            //         }
+            //     }
             // }
         },
         // inventory: {
@@ -811,26 +815,20 @@ const TradeofferWindow = {
         // update disable state for currently rendered items
         let offerItems = {};
 
-        const addOfferItems = (offerItemElemList, isMe) => {
-            // go through loaded inventories to update their disabled state also
-            for(let offerItemElem of offerItemElemList) {
-                let itemData = offerItemElem.rgItem;
-                if(!itemData) {
-                    console.warn('TradeofferWindow.quickSearchOfferItemsUpdate(): item data not found on item elem??');
-                    console.log(offerItemElem);
-                    continue;
-                }
+        const addOfferItems = (offerItemList, isMe) => {
+            let profileid = TradeofferWindow.data[isMe ? 'me' : 'them'].id;
+            offerItems[profileid] ??= {};
 
-                offerItems[itemData.appid] ??= {
-                    [itemData.contextid]: { you: [], them: [] }
-                };
-                offerItems[itemData.appid][itemData.contextid] ??= { you: [], them: [] };
-                offerItems[itemData.appid][itemData.contextid][isMe ? 'you' : 'them'].push(itemData.id);
+            for(let offerData of offerItemList) {
+                offerItems[profileid][offerData.appid] ??= { [offerData.contextid]: { [offerData.assetid]: offerData.amount } };
+                offerItems[profileid][offerData.appid][offerData.contextid] ??= { [offerData.assetid]: offerData.amount };
+                offerItems[profileid][offerData.appid][offerData.contextid][offerData.assetid] = offerData.amount;
             }
         };
 
-        addOfferItems(document.getElementById('your_slots').querySelectorAll('.item'), true);
-        addOfferItems(document.getElementById('their_slots').querySelectorAll('.item'), false);
+        let tradeofferState = unsafeWindow.g_rgCurrentTradeStatus;
+        addOfferItems(tradeofferState.me.assets, true);
+        addOfferItems(tradeofferState.them.assets, false);
         TradeofferWindow.quickSearchData.offerItems = offerItems;
 
         let { quickSearchShortcuts, quickSearchData: { currentContext, inventory } } = TradeofferWindow;
@@ -838,20 +836,16 @@ const TradeofferWindow = {
             return;
         }
 
-        let offerAssetsList = offerItems[currentContext.app]?.[currentContext.context]?.[currentContext.profile === steamToolsUtils.getMySteamId() ? 'you' : 'them'];
+        let offerAssetsList = offerItems[currentContext.profile]?.[currentContext.app]?.[currentContext.context];
         if(!offerAssetsList) {
-            offerAssetsList = [];
+            offerAssetsList = {};
         }
 
         // update inventory data here
-        for(let asset of inventory.dataList) {
-            if(!asset) {
-                continue;
-            }
-
-            inventory.disabledItems[ offerAssetsList.includes(asset.id) ? 'add' : 'delete'](asset.id);
-            if(inventory.selectedItems.has(asset.id) && inventory.disabledItems.has(asset.id)) {
-                inventory.selectedItems.delete(asset.id);
+        for(let assetid in offerAssetsList) {
+            inventory.disabledItems[ offerAssetsList[assetid] ? 'add' : 'delete' ](assetid);
+            if(inventory.selectedItems.has(assetid) && inventory.disabledItems.has(assetid)) {
+                inventory.selectedItems.delete(assetid);
             }
         }
 
@@ -962,7 +956,6 @@ const TradeofferWindow = {
         }
         let { quickSearchData } = TradeofferWindow;
         let { facet: facetList } = quickSearchData;
-        let offerItemList = quickSearchData.offerItems?.[appid]?.[contextid]?.[steamToolsUtils.getMySteamId() === profileid ? 'you' : 'them'];
 
         let excludedDescriptions = [];
         for(let assetid in data.rgInventory) {
