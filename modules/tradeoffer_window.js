@@ -877,29 +877,12 @@ const TradeofferWindow = {
         }
 
         let inventory = await TradeofferWindow.getTradeInventoryFast2(profileid, appid, contextid, TradeofferWindow.quickSearchFilterInventoryBlock);
-
-        // put items into an ordered array
-        let assetList = [];
-        let nonpositionedAssets = [];
-        for(let assetid in inventory.rgInventory) {
-            let asset = inventory.rgInventory[assetid];
-            let assetIndex = parseInt(asset.pos);
-
-            if(!Number.isInteger(assetIndex)) {
-                nonpositionedAssets.push(asset);
-            }
-            if(assetList[asset.pos] === undefined) {
-                assetList[asset.pos] = asset;
-            } else {
-                nonpositionedAssets.push(asset);
-            }
-        }
-        assetList.concat(nonpositionedAssets);
+        let inventorySorted = INVENTORY_ITEM_PRIORITY.toSorted(appid, inventory.rgInventory, inventory.rgDescriptions);
 
         quickSearchData.inventory = {
             full_load: inventory.full_load,
             data: inventory.rgInventory,
-            dataList: assetList,
+            dataList: inventorySorted,
             dataFiltered: [],
             pageCount: 0,
             currency: inventory.rgCurrency,

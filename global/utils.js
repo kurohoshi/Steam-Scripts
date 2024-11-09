@@ -41,6 +41,9 @@ const steamToolsUtils = {
     clamp(num, min, max) {
         return Math.min(Math.max(num, min), max);
     },
+    bitLength(num) {
+        return num.toString(2).length;
+    },
     isOutdatedDays(epochTime, days) {
         return epochTime < Date.now()-days*24*60*60*1000;
     },
