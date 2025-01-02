@@ -1691,7 +1691,8 @@ const BoosterCrafter = {
     },
 
     parseCooldownDate: function(dateString) {
-        let [monthStr, dayStr, , time] = dateString.split(' ');
+        let dateStringArray = dateString.split(' ');
+        let { 0: monthStr, 1: dayStr, [dateStringArray.length-1]: time } = dateStringArray;
         let dateNow = new Date();
         let nextYear = dateNow.getMonth() === 11 && monthStr === 'Jan';
         let newTime = time.match(/\d+/g).map(x => parseInt(x));
