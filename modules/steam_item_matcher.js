@@ -174,6 +174,9 @@ const SteamItemMatcher = {
           +    cssAddOverlay(cssAddThrobber(), {initialState: 'loading'})
           + '</div>';
 
+        for(let imgElem of SteamItemMatcher.configShortcuts.MAIN_ELEM.querySelectorAll('img')) {
+            imgElem.src = '';
+        }
         SteamItemMatcher.configShortcuts.MAIN_ELEM.insertAdjacentHTML("beforeend", matcherConfigHTMLString);
 
         // element shortcuts
