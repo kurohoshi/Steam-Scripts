@@ -10,7 +10,7 @@
  *   1: alphabetical by tag name (depends on number of tagnames)
  *   2: alphabetical by localized name (depends on number of tagnames)
  *   3: custom tag priority (depends on number of custom tags listed)
- *   4: custom classid/instanceid priority list (should be a small list)
+ *   4: custom classid priority list (should be a small list)
  *
  * priority range:
  *   0: reserved for special cases (just in case)
@@ -29,8 +29,8 @@ const INVENTORY_ITEM_PRIORITY = {
                 { method: 1, category: 'droprate',   reverse: false },
             ],
             gems: [
-                { classid: '667924416', instanceid: '667076610', priority: 1 }, // Gems
-                { classid: '667933237', instanceid: '0',         priority: 2 }, // Sack of Gems
+                { classid: '667924416', priority: 1 }, // Gems
+                { classid: '667933237', priority: 2 }, // Sack of Gems
             ],
             item_class: {
                 item_class_2: 3, item_class_3: 4,
@@ -45,10 +45,10 @@ const INVENTORY_ITEM_PRIORITY = {
                 { method: 3, category: 'Rarity', reverse: true }
             ],
             currency: [
-                { classid: '101785959', instanceid: '11040578', priority: 1 }, // TF2 key
-                { classid: '2674',      instanceid: '11040547', priority: 2 }, // Refined Metal
-                { classid: '5564',      instanceid: '11040547', priority: 3 }, // Reclaimed Metal
-                { classid: '2675',      instanceid: '11040547', priority: 4 }, // Scrap Metal
+                { classid: '101785959', priority: 1 }, // TF2 key
+                { classid: '2674',      priority: 2 }, // Refined Metal
+                { classid: '5564',      priority: 3 }, // Reclaimed Metal
+                { classid: '2675',      priority: 4 }, // Scrap Metal
             ],
             Type: {
                 primary: 1, // primary weapons
@@ -70,13 +70,13 @@ const INVENTORY_ITEM_PRIORITY = {
             priority: [
                 { method: 3, category: 'Type',           reverse: false },
                 { method: 3, category: 'Weapon',         reverse: false },
+                { method: 3, category: 'Quality',        reverse: true },
                 { method: 3, category: 'Rarity',         reverse: true },
                 { method: 0, category: 'KeychainCapsule', reverse: true },
                 { method: 0, category: 'StickerCapsule',  reverse: true },
                 { method: 0, category: 'PatchCapsule',   reverse: true },
                 { method: 0, category: 'SprayCapsule',   reverse: true },
                 { method: 2, category: 'ItemSet',        reverse: false },
-                { method: 3, category: 'Quality',        reverse: true },
                 { method: 1, category: 'TournamentTeam', reverse: false },
                 { method: 1, category: 'SprayColorCategory', reverse: false },
             ],
@@ -144,8 +144,8 @@ const INVENTORY_ITEM_PRIORITY = {
         }
 
         if(INVENTORY_ITEM_PRIORITY.priorityCatalog[appid] === undefined) {
-            console.warn('INVENTORY_ITEM_PRIORITY.sort(): priority rules not set, returning unsorted inventory...');
-            return inventory;
+            console.warn('INVENTORY_ITEM_PRIORITY.sort(): priority rules not set, returning unsorted inventory as an array...');
+            return Array.isArray(inventory) ? inventory : Object.values(inventory);
         }
 
         let appPriorityData = INVENTORY_ITEM_PRIORITY.priorityCatalog[appid];
@@ -169,7 +169,6 @@ const INVENTORY_ITEM_PRIORITY = {
                 priorityCategory.maxPriority = 0;
                 for(let tagname in appPriorityData[priorityCategory.category]) {
                     let priorityNum = appPriorityData[priorityCategory.category][tagname];
-                    priorityCategory.priorityMap.set(tagname, priorityNum);
                     if(priorityNum > priorityCategory.maxPriority) {
                         priorityCategory.maxPriority = priorityNum;
                     }
@@ -178,7 +177,6 @@ const INVENTORY_ITEM_PRIORITY = {
                 priorityCategory.priorityMap = new Map();
                 priorityCategory.maxPriority = 0;
                 for(let entry of appPriorityData[priorityCategory.category]) {
-                    priorityCategory.priorityMap.set(`${entry.classid}_${entry.instanceid}`, entry.priority);
                     if(entry.priority > priorityCategory.maxPriority) {
                         priorityCategory.maxPriority = entry.priority;
                     }
@@ -223,6 +221,18 @@ const INVENTORY_ITEM_PRIORITY = {
                     priorityCategory.priorityMap.set(categoryList[i].name, (priorityCategory.reverse ? (len-i) : (i+1)) );
                 }
                 priorityCategory.maxPriority = categoryList.length + 1;
+            } else if(priorityCategory.method === 3) {
+                let max = priorityCategory.maxPriority;
+                for(let tagname in appPriorityData[priorityCategory.category]) {
+                    let priorityNum = appPriorityData[priorityCategory.category][tagname];
+                    priorityCategory.priorityMap.set(tagname, (priorityCategory.reverse ? (max-priorityNum) : priorityNum));
+                }
+            } else if(priorityCategory.method === 4) {
+                let max = priorityCategory.maxPriority;
+                for(let entry of appPriorityData[priorityCategory.category]) {
+                    let priorityNum = entry.priority;
+                    priorityCategory.priorityMap.set(entry.classid, (priorityCategory.reverse ? (max-priorityNum) : priorityNum));
+                }
             }
         }
 
