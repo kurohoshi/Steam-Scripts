@@ -125,7 +125,7 @@ const SteamToolsDbManager = {
             }
 
             let objStoreReq = this.db
-              .transaction([ObjStoreName], "readwrite")
+              .transaction([ObjStoreName], "readwrite", { durability: 'relaxed' })
               .objectStore(ObjStoreName)
               .put(data, key);
 
