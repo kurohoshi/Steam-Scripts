@@ -28,6 +28,19 @@ const steamToolsUtils = {
     getSteamLanguage() {
         return unsafeWindow.g_strLanguage;
     },
+    getCookie(name) {
+        // NOTE: Alternatively, can just use Steam's GetCookie() function
+        return document.cookie.match('(?:^|;\\s*)' + name + '=([^;]+)')?.[1];
+    },
+    setCookie(name, value, expiryInDays = 0, path = '/') {
+        // NOTE: Alternatively, can just use Steam's SetCookie() function
+        let expireDateUTCString = (new Date(Date.now() + (1000 * 60 * 60 * 24 * expiryInDays))).toUTCString();
+        document.cookie = `${name}=${value}; expires=${expireDateUTCString}; path=${path}`;
+    },
+    removeCookie(name, path) {
+        // NOTE: Setting expiry days to 0 effectively removes the cookie, value doesn't matter
+        steamToolsUtils.setCookie(name, '', 0, path);
+    },
     isSimplyObject(obj) {
         return typeof obj==='object' && !Array.isArray(obj) && obj!==null;
     },
@@ -41,6 +54,9 @@ const steamToolsUtils = {
     clamp(num, min, max) {
         return Math.min(Math.max(num, min), max);
     },
+    roundZero(num) {
+        return num<1e-10 && num>-1e-10 ? 0.0 : num;
+    },
     bitLength(num) {
         return num.toString(2).length;
     },
@@ -49,6 +65,17 @@ const steamToolsUtils = {
     },
     isOutdatedHours(epochTime, hours) {
         return epochTime < Date.now()-hours*60*60*1000;
+    },
+    createIterEntries(obj) {
+        const generator = function*(o) {
+            for(const key in o) {
+                if(Object.hasOwn(o, key)) {
+                    yield [key, o[key]];
+                }
+            }
+        }
+
+        return generator(obj);
     },
     generateExportDataElement(name, filename, data) {
         if(!data) {
