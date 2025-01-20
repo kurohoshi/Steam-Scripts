@@ -19,6 +19,7 @@
    --btn-bg-clr-red: linear-gradient( to bottom, #c03535 5%, #480505 95%);
    --btn-bg-clr-hvr-red: linear-gradient( to bottom, #ff5e5e 5%, #c20000 95%);
    --btn-clr-red: rgb(255, 181, 181);
+   --btn-clr-hvr-red: white;
    --scrollbar-bar-clr: #5e4391;
    --scrollbar-gutter-clr: #e0d4f7;
    --list-bg-clr-purple: #351a77;
@@ -102,7 +103,7 @@
 .userscript-overlay {
    display: none;
    background-color: rgba(0, 0, 0, 0.8);
-   border-radius: inherit;
+   /* border-radius: inherit;  DO NOT INHERIT BORDER RADIUS */
    position: absolute;
    top: 0;
    bottom: 0;
@@ -340,6 +341,9 @@ input.userscript-input[type="range"] {
 .userscript-bg-filtered.reload-2 {
    background-image: url("data:image/svg+xml, %3Csvg class='svg-reload-2' version='1.1' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cpath fill='none' stroke='currentColor' stroke-width='30' stroke-linecap='round' stroke-miterlimit='10' d='M229.809,147.639 c-9.178,47.863-51.27,84.027-101.809,84.027 c-57.253,0-103.667-46.412-103.667-103.666 S70.747,24.334,128,24.334 c34.107,0,64.368,16.472,83.261,41.895'%3E%3C/path%3E%3Cpolygon fill='currentColor' points='147.639,108.361 245.755,10.166 245.834,108.361'%3E%3C/polygon%3E%3C/svg%3E");
 }
+.userscript-bg-filtered.alt-arrows {
+   background-image: url("data:image/svg+xml, %3Csvg class='svg-alt-arrows' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 70 85'%3E%3Cpath fill='currentColor' d='M0,15 h45 l-5,-15 l30,20 l-30,20 l5,-15 h-45 z M70,60 h-45 l5,-15 l-30,20 l30,20 l-5,-15 h45 z'%3E%3C/path%3E%3C/svg%3E");
+}
 .userscript-bg-filtered.edit {
    background-image: url("https://community.akamai.steamstatic.com/public/images/skin_1/notification_icon_edit_dark.png?v=1");
    filter: url(#filter-green);
@@ -381,45 +385,91 @@ input.userscript-input[type="range"] {
 .userscript-btn:disabled {
    opacity: 0.45;
 }
-.userscript-btn.green:hover {
-   background: var(--btn-bg-clr-hvr-green);
-   color: var(--btn-clr-hvr-green);
-}
-.userscript-btn.green,
-.userscript-btn.green:active,
-.userscript-btn.green:disabled:hover {
+.userscript-btn.green {
    background: var(--btn-bg-clr-green);
    color: var(--btn-clr-green);
+
+   &:hover {
+      background: var(--btn-bg-clr-hvr-green);
+      color: var(--btn-clr-hvr-green);
+   }
+   &:active,
+   &:disabled:hover {
+      background: var(--btn-bg-clr-green);
+      color: var(--btn-clr-green);
+   }
 }
-.userscript-btn.blue:hover {
-   background: var(--btn-bg-clr-hvr-blue);
-   color: var(--btn-clr-hvr-blue);
-}
-.userscript-btn.blue,
-.userscript-btn.blue:active,
-.userscript-btn.blue:disabled:hover {
+.userscript-btn.blue {
    background: var(--btn-bg-clr-blue);
    color: var(--btn-clr-blue);
+
+   &:hover {
+      background: var(--btn-bg-clr-hvr-blue);
+      color: var(--btn-clr-hvr-blue);
+   }
+   &:active,
+   &:disabled:hover {
+      background: var(--btn-bg-clr-blue);
+      color: var(--btn-clr-blue);
+   }
 }
-.userscript-btn.purple:hover {
-   background: var(--btn-bg-clr-hvr-purple);
-   color: white;
-}
-.userscript-btn.purple,
-.userscript-btn.purple:active,
-.userscript-btn.purple:disabled:hover {
+.userscript-btn.purple {
    background: var(--btn-bg-clr-purple);
    color: var(--btn-clr-purple);
+
+   &:hover {
+      background: var(--btn-bg-clr-hvr-purple);
+      color: var(--btn-clr-hvr-purple);
+   }
+   &:active,
+   &:disabled:hover {
+      background: var(--btn-bg-clr-purple);
+      color: var(--btn-clr-purple);
+   }
 }
-.userscript-btn.red:hover {
-   background: var(--btn-bg-clr-hvr-red);
-   color: white;
-}
-.userscript-btn.red,
-.userscript-btn.red:active,
-.userscript-btn.red:disabled:hover {
+.userscript-btn.red {
    background: var(--btn-bg-clr-red);
    color: var(--btn-clr-red);
+
+   &:hover {
+      background: var(--btn-bg-clr-hvr-red);
+      color: var(--btn-clr-hvr-red);
+   }
+   &:active,
+   &:disabled:hover {
+      background: var(--btn-bg-clr-red);
+      color: var(--btn-clr-red);
+   }
+}
+.userscript-btn.trans-white {
+   background: rgba(0, 0, 0, 0);
+   color: #aaa;
+   border-color: #aaa;
+
+   &:hover {
+      color: #eee;
+      border-color: #eee;
+   }
+   &:active,
+   &:disabled:hover {
+      color: #aaa;
+      border-color: #aaa;
+   }
+}
+.userscript-btn.trans-black {
+   background: rgba(0, 0, 0, 0);
+   color: #666;
+   border-color: #666;
+
+   &:hover {
+      color: #222;
+      border-color: #222;
+   }
+   &:active,
+   &:disabled:hover {
+      color: #666;
+      border-color: #666;
+   }
 }
 .userscript-btn.wide {
    padding: 0.25rem 1rem;
