@@ -329,7 +329,7 @@ class Profile {
         }
 
         profiledata = doc.querySelector('.profile_header .playerAvatar');
-        profile.pfp = profiledata.querySelector('.playerAvatarAutoSizeInner > img').src.replace(/(https:\/\/avatars\.(cloudflare|akamai)\.steamstatic\.com\/)|(_full\.jpg)/g, '');
+        profile.pfp = profiledata.querySelector('.playerAvatarAutoSizeInner > img').src.replace(/(https:\/\/avatars\.[^.]+\.steamstatic\.com\/)|(_full\.jpg)/g, '');
         profile.state = profiledata.classList.contains("in-game")
           ? 2 : profiledata.classList.contains("online")
           ? 1 : profiledata.classList.contains("offline")
@@ -930,7 +930,7 @@ class Profile {
         let level = doc.querySelector('.badge_info_description :nth-child(2)')?.textContent.trim().match(/\d+/g)[0];
         if(level) {
             let badgeImg = doc.querySelector('.badge_icon')
-              ?.src.replace(/https:\/\/cdn\.(cloudflare|akamai)\.steamstatic\.com\/steamcommunity\/public\/images\/items\//, '')
+              ?.src.replace(/https:\/\/cdn\.[^.]+\.steamstatic\.com\/steamcommunity\/public\/images\/items\//, '')
               .replace(/^\d+\//, '').replace('.png', '');
             metadata.badges[foil?'foil':'normal'][level] = badgeImg;
         }
@@ -943,7 +943,7 @@ class Profile {
             metadata.cards[i] = {};
             metadata.cards[i].name = x.children[1].childNodes[x.children[1].childNodes.length-3].textContent.trim();
             metadata.cards[i][`img_card${rarity}`] = x.children[0].querySelector(".gamecard")
-              ?.src.replace(/https:\/\/community\.(cloudflare|akamai)\.steamstatic\.com\/economy\/image\//g, '');
+              ?.src.replace(/https:\/\/community\.[^.]+\.steamstatic\.com\/economy\/image\//g, '');
             let img_full = x.querySelector('.with_zoom');
             if(img_full) {
                 img_full = img_full.outerHTML.match(/onclick="[^"]+"/g)[0]

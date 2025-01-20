@@ -43,7 +43,7 @@ DataCollectors.scrapeProfileData = async function() {
     }
 
     profileData = document.querySelector('.profile_header .playerAvatar');
-    profile.pfp = profileData.querySelector('.playerAvatarAutoSizeInner > img').src.replace(/(https:\/\/avatars\.(cloudflare|akamai)\.steamstatic\.com\/)|(_full\.jpg)/g, '');
+    profile.pfp = profileData.querySelector('.playerAvatarAutoSizeInner > img').src.replace(/(https:\/\/avatars\.[^.]+\.steamstatic\.com\/)|(_full\.jpg)/g, '');
     profile.state = profileData.classList.contains("in-game")
       ? 2 : profileData.classList.contains("online")
       ? 1 : profileData.classList.contains("offline")
@@ -87,15 +87,16 @@ DataCollectors.scrapeBadgepage = async function() {
 
     let savedData = await SteamToolsDbManager.getAppDatas(appid);
     savedData = savedData[appid] ?? { appid: appid, name: null, badges: { normal: {}, foil: {} }, cards: [] };
+    savedData.name ??= document.querySelector('a.whiteLink:nth-child(5)').textContent;
+    savedData.badges ??= { normal: {}, foil: {} };
+    savedData.cards ??= [];
 
     let isFoil = window.location.search.includes("border=1");
-
-    savedData.name ??= document.querySelector('a.whiteLink:nth-child(5)').textContent;
 
     let level = document.querySelector('.badge_info_description :nth-child(2)')?.textContent.trim().match(/\d+/g)[0];
     if(level && !savedData.badges[isFoil?'foil':'normal'][level]) {
         let badgeImg = document.querySelector('.badge_icon');
-        badgeImg = badgeImg ? badgeImg.src.replace(/https:\/\/cdn\.(cloudflare|akamai)\.steamstatic\.com\/steamcommunity\/public\/images\/items\//, '') : undefined;
+        badgeImg = badgeImg ? badgeImg.src.replace(/https:\/\/cdn\.[^.]+\.steamstatic\.com\/steamcommunity\/public\/images\/items\//, '') : undefined;
         savedData.badges[isFoil?'foil':'normal'][level] = badgeImg.replace(/^\d+\//, '').replace('.png', '');
     }
 
@@ -105,13 +106,13 @@ DataCollectors.scrapeBadgepage = async function() {
         cardStock[index] = { count: parseInt(cardAmount) };
         savedData.cards[index] ??= {};
         savedData.cards[index].name = cardEntry.children[1].childNodes[cardEntry.children[1].childNodes.length-3].textContent.trim();
-        savedData.cards[index][`img_card${isFoil?1:0}`] ??= cardEntry.children[0].querySelector('.gamecard').src.replace(/https:\/\/community\.(cloudflare|akamai)\.steamstatic.com\/economy\/image\//g, '');
+        savedData.cards[index][`img_card${isFoil?1:0}`] ??= cardEntry.children[0].querySelector('.gamecard').src.replace(/https:\/\/community\.[^.]+\.steamstatic.com\/economy\/image\//g, '');
         if(!savedData.cards[index][`img_full${isFoil?1:0}`]) {
             let img_full = cardEntry.querySelector('.with_zoom');
             if(img_full) {
                 img_full = img_full.outerHTML.match(/onclick="[^"]+"/g)[0];
                 img_full = img_full.replaceAll('&quot;', '"');
-                img_full = img_full.match(/[^/]+(\.jpg)?/g)[0];
+                img_full = img_full.match(/[^/]+(\.jpg)/g)[0];
                 img_full = img_full.replace('.jpg', '');
                 savedData.cards[index][`img_full${isFoil?1:0}`] = img_full;
             }

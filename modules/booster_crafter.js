@@ -1469,7 +1469,7 @@ const BoosterCrafter = {
             }
 
             for(let cardData of responseData.rgItems) {
-                let imgUrl = cardData.image.replace(/https:\/\/community\.(akamai|cloudflare)\.steamstatic\.com\/economy\/image\//g, '');
+                let imgUrl = cardData.image.replace(/https:\/\/community\.[^.]+\.steamstatic\.com\/economy\/image\//g, '');
                 currentDropStats[appid][imgUrl] ??= { imgUrl: imgUrl, name: cardData.name, foil: cardData.foil, count: 0 };
                 currentDropStats[appid][imgUrl].count++;
                 dropStats[appid][imgUrl] ??= { imgUrl: imgUrl, name: cardData.name, foil: cardData.foil, count: 0 };
