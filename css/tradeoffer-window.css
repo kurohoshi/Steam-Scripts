@@ -278,6 +278,94 @@
 
 
 
+/**************************/
+/*** Offer Window START ***/
+/**************************/
+.userscript-trade-overlay-body[data-name="offerWindow"] > .offer-window-body {
+    display: grid;
+}
+
+.offer-window-body {
+    display: none;
+    height: 100%;
+    margin-bottom: 5rem;
+    padding: 0.5rem;
+    grid-template:
+        'offer-head  offer-head    offer-head' 7.5rem
+        'offer-list1 offer-actions offer-list2' 100% / minmax(0, 1fr) 2.5rem minmax(0, 1fr);
+    gap: 0.5rem;
+    justify-content: stretch;
+    align-items: stretch;
+}
+
+.offer-window-main-control {
+    grid-area: offer-head;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #0008;
+    color: #ccc;
+}
+
+.offer-window-comment-box {
+    background-color: #363636;
+    padding: 0.25rem;
+    border-radius: 3px;
+
+    textarea {
+        background-color: #1d1d1d;
+        padding: 0.25rem;
+        width: 25rem;
+        height: 4rem;
+        border-color: #4d4b48;
+        border-radius: inherit;
+        color: #909090;
+        resize: none;
+        outline: none;
+    }
+}
+
+#offer-window-itemlist-me {
+    grid-area: offer-list1;
+}
+#offer-window-itemlist-them {
+    grid-area: offer-list2;
+}
+
+.offer-window-actions {
+    grid-area: offer-actions;
+    margin-top: 3.75rem;
+    padding: 0.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-self: start;
+}
+
+.offer-window-action {
+    background: #0000;
+    color: #e6e6fa;
+    padding: 0.5rem;
+    border: 1px solid #8446c1;
+    border-radius: 0.25rem;
+    text-align: center;
+    user-select: none;
+    cursor: pointer;
+
+    &:hover {
+        background: #8446c1;
+    }
+    &:active {
+        background: #663399;
+        border-color: #663399;
+    }
+}
+/************************/
+/*** Offer Window END ***/
+/************************/
+
+
+
 /***********************/
 /*** Prefilter START ***/
 /***********************/
