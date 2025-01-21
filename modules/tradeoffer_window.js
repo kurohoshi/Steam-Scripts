@@ -2636,15 +2636,712 @@ const TradeofferWindow = {
 
 
     summaryShortcuts: {},
+    summaryData: {
+        offerSetData: {
+            // sets
+        },
+    },
 
     summarySetup: function() {
         console.log('Summary WIP');
 
+        let { shortcuts, data, summaryShortcuts } = TradeofferWindow;
+
         if (TradeofferWindow.summaryShortcuts.body !== undefined) {
+            TradeofferWindow.summaryReset();
             return;
         }
 
-        // generate prefilter body and attach to overlay body
+        const itemlistMeHTMLString = `<div id="offer-summary-itemlist-me" class="offer-itemlist offer-summary-itemlist" data-id="${data.me.id}">`
+          +     '<div class="itemlist-header">'
+          +         '<div class="userscript-icon-name-container">'
+          +             `<img src="${data.me.img}">`
+          +             data.me.name
+          +         '</div>'
+          +     '</div>'
+          +     '<div class="itemlist-list">'
+          +     '</div>'
+          + '</div>';
+        const itemlistThemHTMLString = `<div id="offer-summary-itemlist-them" class="offer-itemlist offer-summary-itemlist"data-id=" ${data.me.id}">`
+          +     '<div class="itemlist-header">'
+          +         '<div class="userscript-icon-name-container">'
+          +             `<img src="${data.them.img}">`
+          +             data.them.name
+          +         '</div>'
+          +     '</div>'
+          +     '<div class="itemlist-list">'
+          +     '</div>'
+          + '</div>';
+        const detailsHTMLString = '<div class="offer-summary-details-container">'
+          +     '<div class="offer-summary-details">'
+          +         '<div class="summary-details-header">'
+          +             '<span class="summary-details-title">Offer Items Analysis</span>'
+          +         '</div>'
+          +     '</div>'
+          + '</div>';
+        const summaryBodyHTMLString = '<div class="offer-summary-body">'
+          +     '<div class="offer-summary-main-control">'
+          +         '<div class="main-control-section">'
+          +             '<button id="offer-summary-decline" class="userscript-btn red">Decline</button>'
+          +         '</div>'
+          +         '<div class="main-control-section">'
+          +             '<div id="offer-summary-escrow-status" class="main-control-status">??</div>' // show trade status here, (escrow: yellow number, empty offer: red, valid offer/counter: green)
+          +             '<div id="offer-summary-empty-status" class="main-control-status">Offer is empty...</div>' // show trade status here, (valid offer/counter: green)
+          +         '</div>'
+          +         '<div class="main-control-section">'
+          +             '<button id="offer-summary-confirm" class="userscript-trade-action">???</button>' // accept or send
+          +         '</div>'
+          +     '</div>'
+          +     '<div class="offer-summary-message">'
+          +         '' // offer message
+          +     '</div>'
+          +     itemlistThemHTMLString
+          +     itemlistMeHTMLString
+          +     detailsHTMLString
+          + '</div>';
+
+        shortcuts.overlayBody.insertAdjacentHTML('beforeend', summaryBodyHTMLString);
+
+        summaryShortcuts.body = shortcuts.overlayBody.querySelector('& > .offer-summary-body');
+        summaryShortcuts.mainControl = summaryShortcuts.body.querySelector('.offer-summary-main-control');
+        summaryShortcuts.statusEscrow = document.getElementById('offer-summary-escrow-status');
+        summaryShortcuts.statusEmpty = document.getElementById('offer-summary-empty-status');
+        summaryShortcuts.message = summaryShortcuts.body.querySelector('.offer-summary-message');
+        summaryShortcuts.itemListMe = document.getElementById('offer-summary-itemlist-me');
+        summaryShortcuts.itemListThem = document.getElementById('offer-summary-itemlist-them');
+        summaryShortcuts.itemList = {
+            [data.me.id]: summaryShortcuts.itemListMe,
+            [data.them.id]: summaryShortcuts.itemListThem,
+        };
+        summaryShortcuts.details = summaryShortcuts.body.querySelector('.offer-summary-details');
+        summaryShortcuts.declineButton = document.getElementById('offer-summary-decline');
+        summaryShortcuts.confirmButton = document.getElementById('offer-summary-confirm');
+
+        if(data.offerId !== '0') {
+            summaryShortcuts.declineButton.addEventListener('click', TradeofferWindow.summaryDeclineOfferListener);
+        } else {
+            summaryShortcuts.declineButton.classList.add('hidden');
+            summaryShortcuts.confirmButton.textContent = 'Send';
+        }
+        summaryShortcuts.confirmButton.addEventListener('click', TradeofferWindow.summaryConfirmOfferListener);
+
+        TradeofferWindow.summaryReset();
+    },
+    summaryReset: function() {
+        let { data, offerShortcuts, offerData: { offer }, summaryShortcuts, summaryData } = TradeofferWindow;
+
+        summaryShortcuts.message.textContent = offerShortcuts.message.value;
+
+        let newOfferSetData = new Set();
+        const addOfferItemsToSetData = (isMe) => {
+            let profileid = data[isMe ? 'me' : 'them'].id;
+            newOfferSetData[profileid] = new Set();
+            for(let [classData, classid, contextid, appid] of TradeofferWindow.offerProfileDataIter(offer[profileid])) {
+                for(let assetData of classData.assets) {
+                    newOfferSetData[profileid].add(`${appid}_${contextid}_${assetData.assetid}_${assetData.amount}`);
+                }
+            }
+        };
+        addOfferItemsToSetData(true);
+        addOfferItemsToSetData(false);
+
+        if(summaryData.offerSetData[data.me.id]?.symmetricDifference(newOfferSetData[data.me.id]).size === 0
+          && summaryData.offerSetData[data.them.id]?.symmetricDifference(newOfferSetData[data.them.id]).size === 0) {
+            return;
+        }
+
+        summaryData.offerSetData = newOfferSetData;
+        let offerSetDataMe = summaryData.offerSetData[data.me.id];
+        let offerSetDataThem = summaryData.offerSetData[data.them.id];
+
+        if(data.offerId !== '0') {
+            if(data.tradeState === 1) {
+                summaryShortcuts.declineButton.classList.remove('hidden');
+                summaryShortcuts.confirmButton.textContent = 'Accept';
+            } else if(data.tradeState === 2) {
+                summaryShortcuts.declineButton.classList.add('hidden');
+                summaryShortcuts.confirmButton.textContent = 'Send';
+            }
+        }
+
+        let isEmptyOfferSets = !offerSetDataMe.size && !offerSetDataThem.size;
+        summaryShortcuts.confirmButton.classList[isEmptyOfferSets ? 'add' : 'remove']('hidden');
+
+        let escrowDays = Math.max(offerSetDataMe.size && data.me.escrowDays, offerSetDataThem.size && data.them.escrowDays);
+        summaryShortcuts.mainControl.classList[escrowDays || isEmptyOfferSets ? 'add' : 'remove']('warn');
+
+        summaryShortcuts.statusEmpty.classList[isEmptyOfferSets ? 'remove' : 'add']('hidden');
+        summaryShortcuts.statusEscrow.classList[!isEmptyOfferSets && escrowDays ? 'remove' : 'add']('hidden');
+        summaryShortcuts.statusEscrow.textContent = escrowDays;
+
+        TradeofferWindow.summaryItemlistRepopulate();
+
+        for(let detailsSectionElem of summaryShortcuts.details.querySelectorAll('& > .summary-details-section')) {
+            detailsSectionElem.remove();
+        }
+
+        // place buttons or triggers back on the page (but dont place them if no items of that inventory needed for analysis is present)
+
+        TradeofferWindow.summaryDetailsDisplayTotals();
+        TradeofferWindow.summaryDetailsDisplayUncommons();
+        TradeofferWindow.summaryDetailsDisplayCardStats();
+    },
+    summaryConfirmOfferListener: function() {
+        // send new offer (send counter offer is the same)
+        // execute accept request
+        let { data } = TradeofferWindow;
+
+        // toggle waiting animation of some sort on
+
+        if(data.tradeState === 0 || data.tradeState === 2) {
+            let payload = TradeofferWindow.summaryGenerateOfferPayload();
+
+            fetch('https://steamcommunity.com/tradeoffer/new/send', {
+                method: 'post',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams(payload)
+                // header details
+            }).then((response) => {
+                // toggle waiting animation off if success, remind user to confirm offer in authenticator
+            }).catch((error) => {
+                // change waiting animation into something else if failed
+            });
+        } else if(data.tradeState === 1) {
+            TradeofferWindow.summaryAcceptOffer();
+        }
+    },
+    summaryAcceptOffer: function() {
+        let { data } = TradeofferWindow;
+        if(data.tradeState !== 1) {
+            throw 'TradeofferWindow.summaryAceeptOffer(): Incorrect trade state detected, this function shouldn\'t have been executed!';
+        }
+
+        let payload = {
+            sessionid: steamToolsUtils.getSessionId(),
+            serverid: '1',
+            tradeofferid: data.offerId,
+            partner: data.them.id,
+            captcha: '', // not sure about this yet
+        };
+
+        fetch(`https://steamcommunity.com/tradeoffer/${data.offerId}/accept`, {
+            method: 'post',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams(payload)
+        }).then((response) => {
+            // should close the offer window
+        }).catch((error) => {
+
+        });
+    },
+    summaryDeclineOfferListener: function() {
+        let { data } = TradeofferWindow;
+        if(data.tradeState !== 1) {
+            throw 'TradeofferWindow.summaryDeclineOfferListener(): Incorrect trade state detected, this function shouldn\'t have been executed!';
+        }
+
+        // toggle waiting animation of some sort on
+
+        let payload = {
+            sessionid: steamToolsUtils.getSessionId()
+        }
+
+        fetch(`https://steamcommunity.com/tradeoffer/${data.offerId}/decline`, {
+            method: 'post',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams(payload)
+        }).then((response) => {
+            // should close the offer window
+        }).catch((error) => {
+
+        });
+    },
+    summaryGenerateOfferPayload: function() {
+        let { data, offerShortcuts, offerData: { offer } } = TradeofferWindow;
+
+        const generateOfferAssets = (offerDataProfile) => {
+            let assetList = [];
+            for(let [classData, classid, contextid, appid] of TradeofferWindow.offerProfileDataIter(offerDataProfile)) {
+                for(let assetData of classData.assets) {
+                    assetList.push({
+                        appid: appid,
+                        contextid: contextid,
+                        amount: assetData.amount,
+                        assetid: assetData.assetid
+                    });
+                }
+            }
+
+            // maybe currency here?
+
+            return {
+                assets: assetList,
+                currency: [],
+                ready: false
+            };
+        };
+
+        let message = offerShortcuts.message.value;
+        let offerCreateParams = unsafeWindow?.CTradeOfferStateManager.m_rgTradeOfferCreateParams;
+        if(!offerCreateParams) {
+            throw 'TradeofferWindow.offerGenerateOfferPayload(): CTradeOfferStateManager.m_rgTradeOfferCreateParams not found!';
+        }
+
+        let offerStatus = {
+            newversion: true,
+            version: 1,
+            me: generateOfferAssets(offer[data.me.id]),
+            them: generateOfferAssets(offer[data.them.id])
+        }
+
+        let offerPayload = {
+            sessionid: steamToolsUtils.getSessionId(),
+            serverid: '1',
+            partner: data.them.id,
+            tradeoffermessage: message,
+            json_tradeoffer: JSON.stringify(offerStatus),
+            captcha: '',
+            trade_offer_create_params: JSON.stringify(offerCreateParams)
+        };
+
+        if(data.tradeState === 2) {
+            offerPayload.tradeofferid_countered = data.offerId;
+        }
+
+        return offerPayload;
+    },
+
+    summaryItemlistRepopulate() {
+        const generateItemlistHTMLString = (profileid) => {
+            let offerProfileData = offer[profileid];
+            let inventoryData = data.inventories[profileid];
+
+            let itemlistHTMLString = '';
+            for(let [classData, classid, contextid, appid] of TradeofferWindow.offerProfileDataIter(offer[profileid])) {
+                let inventoryContextData = inventoryData[appid][contextid];
+                for(let assetData of classData.assets) {
+                    let descript = inventoryContextData.rgDescriptions[`${classid}_${assetData.instanceid}`];
+                    if(!descript) {
+                        throw 'TradeofferWindow.summaryItemlistRepopulate(): description not found for an asset!';
+                    }
+
+                    itemlistHTMLString += generateItemElemHTMLString({ appid: appid, contextid: contextid, assetid: assetData.assetid, amount: assetData.amount, img: descript.icon_url, name: descript.name });
+                }
+            }
+
+            return itemlistHTMLString;
+        };
+
+        const generateItemElemHTMLString = (assetData) => {
+
+            let imgUrl = assetData.img ? `https://community.akamai.steamstatic.com/economy/image/${assetData.img}/96fx96f` : '';
+            let amountAttr = assetData.amount > 1 ? ` data-amount="${assetData.amount}"` : '';
+            return `<div class="inventory-item-container" data-appid="${assetData.appid}" data-contextid="${assetData.contextid}" data-assetid="${assetData.assetid}"${amountAttr}>`
+              +     `<img src="${imgUrl}" alt="${assetData.name}" />`
+              + '</div>';
+        };
+
+        let { data, offerData: { offer }, summaryShortcuts } = TradeofferWindow;
+
+        summaryShortcuts.itemListMe.querySelector('.itemlist-list').innerHTML = generateItemlistHTMLString(data.me.id);
+        summaryShortcuts.itemListThem.querySelector('.itemlist-list').innerHTML = generateItemlistHTMLString(data.them.id);
+    },
+    summaryDetailsDisplayTotals() {
+    // Totals is calculated with number of different assets, not individual amounts
+        const calculateAppContextTotals = (offerProfileData, isMe) => {
+            let meOrPartnerKey = isMe ? 'me' : 'them';
+            for(let appid in offerProfileData) {
+                for(let contextid in offerProfileData[appid]) {
+                    appContextTotals[appid] ??= {};
+                    appContextTotals[appid][contextid] ??= { me: 0, them: 0 };
+
+                    let appContextTotal = 0;
+                    for(let classid in offerProfileData[appid][contextid]) {
+                        appContextTotal += offerProfileData[appid][contextid][classid].assets.length;
+                    }
+
+                    appContextTotals[appid][contextid][meOrPartnerKey] = appContextTotal;
+                }
+            }
+        }
+
+        let { data, offerData: { offer }, summaryShortcuts } = TradeofferWindow;
+
+        let appContextTotals = {};
+        calculateAppContextTotals(offer[data.me.id], true);
+        calculateAppContextTotals(offer[data.them.id], false);
+
+        let tableBodyHTMLString = '';
+        let sortedAppids = Object.keys(appContextTotals)
+          .map(x => parseInt(x))
+          .sort((a, b) => a-b);
+        for(let appid of sortedAppids) {
+            let appInfo = data.appInfo[appid];
+            let rowDataHTMLStrings = Object.keys(appContextTotals[appid])
+              .map(x => parseInt(x))
+              .sort((a, b) => a-b)
+              .map(contextid => {
+                let contextTotals = appContextTotals[appid][contextid];
+                let contextInfo = appInfo.contexts[contextid];
+                if(contextTotals.me === 0 && contextTotals.them === 0) {
+                    return '';
+                }
+
+                return `<td>${contextInfo.name}</td><td>${contextTotals.me}</td><td>${contextTotals.them}</td>`;
+              }).filter(x => x.length);
+
+            if(rowDataHTMLStrings.length === 0) {
+                continue;
+            }
+
+            rowDataHTMLStrings[0] = `<th scope="row" rowspan="${rowDataHTMLStrings.length}"><img src="${appInfo.icon}"></th>` + rowDataHTMLStrings[0];
+            tableBodyHTMLString += rowDataHTMLStrings.reduce((bodyStr, rowStr) => bodyStr + '<tr>' + rowStr + '</tr>', '');
+        }
+
+        let tableHTMLString = '<table class="details-section-totals">'
+          +     '<thead>'
+          +         '<tr>'
+          +             '<th class="title" colspan="4">App Item Totals</th>'
+          +         '</tr>'
+          +         '<tr>'
+          +             '<th scope="col">App</th>'
+          +             '<th scope="col">Context</th>'
+          +             '<th scope="col">Me</th>'
+          +             '<th scope="col">Them</th>'
+          +         '</tr>'
+          +     '</thead>'
+          +     '</tbody>'
+          +         tableBodyHTMLString
+          +     '</tbody>'
+          + '</table>';
+
+        let detailsSectionHTMLString = '<div class="summary-details-section">'
+          +     '<div class="details-section-body">'
+          +         tableHTMLString
+          +     '</div>'
+          + '</div>';
+
+        summaryShortcuts.details.querySelector('.summary-details-header').insertAdjacentHTML('afterend', detailsSectionHTMLString);
+    },
+    summaryDetailsDisplayUncommons: function() {
+        const findUncommonItems = (isMe) => {
+            let meOrPartnerKey = isMe ? 'me' : 'them';
+            let offerContextData = offer[data[meOrPartnerKey].id]['753']['6'];
+            let descriptions = data.inventories[data[isMe ? 'me' : 'them'].id]['753']['6'].rgDescriptions;
+            for(let classid in offerContextData) {
+                for(let assetEntry of offerContextData[classid].assets) {
+                    let descript = descriptions[`${classid}_${assetEntry.instanceid}`];
+                    let isCard = descript.tags?.some(x => x.category === 'item_class' && x.internal_name === 'item_class_2') ?? false;
+                    let isUncommon = isCard
+                        ? (descript.tags?.some(x => x.category === 'cardborder' && x.internal_name !== 'cardborder_0') ?? false)
+                        : (descript.tags?.some(x => x.category === 'droprate' && x.internal_name !== 'droprate_0') ?? false);
+
+                    if(!isUncommon) {
+                        continue;
+                    }
+
+                    let appName = descript.tags?.find(x => x.category === 'Game')?.name ?? '';
+                    let itemTypeName = descript.tags?.find(x => x.category === 'item_class')?.name ?? '';
+                    let rarityName = isCard
+                        ? (descript.tags?.find(x => x.category === 'cardborder')?.name ?? '')
+                        : (descript.tags?.find(x => x.category === 'droprate')?.name ?? '');
+
+                    // NOTE: track amount of rows needed to construct the table
+                    uncommonItems[appName] ??= {};
+                    uncommonItems[appName][itemTypeName] ??= { rowCount: { me: 0, them: 0 }, rarities: {} };
+                    uncommonItems[appName][itemTypeName].rarities[rarityName] ??= { rowCount: { me: 0, them: 0 }, assets: { me: {}, them: {} } };
+
+                    uncommonItems[appName][itemTypeName].rowCount[meOrPartnerKey] += 1;
+                    uncommonItems[appName][itemTypeName].rarities[rarityName].rowCount[meOrPartnerKey] += 1;
+                    uncommonItems[appName][itemTypeName].rarities[rarityName].assets[meOrPartnerKey][assetEntry.assetid] = { amount: assetEntry.amount, img: descript.icon_url, name: descript.name };
+                }
+            }
+        };
+
+        const customSortKeys = (list, ref) => {
+            return list.sort((a, b) => {
+                let valA = ref.indexOf(a);
+                if(valA === -1) {
+                    valA = ref.length;
+                }
+                let valB = ref.indexOf(b);
+                if(valB === -1) {
+                    valB = ref.length;
+                }
+                return valA - valB;
+            });
+        };
+
+        const generateItemElemHTMLString = (data) => {
+            let imgUrl = data.img ? `https://community.akamai.steamstatic.com/economy/image/${data.img}/96fx96f` : '';
+            let amountAttr = data.amount > 1 ? ` data-amount="${data.amount}"` : '';
+            return `<div class="inventory-item-container"${amountAttr}>`
+              +     `<img src="${imgUrl}" alt="${data.name}" />`
+              + '</div>';
+        };
+
+        let { data, offerData: { offer }, summaryShortcuts } = TradeofferWindow;
+
+        let uncommonItems = {};
+        if(offer[data.me.id]?.['753']?.['6']) {
+            findUncommonItems(true);
+        }
+        if(offer[data.them.id]?.['753']?.['6']) {
+            findUncommonItems(false);
+        }
+
+        let tableHTMLStrings = [];
+        let uncommonItemsAppNames = Object.keys(uncommonItems).sort();
+        let uncommonItemsItemList = ['Trading card', 'Background', 'Emoticon'];
+        let uncommonItemsRarityList = ['Foil', 'Rare', 'Uncommon'];
+        for(let appName of uncommonItemsAppNames) {
+            let uncommonItemsAppData = uncommonItems[appName];
+
+            let tableBodyHTMLString = '';
+            let uncommonItemsAppItemNames = customSortKeys(Object.keys(uncommonItems[appName]), uncommonItemsItemList);
+            for(let itemTypeName of uncommonItemsAppItemNames) {
+                let uncommonItemsItemTypeData = uncommonItemsAppData[itemTypeName];
+                let maxItemTypeRows = Math.max(uncommonItemsItemTypeData.rowCount.me, uncommonItemsItemTypeData.rowCount.them);
+
+                let tableRowHTMLStrings = [];
+                let uncommonItemsAppItemRarityNames = customSortKeys(Object.keys(uncommonItemsAppData[itemTypeName].rarities), uncommonItemsRarityList);
+                for(let rarityName of uncommonItemsAppItemRarityNames) {
+                    let uncommonItemsRarityData = uncommonItemsItemTypeData.rarities[rarityName];
+                    let maxRarityRows = Math.max(uncommonItemsRarityData.rowCount.me, uncommonItemsRarityData.rowCount.them);
+
+                    let tableRowHTMLStringsInner = [];
+                    let myAssets = Object.keys(uncommonItemsRarityData.assets.me);
+                    let theirAssets = Object.keys(uncommonItemsRarityData.assets.them);
+                    for(let i=0; i<maxRarityRows; i++) {
+                        let myItemHTMLString = '';
+                        if(myAssets[i]) {
+                            myItemHTMLString = generateItemElemHTMLString(uncommonItemsRarityData.assets.me[myAssets[i]]);
+                        }
+
+                        let theirItemHTMLString = '';
+                        if(theirAssets[i]) {
+                            theirItemHTMLString = generateItemElemHTMLString(uncommonItemsRarityData.assets.them[theirAssets[i]]);
+                        }
+
+                        tableRowHTMLStringsInner.push(`<td>${myItemHTMLString}</td><td>${theirItemHTMLString}</td>`);
+                    }
+                    tableRowHTMLStringsInner[0] = `<td scope="row" rowspan="${maxRarityRows}">${rarityName}</td>` + tableRowHTMLStringsInner[0];
+                    tableRowHTMLStrings.push(...tableRowHTMLStringsInner);
+                }
+                tableRowHTMLStrings[0] = `<td scope="row" rowspan="${maxItemTypeRows}">${itemTypeName}</td>` + tableRowHTMLStrings[0];
+                tableBodyHTMLString += tableRowHTMLStrings.reduce((bodyStr, rowStr) => bodyStr + '<tr>' + rowStr + '</tr>', '');
+            }
+
+            let tableHTMLString = '<table class="details-section-uncommons-stats">'
+              +     '<thead>'
+              +         '<tr>'
+              +             `<th class="title" colspan="4">${appName}</th>`
+              +         '</tr>'
+              +         '<tr>'
+              +             '<th scope="col">Item Type</th>'
+              +             '<th scope="col">Rarity</th>'
+              +             '<th scope="col">Me</th>'
+              +             '<th scope="col">Them</th>'
+              +         '</tr>'
+              +     '</thead>'
+              +     '</tbody>'
+              +         tableBodyHTMLString
+              +     '</tbody>'
+              + '</table>';
+
+            tableHTMLStrings.push(`<div class="details-section-uncommons">${tableHTMLString}</div>`);
+        }
+
+        let detailsSectionHTMLString = '<div class="summary-details-section">'
+          +     '<div class="details-section-header">'
+          +         '<span class="details-section-title">[Steam] Uncommon Items</span>'
+          +     '</div>'
+          +     '<div class="details-section-body">'
+          +         tableHTMLStrings.join('')
+          +     '</div>'
+          + '</div>';
+
+        summaryShortcuts.details.querySelector('.summary-details-header').insertAdjacentHTML('afterend', detailsSectionHTMLString);
+    },
+    summaryDetailsDisplayCardStats: async function() {
+    // NOTE: Total/Sets/Cards displays net gain/loss, NOT the amount on one side or another
+    // NOTE: Individual card count displays loose cards
+        const tallyCardItems = (isMe) => {
+            let meOrPartnerKey = isMe ? 'me' : 'them';
+            let offerContextData = offer[data[meOrPartnerKey].id]['753']['6'];
+            let descriptions = data.inventories[data[isMe ? 'me' : 'them'].id]['753']['6'].rgDescriptions;
+
+
+            for(let classid in offerContextData) {
+                for(let assetEntry of offerContextData[classid].assets) {
+                    let descript = descriptions[`${classid}_${assetEntry.instanceid}`];
+                    let isCard = descript.tags?.some(x => x.category === 'item_class' && x.internal_name === 'item_class_2') ?? false;
+                    if(!isCard) {
+                        continue;
+                    }
+
+                    let cardborder = descript.tags?.find(x => x.category === 'cardborder');
+                    if(!cardborder) {
+                        console.warn('TradeofferWindow.summaryDetailsDisplayCardStats(): Cardborder not found for card tag?!?!');
+                        continue;
+                    }
+                    cardborder = cardborder.internal_name.replace('cardborder_', '');
+
+                    cardData[cardborder][descript.market_fee_app] ??= [];
+                    let appFoilDataset = cardData[cardborder][descript.market_fee_app];
+
+                    let appFoilData = appFoilDataset.find(x => x.classid === descript.classid);
+                    if(!appFoilData) {
+                        appFoilData = {
+                            classid: classid,
+                            descript: descript,
+                            count: 0
+                        };
+                        appFoilDataset.push(appFoilData);
+                    }
+
+                    if(isMe) {
+                        appFoilData.count -= assetEntry.amount;
+                    } else {
+                        appFoilData.count += assetEntry.amount;
+                    }
+                }
+            }
+        };
+
+        const calcStdDevDiff = (stock, swap, inverseSwap) => {
+            if(stock.length !== swap.length) {
+                console.warn('TradeofferWindow.summaryDetailsDisplayCardStats(): Different lengths for stock and swap, unable to calculate Std Dev!');
+                return;
+            }
+            let avg = stock.reduce((a, b) => a + b.count, 0.0) / stock.length;
+            let stdDevStock = Math.sqrt((stock.reduce((a, b) => a + (b.count ** 2), 0.0) / stock.length) - (avg ** 2));
+
+            let avgSwapCallback, stdDevSwapCallback;
+            if(inverseSwap) {
+                avgSwapCallback = (a, b, i) => a + (b.count-swap[i]);
+                stdDevSwapCallback = (a, b, i) => a + ((b.count-swap[i]) ** 2);
+            } else {
+                avgSwapCallback = (a, b, i) => a + (b.count+swap[i]);
+                stdDevSwapCallback = (a, b, i) => a + ((b.count+swap[i]) ** 2);
+            }
+            let avgSwap = stock.reduce(avgSwapCallback, 0.0) / stock.length;
+            let stdDevSwap = Math.sqrt((stock.reduce(stdDevSwapCallback, 0.0) / stock.length) - (avgSwap ** 2));
+            return steamToolsUtils.roundZero(stdDevSwap - stdDevStock);
+        };
+
+        const getElemSignClassName = (num, inverse = false) => {
+            if(inverse) {
+                num = -num;
+            }
+            return num > 0
+              ? 'pos'
+              : num < 0
+                ? 'neg'
+                : 'neut';
+        };
+
+        let { data, offerData: { offer }, summaryShortcuts } = TradeofferWindow;
+
+        let cardData = [{}, {}];
+        if(offer[data.me.id]?.['753']?.['6']) {
+            tallyCardItems(true);
+        }
+        if(offer[data.them.id]?.['753']?.['6']) {
+            tallyCardItems(false);
+        }
+
+        let tableHTMLStrings = [];
+        let myProfile = await Profile.findProfile(data.me.id);
+        let theirProfile = await Profile.findProfile(data.them.id);
+        for(let [rarity, foilDataset] of Object.entries(cardData)) {
+            for(let appid in foilDataset) {
+                let appFoilDataset = foilDataset[appid];
+                let appData = await Profile.findAppMetaData(appid, { cards: true, foil: rarity === '1' });
+                if(!appData?.cards) {
+                    console.error('TradeofferWindow.summaryDetailsDisplayCardStats(): Cards info not found in meta data?!?!', appid);
+                    continue;
+                }
+
+                // calc total cards in offer
+                let totalCards = appFoilDataset.reduce((sum, entry) => sum+entry.count, 0);
+
+                // calc total sets in offer
+                let totalSets = 0;
+                if(appFoilDataset.length === appData.cards.length) {
+                    if(appFoilDataset.every(x => x.count < 0)) {
+                        totalSets = Math.max(...appFoilDataset.map(x => x.count))
+                    } else if(appFoilDataset.every(x => x.count > 0)) {
+                        totalSets = Math.min(...appFoilDataset.map(x => x.count))
+                    }
+                }
+
+                // sort card list
+                let cardCounts = appData.cards.map(cardData => {
+                    let appFoilData = appFoilDataset.find(x => x.descript?.icon_url === cardData[`img_card${rarity}`]);
+                    return appFoilData ? appFoilData.count : 0;
+                });
+
+                // calc std dev of both sides (scrape both badgepages)
+                let myStock = await myProfile.getBadgepageStock(appid, rarity === '1');
+                let theirStock = await theirProfile.getBadgepageStock(appid, rarity === '1');
+                let myStdDiff = calcStdDevDiff(myStock.data, cardCounts, false);
+                let theirStdDiff = calcStdDevDiff(theirStock.data, cardCounts, true);
+
+                // only loose cards
+                let tableCardCountsRowsHTMLStrings = cardCounts.reduce((html, count, i) => {
+                    html.cardNum += `<td>${i+1}</td>`;
+                    html.cardAmount += `<td class="${getElemSignClassName(count-totalSets)}">${Math.abs(count-totalSets).toLocaleString()}</td>`;
+                    return html;
+                }, { cardNum: '', cardAmount: '' });
+                tableCardCountsRowsHTMLStrings.cardNum += '<td></td>'.repeat(15-cardCounts.length);
+                tableCardCountsRowsHTMLStrings.cardAmount += '<td></td>'.repeat(15-cardCounts.length);
+
+                let tableHTMLString = '<table class="details-section-cards-stats">'
+                  +     '<thead>'
+                  +         '<tr>'
+                  +             `<th class="title" colspan="15">${rarity === '1' ? '★ ' : ''}${appData.name}</th>`
+                  +         '</tr>'
+                  +     '</thead>'
+                  +     '</tbody>'
+                  +         '<tr>'
+                  +             '<th class="row-name" colspan="2">Total</th>'
+                  +             `<td class="row-data ${getElemSignClassName(totalCards)}" colspan="2">${Math.abs(totalCards).toLocaleString()}</td>`
+                  +             '<th class="row-name" colspan="2">Sets</th>'
+                  +             `<td class="row-data ${getElemSignClassName(totalSets)}" colspan="2">${Math.abs(totalSets).toLocaleString()}</td>`
+                  +             '<th class="row-name" colspan="3">Progress</th>'
+                  +             `<td class="row-data ${getElemSignClassName(myStdDiff, true)}" colspan="2">${Math.abs(myStdDiff).toFixed(3).toLocaleString()}</td>`
+                  +             `<td class="row-data ${getElemSignClassName(theirStdDiff, true)}" colspan="2">${Math.abs(theirStdDiff).toFixed(3).toLocaleString()}</td>`
+                  +         '</tr>'
+                  +         '<tr class="card-numbers">'
+                  +             tableCardCountsRowsHTMLStrings.cardNum
+                  +         '</tr>'
+                  +         '<tr class="card-counts">'
+                  +             tableCardCountsRowsHTMLStrings.cardAmount
+                  +         '</tr>'
+                  +     '</tbody>'
+                  + '</table>';
+
+                tableHTMLStrings.push(`<div class="details-section-cards">${tableHTMLString}</div>`);
+            }
+        }
+
+        let detailsSectionHTMLString = '<div class="summary-details-section">'
+          +     '<div class="details-section-header">'
+          +         '<span class="details-section-title">[Steam] Cards</span>'
+          +     '</div>'
+          +     '<div class="details-section-body">'
+          +         tableHTMLStrings.join('')
+          +     '</div>'
+          + '</div>';
+
+        summaryShortcuts.details.querySelector('.summary-details-header').insertAdjacentHTML('afterend', detailsSectionHTMLString);
     },
 
 
