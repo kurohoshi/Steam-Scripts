@@ -1,9 +1,11 @@
 const TradeofferWindow = {
     SETTINGSDEFAULTS: {
         disabled: [], // disable any unwanted tabs here
+        selectors: {
+            // pLastSelected: string,
+            // qLastSelected: { profile, app, context } // strings
+        },
         filter: {
-            pLastSelected: null,
-            qLastSelected: null,
             apps: [
             /*     { // app
              *         id: string,
@@ -32,14 +34,32 @@ const TradeofferWindow = {
             ]
         },
         // displayMode: int // set by display setup for quick search
+        itemsSelectorCustomGroupEntries: [
+        /*    {
+         *        name: string,
+         *        items: [
+         *            { appid, contextid, classInstance, amount }
+         *            ...
+         *        ]
+         *    },
+         *    ...
+         */
+        ]
     },
 
+    QUICK_SEARCH_MODE_MAP: {
+        page: 0,    '0': 'page',
+        scroll: 1,  '1': 'scroll',
+    },
     FEATURE_LIST: {
-        prefilter: { title: 'Prefilter', tabContent: 'P', entry: 'prefilterSetup' },
-        quickSearch: { title: 'Quick Search', tabContent: 'Q', entry: 'quickSearchSetup' },
-        itemsSelector: { title: 'Items Selector', tabContent: 'I', entry: 'itemsSelectorSetup' },
-        message: { title: 'Message', tabContent: 'M', entry: 'messageSetup' },
-        summary: { title: 'Summary', tabContent: 'S', entry: 'summarySetup' },
+        offerWindow: { title: 'Offer Window', entry: 'offerSetup' },
+        offerSummary: { title: 'Offer Summary', entry: 'summarySetup' },
+        prefilter: { title: 'Prefilter', entry: 'prefilterSetup' },
+        quickSearch: { title: 'Quick Search', entry: 'quickSearchSetup' },
+        itemsSelector: { title: 'Items Selector', entry: 'itemsSelectorSetup' },
+        itemClassPicker: { title: 'Item Class Options', entry: 'itemClassPickerSetup' },
+        message: { title: 'Saved Offer Messages', entry: 'messageSetup' },
+        history: { title: 'Trade History', entry: 'historySetup' },
     },
     MIN_TAG_SEARCH: 20,
     INPUT_DELAY: 400, // ms
@@ -51,10 +71,9 @@ const TradeofferWindow = {
          *        appid: {
          *            contextid: {
          *                full_load: boolean
-         *                data: {},
-         *                dataList: [],
-         *                currency: {},
-         *                descriptions: {}
+         *                rgInventory: {},
+         *                rgCurrency: {},
+         *                rgDescriptions: {}
          *            },
          *            ...
          *        },
@@ -62,10 +81,41 @@ const TradeofferWindow = {
          *    },
          *    ...
          */
-        }
+        },
+        descriptionClassAssets: {
+        /*    profileid: {
+         *        appid: {
+         *            contextid: {
+         *                classid: {
+         *                    count: number
+         *                    assets: [
+         *                        { assetid, instanceid, amount },
+         *                        ...
+         *                    ],
+         *                    instanceCounts: {
+         *                        instanceid: number,
+         *                        ...
+         *                    },
+         *                },
+         *                ...
+         *            },
+         *            ...
+         *        },
+         *        ...
+         *    },
+         *   ...
+         */
+        },
+        offerId: null,
+        offerMessage: '',
+        offerItems: new Set(),
+        // states: 0: new offer, 1: existing offer (unchanged), 2: counteroffer
+        tradeState: 0,
+        appInfo: {}
     },
 
     setup: async function() {
+        let { shortcuts, data } = TradeofferWindow;
         // resize existing tabs
         let tabsContainerElem = document.querySelector('.inventory_user_tabs');
         let userTabElem = tabsContainerElem.querySelector('#inventory_select_your_inventory');
@@ -83,93 +133,132 @@ const TradeofferWindow = {
         }
 
         // Add CSS Styles
+        GM_addStyle(cssGlobal);
         GM_addStyle(cssTradeofferWindow);
 
         // load config
         await TradeofferWindow.configLoad();
 
-        // set up overlay
-        const overlayHTMLString = '<div class="userscript-trade-overlay">'
+        addSvgBlock(document.querySelector('.trade_area'));
+
+        // Get and organize appInfo
+        const extractAppInfo = (appContextData) => {
+            for(let appid in appContextData) {
+                let appData = appContextData[appid];
+                data.appInfo[appid] ??= {
+                    id: appData.appid,
+                    icon: appData.icon,
+                    logo: appData.inventory_logo,
+                    link: appData.link,
+                    name: appData.name,
+                    contexts: {}
+                };
+
+                for(let contextid in appData.rgContexts) {
+                    let contextData = appData.rgContexts[contextid];
+                    data.appInfo[appid].contexts[contextid] ??= {
+                        id: contextData.id,
+                        name: contextData.name
+                    };
+                }
+            }
+        }
+        extractAppInfo(unsafeWindow.g_rgAppContextData);
+        extractAppInfo(unsafeWindow.g_rgPartnerAppContextData);
+
+        // Get names, ids, urls for both parties in the trade offer window
+        // NOTE: Since we don't have direct access to user's own name, we resort to extracting it out of the hidden escrow message
+        Object.assign(data, { me: {}, them: {} });
+        let partnerName = data.them.name = document.getElementById('trade_theirs').querySelector('.offerheader h2 > a').textContent;
+        let partnerEscrowMessage = document.getElementById('trade_escrow_for_them').textContent;
+        let userEscrowMessage = document.getElementById('trade_escrow_for_me').textContent;
+        data.me.name = userEscrowMessage.slice(partnerEscrowMessage.indexOf(partnerName), partnerEscrowMessage.indexOf(partnerName) + partnerName.length - partnerEscrowMessage.length);
+
+        data.them.id = unsafeWindow.UserThem.strSteamId
+        data.them.url = unsafeWindow.UserThem.strProfileURL;
+        data.them.img = document.getElementById('trade_theirs').querySelector('.avatarIcon img').src;
+        data.them.escrowDays = unsafeWindow.g_daysTheirEscrow;
+        data.me.id = unsafeWindow.UserYou.strSteamId;
+        data.me.url = unsafeWindow.UserYou.strProfileURL;
+        data.me.img = document.getElementById('trade_yours').querySelector('.avatarIcon img').src;
+        data.me.escrowDays = unsafeWindow.g_daysMyEscrow;
+
+        // Check trade state
+        let offerParamsArr = document.body.innerHTML.match(/BeginTradeOffer\([^)]+\)/g)[0].split(' ');
+        data.offerId = offerParamsArr[1].match(/\d+/)[0];
+        if(data.offerId !== '0') {
+            data.tradeState = 1;
+            // TODO: figure out how to determine an empty mssg vs a "<none>" message????
+            // data.offerMessage = document.getElementById('tradeoffer_includedmessage').querySelector('.included_trade_offer_note')..trim()
+            for(let assetData of unsafeWindow.g_rgCurrentTradeStatus.me.assets) {
+                data.offerItems.add(`${data.me.id}_${assetData.appid}_${assetData.contextid}_${assetData.assetid}_${assetData.amount}`);
+            }
+            for(let assetData of unsafeWindow.g_rgCurrentTradeStatus.them.assets) {
+                data.offerItems.add(`${data.them.id}_${assetData.appid}_${assetData.contextid}_${assetData.assetid}_${assetData.amount}`);
+            }
+        }
+
+        // add app entries into filter
+        await TradeofferWindow.addAppFilterApps();
+
+        let cookieValue = steamToolsUtils.getCookie('strTradeLastInventoryContext');
+
+        // Add tab to the user_tabs section and attach event listeners
+        let userTabHTMLString = `<div class="inventory_user_tab userscript-tab" data-name="advanced-options">`
+          +     '<div>Advanced</div>'
+          + '</div>'
+          + `<div class="inventory_user_tab userscript-tab" data-name="remove-last-inv-cookie">`
+          +     `<div id="inventory-cookie-removal-status">${cookieValue ? '🔴' : '🟢'}</div>`
+          + '</div>';
+
+        // tabsContainerElem.querySelector('[style="clear: both;"]')
+        tabsContainerElem.querySelector('.inventory_user_tab_gap')
+            .insertAdjacentHTML('beforebegin', userTabHTMLString);
+
+        shortcuts.userSelectTabs = tabsContainerElem;
+        shortcuts.overlayContainer = document.querySelector('.trade_area');
+
+        tabsContainerElem.querySelector('[data-name="advanced-options"]').addEventListener('click', TradeofferWindow.overlayOpenListener);
+        if(cookieValue) {
+            tabsContainerElem.querySelector('[data-name="remove-last-inv-cookie"]').addEventListener('click', TradeofferWindow.removeLastTradeInventoryCookieListener);
+        }
+
+        // Add overlay to the DOM and attach event listeners
+        const overlayHTMLString = '<div class="userscript-trade-overlay userscript-vars">'
           +     '<div class="userscript-trade-overlay-header">'
-                  // the title will be changed when a feature setup is triggered
           +         '<span class="userscript-trade-overlay-title">?????</span>'
           +     '</div>'
           +     '<div class="userscript-trade-overlay-close">'
           +     '</div>'
           +     '<div class="userscript-trade-overlay-body">'
           +         '' // the body will be generated on each feature setup
-          +     '</div>'
-          + '</div>';
+          +     '</div>';
 
-        let tradeAreaElem = document.querySelector('.trade_area');
-        tradeAreaElem.insertAdjacentHTML('beforeend', overlayHTMLString);
+        shortcuts.overlayContainer.insertAdjacentHTML('beforeend', overlayHTMLString);
 
-        // Get names, ids, urls for both parties in the trade offer window
-        // NOTE: Since we don't have immediate access to user's own name, we resort to extracting it out of the hidden escrow message
-        Object.assign(TradeofferWindow.data, { me: {}, them: {} });
-        let partnerName = TradeofferWindow.data.them.name = document.getElementById('trade_theirs').querySelector('.offerheader h2 > a').textContent;
-        let partnerEscrowMessage = document.getElementById('trade_escrow_for_them').textContent;
-        let userEscrowMessage = document.getElementById('trade_escrow_for_me').textContent;
-        TradeofferWindow.data.me.name = userEscrowMessage.slice(partnerEscrowMessage.indexOf(partnerName), partnerEscrowMessage.indexOf(partnerName) + partnerName.length - partnerEscrowMessage.length);
+        shortcuts.overlay = shortcuts.overlayContainer.querySelector('& > .userscript-trade-overlay');
+        shortcuts.overlayTitle = shortcuts.overlay.querySelector('.userscript-trade-overlay-title');
+        shortcuts.overlayBody = shortcuts.overlay.querySelector('.userscript-trade-overlay-body');
 
-        TradeofferWindow.data.them.id = unsafeWindow.UserThem.strSteamId;
-        TradeofferWindow.data.them.url = unsafeWindow.UserThem.strProfileURL;
-        TradeofferWindow.data.them.img = document.getElementById('trade_theirs').querySelector('.avatarIcon img').src;
-        TradeofferWindow.data.me.id = unsafeWindow.UserYou.strSteamId;
-        TradeofferWindow.data.me.url = unsafeWindow.UserYou.strProfileURL;
-        TradeofferWindow.data.me.img = document.getElementById('trade_yours').querySelector('.avatarIcon img').src;
-
-        // add app entries into filter
-        await TradeofferWindow.addAppFilterApps();
-
-        // Add tabs to the user_tabs section
-        const generateUserTabHTMLString = (featureName, featureData) => {
-            return `<div class="inventory_user_tab userscript-tab" data-name=${featureName}>`
-              +     '<div>'
-              +         featureData.tabContent
-              +     '</div>'
-              + '</div>';
-        };
-        let newTabsHTMLString = '';
-        for(let tabName in TradeofferWindow.FEATURE_LIST) {
-            if(!globalSettings.tradeoffer.disabled.includes(tabName)) {
-                newTabsHTMLString += generateUserTabHTMLString(tabName, TradeofferWindow.FEATURE_LIST[tabName]);
-            }
-        }
-
-        // tabsContainerElem.querySelector('[style="clear: both;"]')
-        tabsContainerElem.querySelector('.inventory_user_tab_gap')
-            .insertAdjacentHTML('beforebegin', newTabsHTMLString);
-
-        TradeofferWindow.shortcuts.userSelectTabs = tabsContainerElem;
-        TradeofferWindow.shortcuts.overlay = tradeAreaElem.querySelector('.userscript-trade-overlay');
-        TradeofferWindow.shortcuts.overlayTitle = tradeAreaElem.querySelector('.userscript-trade-overlay-title');
-        TradeofferWindow.shortcuts.overlayBody = tradeAreaElem.querySelector('.userscript-trade-overlay-body');
-
-        tabsContainerElem.addEventListener('click', TradeofferWindow.selectCustomTabListener);
-        TradeofferWindow.shortcuts.overlay.querySelector('.userscript-trade-overlay-close').addEventListener('click', TradeofferWindow.overlayCloseListener);
+        shortcuts.overlay.querySelector('.userscript-trade-overlay-close').addEventListener('click', TradeofferWindow.overlayCloseListener);
     },
-    selectCustomTabListener: function(event) {
-        let tabElem = event.target;
-        while(!tabElem.matches('.inventory_user_tab')) {
-            if(tabElem.matches('.inventory_user_tabs')) {
-                console.error('TradeofferWindow.selectCustomTabListener(): No tab element found!');
-                return;
-            }
-            tabElem = tabElem.parentElement;
+    removeLastTradeInventoryCookieListener: function() {
+        let activeInventory = unsafeWindow.g_ActiveInventory;
+        if(!activeInventory) {
+            return;
         }
 
-        let tabData = TradeofferWindow.FEATURE_LIST[tabElem.dataset.name];
-        if (!tabData || (typeof TradeofferWindow[tabData.entry] !== 'function')) {
-            throw 'TradeofferWindow.selectCustomTabListener(): Invalid function name! Was something set up incorrectly?';
+        // document.cookie = 'strTradeLastInventoryContext=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/tradeoffer/';
+        steamToolsUtils.removeCookie('strTradeLastInventoryContext', '/tradeoffer/');
+
+        if(activeInventory.owner.cLoadsInFlight > 0) {
+            // inventory is currently loading, try deleting cookie again
+            setTimeout(TradeofferWindow.removeLastTradeInventoryCookieListener, 1000);
+        } else {
+            document.getElementById('inventory-cookie-removal-status').textContent = '🟢';
+            TradeofferWindow.shortcuts.tabsContainerElem.querySelector('[data-name="remove-last-inv-cookie"]')
+                .removeEventListener('click', TradeofferWindow.removeLastTradeInventoryCookieListener);
         }
-
-        TradeofferWindow.shortcuts.overlayTitle.textContent = tabData.title;
-
-        TradeofferWindow[tabData.entry]();
-
-        TradeofferWindow.shortcuts.overlayBody.dataset.name = tabElem.dataset.name;
-        TradeofferWindow.shortcuts.overlay.parentElement.classList.add('overlay');
     },
     addAppFilterApps: async function() {
         let filterData = globalSettings.tradeoffer.filter;
@@ -311,20 +400,543 @@ const TradeofferWindow = {
 
         return data.data;
     },
-
-
-
-
-
     overlayCloseListener: function() {
-        TradeofferWindow.shortcuts.overlay.parentElement.classList.remove('overlay');
-    },
-    selectorMenuToggleListener: function(event) {
-        if(!event.currentTarget.matches('.main-control-selector-container')) {
-            throw 'TradeofferWindow.selectorMenuToggle(): Not attached to selector container!';
+        let { shortcuts } = TradeofferWindow;
+
+        if(!shortcuts.overlayContainer.classList.contains('overlay')) {
+            shortcuts.overlayContainer.classList.add('overlay');
         }
 
-        event.currentTarget.classList.toggle('active');
+        let activeOverlayBody = shortcuts.overlayBody.dataset.name;
+        if(activeOverlayBody === 'offerWindow') {
+            shortcuts.overlayContainer.classList.remove('overlay');
+        } else {
+            TradeofferWindow.overlayBodyToggle('offerWindow');
+        }
+    },
+    overlayOpenListener: function() {
+        TradeofferWindow.overlayBodyToggle('offerWindow');
+    },
+    overlayBodyToggleListener: function(event) {
+        let { shortcuts } = TradeofferWindow;
+        let toggleElem = event.target.closest('.overlay-toggle');
+        if(toggleElem === null) {
+            throw 'TradeofferWindow.overlayBodyToggleListener(): Toggle element not found! Was something set up incorrectly?';
+        }
+
+        TradeofferWindow.overlayBodyToggle(toggleElem.dataset.name);
+    },
+    overlayBodyToggle: function(name) {
+        let { shortcuts } = TradeofferWindow;
+
+        let overlayData = TradeofferWindow.FEATURE_LIST[name];
+        if(!overlayData || (typeof TradeofferWindow[overlayData.entry] !== 'function')) {
+            throw 'TradeofferWindow.overlayBodyToggle(): Invalid function! Was something set up incorrectly?';
+        }
+
+        shortcuts.overlayTitle.textContent = overlayData.title;
+
+        // TODO: toggle on a dedicated loading overlay
+
+        TradeofferWindow[overlayData.entry]();
+
+        shortcuts.overlayBody.dataset.name = name;
+        shortcuts.overlayContainer.classList.add('overlay');
+    },
+
+
+
+
+
+    offerShortcuts: {},
+    offerData: {
+        offer: {
+        /*    profileid: {
+         *        appid: {
+         *            contextid: {
+         *                classid: {
+         *                    elem: element,
+         *                    count: number,
+         *                    assets: [
+         *                        { assetid, instanceid, amount },
+         *                        ...
+         *                    ],
+         *                    instanceCounts: {
+         *                        instanceid: number,
+         *                        ...
+         *                    },
+         *                },
+         *                ...
+         *            },
+         *            ...
+         *        },
+         *        ...
+         *    },
+         *    ...
+         */
+        },
+        itemlistLastSelected: {
+            // profileid: { appid, contextid, classid }
+        }
+    },
+
+    offerSetup: async function() {
+        let { shortcuts, data, offerShortcuts, offerData } = TradeofferWindow;
+
+        if(offerShortcuts.body !== undefined) {
+            return;
+        }
+
+        // set up overlay
+        const offerBodyHTMLString = '<div class="offer-window-body">'
+          +     '<div class="offer-window-main-control">'
+          +         '<div class="main-control-section">'
+          +             '<div class="offer-window-comment-box">'
+          +                 '<textarea id="offer-window-comment-box" maxlength="128" placeholder="(Optional) Add comment to offer">'
+          +                 '</textarea>'
+          +             '</div>'
+          +             '<button class="userscript-trade-action main-control-action overlay-toggle" data-name="message">Select Comment</button>'
+          +         '</div>'
+          +         '<div class="main-control-action-group">'
+          +             '<button class="userscript-trade-action main-control-action overlay-toggle" data-name="history">History</button>'
+          +             '<button class="userscript-trade-action main-control-action overlay-toggle" data-name="offerSummary">Finalize Offer</button>'
+          +         '</div>'
+          +     '</div>'
+          +     `<div id="offer-window-itemlist-me" class="offer-itemlist" data-id="${data.me.id}">`
+          +         '<div class="itemlist-header">'
+          +             '<div class="userscript-icon-name-container">'
+          +                 `<img src="${data.me.img}">`
+          +                 data.me.name
+          +             '</div>'
+          +         '</div>'
+          +         '<div class="itemlist-list">'
+          +         '</div>'
+          +         '<div class="itemlist-overlay">'
+          +         '</div>'
+          +     '</div>'
+          +     '<div class="offer-window-actions">'
+          +         '<div class="offer-window-action overlay-toggle" data-name="prefilter">P</div>'
+          +         '<div class="offer-window-action overlay-toggle" data-name="quickSearch">Q</div>'
+          +         '<div class="offer-window-action overlay-toggle" data-name="itemsSelector">I</div>'
+          +      '<div class="offer-window-action" data-name="deleteItems">D</div>'
+          +         '<div class="offer-window-action" data-name="resetItems">R</div>'
+          +     '</div>'
+          +     `<div id="offer-window-itemlist-them" class="offer-itemlist" data-id="${data.them.id}">`
+          +         '<div class="itemlist-header">'
+          +             '<div class="userscript-icon-name-container">'
+          +                 `<img src="${data.them.img}">`
+          +                 data.them.name
+          +             '</div>'
+          +         '</div>'
+          +         '<div class="itemlist-list">'
+          +         '</div>'
+          +         '<div class="itemlist-overlay">'
+          +         '</div>'
+          +     '</div>'
+          + '</div>';
+
+        shortcuts.overlayBody.insertAdjacentHTML('beforeend', offerBodyHTMLString);
+
+        offerShortcuts.body = shortcuts.overlayBody.querySelector('& > .offer-window-body');
+        offerShortcuts.message = document.getElementById('offer-window-comment-box');
+        offerShortcuts.itemListMe = document.getElementById('offer-window-itemlist-me');
+        offerShortcuts.itemListThem = document.getElementById('offer-window-itemlist-them');
+        offerShortcuts.itemList = {
+            [data.me.id]: offerShortcuts.itemListMe,
+            [data.them.id]: offerShortcuts.itemListThem,
+        };
+
+        // TODO: add comment and send offer listeners here
+        offerShortcuts.body.querySelector('[data-name="message"]').addEventListener('click', TradeofferWindow.overlayBodyToggleListener);
+        offerShortcuts.body.querySelector('[data-name="history"]').addEventListener('click', TradeofferWindow.overlayBodyToggleListener);
+        offerShortcuts.body.querySelector('[data-name="offerSummary"]').addEventListener('click', TradeofferWindow.overlayBodyToggleListener);
+
+        // toggle summary overlay
+        // toggle comments overlay
+        let offerActionsElem = offerShortcuts.body.querySelector('.offer-window-actions');
+        offerActionsElem.querySelector('[data-name="prefilter"]').addEventListener('click', TradeofferWindow.overlayBodyToggleListener);
+        offerActionsElem.querySelector('[data-name="quickSearch"]').addEventListener('click', TradeofferWindow.overlayBodyToggleListener);
+        offerActionsElem.querySelector('[data-name="itemsSelector"]').addEventListener('click', TradeofferWindow.overlayBodyToggleListener);
+        offerActionsElem.querySelector('[data-name="deleteItems"]').addEventListener('click', TradeofferWindow.offerItemlistDeleteSelectedListener);
+        offerActionsElem.querySelector('[data-name="resetItems"]').addEventListener('click', TradeofferWindow.offerResetListener);
+
+        for(let profileid in offerShortcuts.itemList) {
+            offerShortcuts.itemList[profileid].querySelector('.itemlist-list').addEventListener('click', TradeofferWindow.offerItemlistSelectItemsListener);
+        }
+
+        offerData.offer = {
+            [data.me.id]: {},
+            [data.them.id]: {},
+        };
+        offerData.lastSelected = {
+            [data.me.id]: null,
+            [data.them.id]: null,
+        };
+
+        // Populate items of the created offer
+        if(data.tradeState !== 0) {
+            // enable overlay to prevent interaction
+
+            for(let offerItemData of data.offerItems) {
+                let [profileid, appid, contextid, assetid, amount] = offerItemData.split('_');
+                await TradeofferWindow.offerItemlistAddAssetItem(profileid, appid, contextid, assetid, parseInt(amount));
+            }
+
+            // disable overlay
+        }
+    },
+    offerUpdateTradeState: function() {
+        const containsAllProfileItems = (isMe) => {
+            let profileid = data[isMe ? 'me' : 'them'].id;
+            for(let [classData, classid, contextid, appid] of TradeofferWindow.offerProfileDataIter(offer[profileid])) {
+                totalOfferItemsCount += classData.assets;
+                for(let offerAsset of classData.assets) {
+                    if( !data.offerItems.has(`${profileid}_${appid}_${contextid}_${offerAsset.assetid}_${offerAsset.amount}`) ) {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        };
+
+        let { data, offerData: { offer } } = TradeofferWindow;
+        let totalOfferItemsCount = 0;
+
+        if(data.tradeState === 0) {
+            return;
+        }
+
+        let isInitState = containsAllProfileItems(true) && containsAllProfileItems(false)
+          && data.offerItems.size === totalOfferItemsCount;
+
+        data.tradeState = isInitState ? 1 : 2;
+    },
+    offerItemlistAddClassItems: async function(profileid, appid, contextid, classid, instanceid, amount = 1, reverse = false) {
+        let { offerShortcuts, offerData, data } = TradeofferWindow;
+
+        if(amount === 0) {
+            console.warn('TradeofferWindow.offerItemlistAddClassItems(): Adding 0 items?');
+            return;
+        }
+
+        let inventory = await TradeofferWindow.getTradeInventory(profileid, appid, contextid, TradeofferWindow.filterInventoryBlockSetup());
+        if(!inventory) {
+            console.warn('TradeofferWindow.offerItemlistAddClassItems(): Inventory not found, exiting...');
+            return;
+        }
+
+        let descriptClass = data.descriptionClassAssets[profileid]?.[appid]?.[contextid]?.[classid];
+        if(!descriptClass) {
+            console.warn('TradeofferWindow.offerItemlistAddClassItems(): Class in descriptions not found, exiting...');
+            return;
+        }
+        let descriptClassAssets = descriptClass.assets;
+
+        let offerClass = offerData.offer[profileid]?.[appid]?.[contextid]?.[classid];
+        if(!offerClass) {
+            offerClass = { elem: null, count: 0, assets: [], instanceCounts: {} };
+            offerData.offer[profileid] ??= {};
+            offerData.offer[profileid][appid] ??= {};
+            offerData.offer[profileid][appid][contextid] ??= {};
+            offerData.offer[profileid][appid][contextid][classid] ??= offerClass;
+        }
+
+        let count = 0;
+        if(reverse) {
+            descriptClassAssets = descriptClassAssets.toReversed();
+        }
+        for(let descriptAsset of descriptClassAssets) {
+            let amountNeeded = amount - count;
+            if(amountNeeded === 0) {
+                break;
+            }
+
+            if(instanceid !== undefined && descriptAsset.instanceid !== instanceid) {
+                continue;
+            }
+
+            let offerAsset = offerClass.assets.find(x => x.assetid === descriptAsset.assetid);
+            if(offerAsset) {
+                let amountAvailable = descriptAsset.amount - offerAsset.amount;
+                if(amountAvailable === 0) {
+                    continue;
+                }
+
+                let amountToAdd = Math.min(amountAvailable, amountNeeded);
+                offerAsset.amount += amountToAdd;
+                offerClass.count += amountToAdd;
+                offerClass.instanceCounts[descriptAsset.instanceid] += amountToAdd;
+                count += amountToAdd;
+            } else {
+                let amountToAdd = Math.min(descriptAsset.amount, amountNeeded);
+                offerClass.assets.push({ assetid: descriptAsset.assetid, instanceid: descriptAsset.instanceid, amount: amountToAdd });
+                offerClass.count += amountToAdd;
+                offerClass.instanceCounts[descriptAsset.instanceid] ??= 0;
+                offerClass.instanceCounts[descriptAsset.instanceid] += amountToAdd;
+                count += amountToAdd;
+            }
+        }
+
+        if(count !== amount) {
+            console.warn(`TradeofferWindow.offerItemlistAddClassItems(): There was not enough assets to add to offer (${count}/${amount})?!?!`);
+        }
+
+        // close itemlist classinstance viewer before updating elems
+
+        if(offerClass.elem === null) {
+            let itemHTMLString = TradeofferWindow.offerGenerateItemHTMLString(appid, contextid, classid);
+            let itemListElem = offerShortcuts.itemList[profileid].querySelector('.itemlist-list');
+            itemListElem.insertAdjacentHTML('beforeend', itemHTMLString);
+            offerClass.elem = itemListElem.lastElementChild;
+        }
+
+        offerClass.elem.dataset.amount = offerClass.count.toLocaleString();
+        return count;
+    },
+    offerItemlistAddAssetItem: async function(profileid, appid, contextid, assetid, amount = 1) {
+        let { offerShortcuts, offerData, data } = TradeofferWindow;
+
+        let inventory = await TradeofferWindow.getTradeInventory(profileid, appid, contextid, TradeofferWindow.filterInventoryBlockSetup());
+        if(!inventory) {
+            console.warn('TradeofferWindow.offerItemlistAddAssetItem(): Inventory not found, exiting...');
+            return;
+        }
+
+        let assetData = inventory.rgInventory[assetid];
+        if(!assetData) {
+            throw 'TradeofferWindow.offerItemlistAddAssetItem(): Asset data not found?!?!';
+        }
+
+        let offerClass = offerData.offer[profileid]?.[appid]?.[contextid]?.[assetData.classid];
+        if(!offerClass) {
+            offerClass = { elem: null, count: 0, assets: [], instanceCounts: {} };
+            offerData.offer[profileid] ??= {};
+            offerData.offer[profileid][appid] ??= {};
+            offerData.offer[profileid][appid][contextid] ??= {};
+            offerData.offer[profileid][appid][contextid][assetData.classid] ??= offerClass;
+        }
+
+        if(amount > parseInt(assetData.amount)) {
+            console.warn('TradeofferWindow.offerItemlistAddAssetItem(): Amount to be added is greater than asset\'s total amount, adding maximum amount...');
+        }
+
+        let amountToSet = Math.min(parseInt(assetData.amount), amount);
+        let existingOfferAsset = offerClass.assets.find(x => x.assetid === assetid);
+        if(existingOfferAsset) {
+            let assetCountDiff = amountToSet - existingOfferAsset.amount;
+            existingOfferAsset.amount = amountToSet;
+            offerClass.count += assetCountDiff;
+            offerClass.instanceCounts[assetData.instanceid] += assetCountDiff;
+        } else {
+            offerClass.assets.push({ assetid: assetid, instanceid: assetData.instanceid, amount: amountToSet });
+            offerClass.count += amountToSet;
+            offerClass.instanceCounts[assetData.instanceid] ??= 0;
+            offerClass.instanceCounts[assetData.instanceid] += amountToSet;
+        }
+
+        // close itemlist classinstance viewer before updating elems
+
+        if(offerClass.elem === null) {
+            let itemHTMLString = TradeofferWindow.offerGenerateItemHTMLString(appid, contextid, assetData.classid);
+            let itemListElem = offerShortcuts.itemList[profileid].querySelector('.itemlist-list');
+            itemListElem.insertAdjacentHTML('beforeend', itemHTMLString);
+            offerClass.elem = itemListElem.lastElementChild;
+        }
+
+        offerClass.elem.dataset.amount = offerClass.count.toLocaleString();
+    },
+    offerGenerateItemHTMLString: function(appid, contextid, classid) {
+        // Find the description data for this classinstance
+        // This is a little jank, but works for now until descriptions gets refactored
+        let { inventories, descriptionClassAssets } = TradeofferWindow.data;
+
+        let descript;
+        for(let profileid in inventories) {
+            if(descript) {
+                break;
+            }
+
+            let inventoryContext = inventories[profileid]?.[appid]?.[contextid];
+            if(!inventoryContext) {
+                continue;
+            }
+
+            let descriptClass = descriptionClassAssets[profileid]?.[appid]?.[contextid]?.[classid];
+            if(!descriptClass || descriptClass.count === 0) {
+                continue;
+            }
+
+            let arbitraryAsset = descriptClass.assets[0];
+            descript = inventoryContext.rgDescriptions[`${classid}_${arbitraryAsset.instanceid}`];
+        }
+
+        if(!descript) {
+            console.error('TradeofferWindow.itemsSelectorGenerateItem(): No description found!!!');
+        }
+
+        let imgUrl = descript?.icon_url ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f` : '';
+        let name = descript?.name ?? '???';
+
+        let styleAttrString = '';
+        styleAttrString += descript?.name_color ? `border-color: #${descript.name_color};` : '';
+        styleAttrString += descript?.background_color ? `background-color: #${descript.background_color};` : '';
+        if(styleAttrString.length) {
+            styleAttrString = ` style="${styleAttrString}"`;
+        }
+
+        let dataAttrString = '';
+        dataAttrString += ` data-appid="${appid}"`;
+        dataAttrString += ` data-contextid="${contextid}"`;
+        dataAttrString += ` data-classid="${classid}"`;
+
+        return `<div class="inventory-item-container" title="${name}"${dataAttrString}${styleAttrString}>`
+          +     `<img loading="lazy" src="${imgUrl}" alt="${name}">`
+          + '</div>';
+    },
+
+    offerItemlistSelectItemsListener: function(event) {
+        let { offerData: { lastSelected } } = TradeofferWindow;
+
+        let targetItemElem = event.target.closest('.inventory-item-container');
+        if(!targetItemElem) {
+            return;
+        }
+
+        let itemlistElem = event.target.closest('.itemlist-list');
+        if(!itemlistElem) {
+            console.error('TradeofferWindow.offerItemlistSelectItemsListener(): item list element not found, but item element exists???');
+            return;
+        }
+
+        if(event.ctrlKey) {
+            TradeofferWindow.overlayBodyToggle('itemClassPicker');
+            return;
+        }
+
+        let lastSelectedData = lastSelected[itemlistElem.dataset.id];
+        // if(!event.shiftKey && !event.ctrlKey) {
+        if(event.shiftKey) {
+            let itemElemList = itemlistElem.querySelectorAll('.inventory-item-container');
+
+            let prevIndex, currIndex;
+            if(lastSelectedData === null) {
+                prevIndex = 0;
+            }
+            for(let i=0; i<itemElemList.length; i++) {
+                if(itemElemList[i].dataset.appid === lastSelectedData.appid
+                  && itemElemList[i].dataset.contextid === lastSelectedData.contextid
+                  && itemElemList[i].dataset.classid === lastSelectedData.classid) {
+                    prevIndex = i;
+                    if(currIndex !== undefined) {
+                        break;
+                    }
+                }
+
+                if(itemElemList[i].dataset.appid === targetItemElem.dataset.appid
+                  && itemElemList[i].dataset.contextid === targetItemElem.dataset.contextid
+                  && itemElemList[i].dataset.classid === targetItemElem.dataset.classid) {
+                    currIndex = i;
+                    if(prevIndex !== undefined) {
+                        break;
+                    }
+                }
+            }
+
+            if(prevIndex === currIndex) {
+                return;
+            }
+
+            let minIndex = Math.min(prevIndex, currIndex);
+            let maxIndex = Math.max(prevIndex, currIndex);
+
+            for(let i=minIndex+1; i<maxIndex; i++) {
+                itemElemList[i].classList.add('selected');
+            }
+            itemElemList[currIndex].classList.add('selected');
+        } else {
+            targetItemElem.classList.toggle('selected');
+        }
+
+        lastSelected[itemlistElem.dataset.id] = {
+            appid: targetItemElem.dataset.appid,
+            contextid: targetItemElem.dataset.contextid,
+            classid: targetItemElem.dataset.classid,
+        };
+    },
+    offerItemlistDeleteSelectedListener: function() {
+        let { data, offerShortcuts: { itemListMe, itemListThem }, offerData: { offer, lastSelected } } = TradeofferWindow;
+
+        const removeSelectedItems = (selectedItems, isMe) => {
+            let profileid = data[isMe ? 'me' : 'them'].id;
+            for(let itemElem of selectedItems) {
+                let { appid, contextid, classid } = itemElem.dataset;
+
+                let offerContext = offer[profileid]?.[appid]?.[contextid];
+                if(!offerContext?.[classid]) {
+                    console.error('TradeofferWindow.offerDeleteSelected(): class instance not found in offer data?!?!?');
+                } else {
+                    delete offerContext[classid];
+                }
+
+                itemElem.remove();
+            }
+        };
+
+        removeSelectedItems(itemListMe.querySelectorAll('.selected'), true);
+        removeSelectedItems(itemListThem.querySelectorAll('.selected'), false);
+
+        lastSelected[itemListMe.dataset.id] = null;
+        lastSelected[itemListThem.dataset.id] = null;
+    },
+    offerResetListener: async function() {
+        let { data, offerShortcuts, offerData } = TradeofferWindow;
+
+        offerData.offer = {};
+        for(let itemElem of offerShortcuts.itemListMe.querySelectorAll('.itemlist-list .inventory-item-container')) {
+            itemElem.remove();
+        }
+        for(let itemElem of offerShortcuts.itemListThem.querySelectorAll('.itemlist-list .inventory-item-container')) {
+            itemElem.remove();
+        }
+
+        for(let offerItemData of data.offerItems) {
+            let [profileid, appid, contextid, assetid, amount] = offerItemData.split('_');
+            await TradeofferWindow.offerItemlistAddAssetItem(profileid, appid, contextid, assetid, parseInt(amount));
+        }
+        offerShortcuts.message.value = data.offerMessage;
+
+        offerData.lastSelected[offerShortcuts.itemListMe.dataset.id] = null;
+        offerData.lastSelected[offerShortcuts.itemListThem.dataset.id] = null;
+    },
+    offerProfileDataIter: function(offerProfileData) {
+        function* offerDataIter(dataset) {
+            for(let appid in dataset) {
+                for(let contextid in dataset[appid]) {
+                    for(let classid in dataset[appid][contextid]) {
+                        yield [ dataset[appid][contextid][classid], classid, contextid, appid ];
+                    }
+                }
+            }
+        }
+
+        return offerDataIter(offerProfileData);
+    },
+
+
+
+
+
+    selectorMenuToggleListener: function(event) {
+        if(!event.currentTarget.matches('.main-control-selector-container')) {
+            throw 'TradeofferWindow.selectorMenuToggleListener(): Not attached to selector container!';
+        }
+
+        if(event.target.closest('.main-control-selector-select')) {
+            event.currentTarget.classList.toggle('active');
+        } else if(event.target.closest('.main-control-selector-options')) {
+            event.currentTarget.classList.remove('active');
+        }
     },
     selectorMenuSelectListener: function(event) {
         if(!event.currentTarget.matches('.main-control-selector-options')) {
@@ -359,7 +971,9 @@ const TradeofferWindow = {
             throw 'TradeofferWindow.selectorMenuSelect(): option element provided is not an option!';
         }
 
-        selectorElem.querySelector('.main-control-selector-select').innerHTML = option.innerHTML;
+        let selectorSelectElem = selectorElem.querySelector('.main-control-selector-select');
+        selectorSelectElem.innerHTML = option.innerHTML;
+        Object.assign(selectorSelectElem.dataset, option.dataset);
         Object.assign(selectorElem.dataset, option.dataset);
     },
 
@@ -403,12 +1017,14 @@ const TradeofferWindow = {
         prefilterShortcuts.selector.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
         prefilterShortcuts.selectorOptions.addEventListener('click', TradeofferWindow.prefilterAppSelectorMenuSelectListener);
 
-        let lastSelectedApp = globalSettings.tradeoffer.filter.pLastSelected;
+        let lastSelectedApp = globalSettings.tradeoffer.selectors.pLastSelected;
         if(lastSelectedApp) {
             prefilterShortcuts.selectorOptions.querySelector(`[data-id="${lastSelectedApp}"]`)?.click();
         }
     },
     prefilterAppSelectorMenuSelectListener: async function(event) {
+        event.stopPropagation();
+
         if(!event.currentTarget.matches('.main-control-selector-options')) {
             throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
         } else if(!event.currentTarget.parentElement.matches('.main-control-selector-container')) {
@@ -471,10 +1087,8 @@ const TradeofferWindow = {
             }
         }
 
-        globalSettings.tradeoffer.filter.pLastSelected = optionId;
+        globalSettings.tradeoffer.selectors.pLastSelected = optionId;
         await TradeofferWindow.configSave();
-
-        // the event bubbling will take care of toggling the selector menu back off
     },
     // TODO: collapsable category containers, hides only unselected tags
     prefilterRepopulateCategoryElement: function(categoryElem, categoryData) {
@@ -653,15 +1267,6 @@ const TradeofferWindow = {
     quickSearchShortcuts: {},
     quickSearchData: {
         currentContext: { profile: null, app: null, context: null },
-        offerItems: { // items already selected in offer
-            // profileid: {
-            //     appid: {
-            //         contextid: {
-            //             assetid: number
-            //         }
-            //     }
-            // }
-        },
         // inventory: {
         //     full_load: boolean
         //     data: object,
@@ -719,10 +1324,10 @@ const TradeofferWindow = {
     quickSearchSetup: function() {
         console.log('Quick Search WIP');
 
-        let { quickSearchShortcuts } = TradeofferWindow;
+        let { data, quickSearchShortcuts } = TradeofferWindow;
 
         TradeofferWindow.quickSearchDisplaySelectResetAll();
-        TradeofferWindow.quickSearchOfferItemsUpdate();
+        TradeofferWindow.quickSearchDisabledItemsReset();
 
         if (quickSearchShortcuts.body !== undefined) {
             return;
@@ -734,12 +1339,16 @@ const TradeofferWindow = {
           +         TradeofferWindow.generateProfileSelectorHTMLString({ id: 'selector-quick-search-profile' })
           +         TradeofferWindow.generateAppSelectorHTMLString({ useUserApps: false, usePartnerApps: false, id: 'selector-quick-search-app', placeholderText: 'Select profile first', disabled: true })
           +         TradeofferWindow.generateContextSelectorHTMLString(undefined, undefined, { id: 'selector-quick-search-context', placeholderText: 'Select profile/app first', disabled: true })
-          +         '<button id="quick-search-load-inventory" class="main-control-selector-action">'
+          +         '<button id="quick-search-inventory-load" class="userscript-trade-action">'
           +             'Load'
           +         '</button>'
           +     '</div>'
+          +     '<div id="quick-search-display-mode-toggle" class="main-control-action-group">'
+          +         '<button class="userscript-trade-action main-control-action" data-qs-mode="page">P</button>'
+          +         '<button class="userscript-trade-action main-control-action" data-qs-mode="scroll">S</button>'
+          +     '</div>'
           +     '<div class="main-control-section">'
-          +         '<button id="quick-search-add-to-offer" class="main-control-selector-action">'
+          +         '<button id="quick-search-add-to-offer" class="userscript-trade-action">'
           +             'Add Selected'
           +         '</button>'
           +     '</div>'
@@ -770,10 +1379,14 @@ const TradeofferWindow = {
           +         `<button class="inventory-page-nav-btn" data-step="${Number.MAX_SAFE_INTEGER}">&gt|</button>`
           +     '</div>'
           + '</div>';
+        const quickSearchInventoryOverlayHTMLString = '<div class="quick-search-inventory-overlay userscript-overlay loading">'
+          +     cssAddThrobber()
+          + '</div>';
         const quickSearchBodyHTMLString = '<div class="quick-search-body">'
           +     quickSearchMainControlHTMLString
           +     quickSearchInventoryFacetHTMLString
           +     quickSearchInventoryDisplayHTMLString
+          +     quickSearchInventoryOverlayHTMLString
           + '</div>';
 
         TradeofferWindow.shortcuts.overlayBody.insertAdjacentHTML('beforeend', quickSearchBodyHTMLString);
@@ -786,13 +1399,17 @@ const TradeofferWindow = {
         quickSearchShortcuts.selectorOptionsApp = quickSearchShortcuts.selectorApp.querySelector('.main-control-selector-options');
         quickSearchShortcuts.selectorContext = document.getElementById('selector-quick-search-context');
         quickSearchShortcuts.selectorOptionsContext = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-options');
+        quickSearchShortcuts.displayModeToggle = document.getElementById('quick-search-display-mode-toggle');
 
+        quickSearchShortcuts.searchInput = document.getElementById('quick-search-search-inventory');
         quickSearchShortcuts.facet = document.getElementById('quick-search-facet');
 
         quickSearchShortcuts.display = quickSearchShortcuts.body.querySelector('.quick-search-inventory-display');
         quickSearchShortcuts.pages = document.getElementById('quick-search-pages');
         quickSearchShortcuts.pageNavigationBar = document.getElementById('quick-search-page-nav');
         quickSearchShortcuts.pageNumbers = quickSearchShortcuts.pageNavigationBar.querySelector('.inventory-page-nav-numbers');
+
+        quickSearchShortcuts.overlay = quickSearchShortcuts.body.querySelector('.quick-search-inventory-overlay');
 
         // add event listeners to everything in the quick search body
         quickSearchShortcuts.selectorProfile.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
@@ -802,50 +1419,46 @@ const TradeofferWindow = {
         quickSearchShortcuts.selectorContext.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
         quickSearchShortcuts.selectorOptionsContext.addEventListener('click', TradeofferWindow.selectorMenuSelectListener);
 
-        document.getElementById('quick-search-load-inventory').addEventListener('click', TradeofferWindow.quickSearchLoadInventoryListener);
+        document.getElementById('quick-search-inventory-load').addEventListener('click', TradeofferWindow.quickSearchLoadInventoryListener);
+        quickSearchShortcuts.displayModeToggle.addEventListener('click', TradeofferWindow.quickSearchDisplayModeToggleListener);
         document.getElementById('quick-search-add-to-offer').addEventListener('click', TradeofferWindow.quickSearchAddSelectedListener);
 
-        document.getElementById('quick-search-search-inventory').addEventListener('input', steamToolsUtils.debounceFunction(TradeofferWindow.quickSearchFacetSearchInventoryInputListener, TradeofferWindow.INPUT_DELAY));
+        quickSearchShortcuts.searchInput.addEventListener('input', steamToolsUtils.debounceFunction(TradeofferWindow.quickSearchFacetSearchInventoryInputListener, TradeofferWindow.INPUT_DELAY));
 
         quickSearchShortcuts.pages.addEventListener('click', TradeofferWindow.quickSearchDisplaySelectItemsListener);
         quickSearchShortcuts.pageNavigationBar.addEventListener('click', TradeofferWindow.quickSearchDisplayPaginateListener);
+
+        // Select the profile/app/context selectors from last load, default to user
+        let lastLoadedContext = globalSettings.tradeoffer.selectors.qLastSelected;
+        if(lastLoadedContext) {
+            quickSearchShortcuts.selectorOptionsProfile.querySelector(`[data-id="${data.me.id}"]`)?.click();
+            quickSearchShortcuts.selectorOptionsApp.querySelector(`[data-id="${lastLoadedContext.app}"]`)?.click();
+            quickSearchShortcuts.selectorOptionsContext.querySelector(`[data-id="${lastLoadedContext.context}"]`)?.click();
+        }
     },
-    quickSearchOfferItemsUpdate: function() {
+    quickSearchDisabledItemsReset: function() {
         // grab items from both sides and update item list to disable during quick search
         // update disable state for currently rendered items
-        let offerItems = {};
 
-        const addOfferItems = (offerItemList, isMe) => {
-            let profileid = TradeofferWindow.data[isMe ? 'me' : 'them'].id;
-            offerItems[profileid] ??= {};
-
-            for(let offerData of offerItemList) {
-                offerItems[profileid][offerData.appid] ??= { [offerData.contextid]: { [offerData.assetid]: offerData.amount } };
-                offerItems[profileid][offerData.appid][offerData.contextid] ??= { [offerData.assetid]: offerData.amount };
-                offerItems[profileid][offerData.appid][offerData.contextid][offerData.assetid] = offerData.amount;
-            }
-        };
-
-        let tradeofferState = unsafeWindow.g_rgCurrentTradeStatus;
-        addOfferItems(tradeofferState.me.assets, true);
-        addOfferItems(tradeofferState.them.assets, false);
-        TradeofferWindow.quickSearchData.offerItems = offerItems;
-
-        let { quickSearchShortcuts, quickSearchData: { currentContext, inventory } } = TradeofferWindow;
+        let { offerData: { offer }, quickSearchShortcuts, quickSearchData: { currentContext, inventory } } = TradeofferWindow;
         if(!quickSearchShortcuts.body || !currentContext.context) {
             return;
         }
 
-        let offerAssetsList = offerItems[currentContext.profile]?.[currentContext.app]?.[currentContext.context];
-        if(!offerAssetsList) {
-            offerAssetsList = {};
-        }
+        let offerClassItems = offer[currentContext.profile]?.[currentContext.app]?.[currentContext.context] ?? {};
 
         // update inventory data here
-        for(let assetid in offerAssetsList) {
-            inventory.disabledItems[ offerAssetsList[assetid] ? 'add' : 'delete' ](assetid);
-            if(inventory.selectedItems.has(assetid) && inventory.disabledItems.has(assetid)) {
-                inventory.selectedItems.delete(assetid);
+        inventory.disabledItems.clear();
+        for(let classid in offerClassItems) {
+            for(let assetData of offerClassItems[classid].assets) {
+                if(assetData.amount > 0) {
+                    inventory.disabledItems.add(assetData.assetid);
+                }
+            }
+        }
+        for(let selectedItem of inventory.selectedItems) {
+            if(inventory.disabledItems.has(selectedItem)) {
+                inventory.selectedItems.delete(selectedItem);
             }
         }
 
@@ -853,7 +1466,7 @@ const TradeofferWindow = {
         for(let itemElem of quickSearchShortcuts.body.querySelectorAll('.inventory-item-container')) {
             let itemData = inventory.data[itemElem.dataset.id];
             if(!itemData) {
-                throw 'TradeofferWindow.quickSearchOfferItemsUpdate(): an item in DOM has no item data?!?!';
+                continue;
             }
 
             if(inventory.disabledItems.has(itemData.id)) {
@@ -884,7 +1497,8 @@ const TradeofferWindow = {
         quickSearchData.facet = [];
         quickSearchData.filtersSelected = 0;
 
-        // activate loading animation
+        // activate loading overlay
+        quickSearchShortcuts.body.classList.add('overlay');
 
         // hide facet lists
         quickSearchShortcuts.facet.classList.add('loading');
@@ -894,8 +1508,18 @@ const TradeofferWindow = {
             TradeofferWindow.quickSearchDisplayPageReset(pageElem);
         }
 
-        let inventory = await TradeofferWindow.getTradeInventoryFast2(profileid, appid, contextid, TradeofferWindow.quickSearchFilterInventoryBlock);
+        quickSearchShortcuts.selectorProfile.classList.remove('active');
+        quickSearchShortcuts.selectorApp.classList.remove('active');
+        quickSearchShortcuts.selectorContext.classList.remove('active');
+
+        let inventoryFilterBlockfn = TradeofferWindow.filterInventoryBlockSetup(TradeofferWindow.quickSearchProcessInventoryBlockAsset);
+        let inventory = await TradeofferWindow.getTradeInventory(profileid, appid, contextid, inventoryFilterBlockfn);
         let inventorySorted = INVENTORY_ITEM_PRIORITY.toSorted(appid, inventory.rgInventory, inventory.rgDescriptions);
+
+        // likely have not been processed yet
+        if(quickSearchData.facet.length === 0) {
+            TradeofferWindow.quickSearchProcessInventory(inventory);
+        }
 
         quickSearchData.inventory = {
             full_load: inventory.full_load,
@@ -913,170 +1537,96 @@ const TradeofferWindow = {
             app: appid,
             context: contextid
         };
+        globalSettings.tradeoffer.selectors.qLastSelected = quickSearchData.currentContext;
+
+        TradeofferWindow.quickSearchDisabledItemsReset();
 
         // set up inventroy display
         TradeofferWindow.quickSearchFacetGenerate(quickSearchData.facet);
         TradeofferWindow.quickSearchApplyFilter();
         TradeofferWindow.quickSearchDisplaySetup();
 
-        // deactivate loading animation
-
         // show facet lists
         quickSearchShortcuts.facet.classList.remove('loading');
 
+        // deactivate loading overlay
+        quickSearchShortcuts.body.classList.remove('overlay');
+
         await TradeofferWindow.configSave();
     },
-    quickSearchFilterInventoryBlock: function(data, { profileid, appid, contextid }) {
-        let filterData = TradeofferWindow.filterLookupGet(appid);
-        if(!filterData) {
-            filterData = {
-                id: appid,
-                fetched: false,
-                categories: []
-            };
-            globalSettings.tradeoffer.filter.apps.push(filterData);
-            TradeofferWindow.filterLookupUpdateApp(filterData);
-        }
+    quickSearchProcessInventoryBlockAsset: function(asset, descript) {
         let { quickSearchData } = TradeofferWindow;
         let { facet: facetList } = quickSearchData;
 
-        let excludedDescriptions = [];
-        for(let assetid in data.rgInventory) {
-            let asset = data.rgInventory[assetid];
-            let excludeAsset = false;
-            let descript = data.rgDescriptions[`${asset.classid}_${asset.instanceid}`];
+        for(let tag of descript.tags) {
+            let filterCategory = TradeofferWindow.filterLookupGet(descript.appid, tag.category);
+            let filterTag = TradeofferWindow.filterLookupGet(descript.appid, tag.category, tag.internal_name);
 
-            if(!descript) {
-                console.error('TradeofferWindow.quickSearchFilterInventoryBlock(): Description not found for an asset?!?!');
-                continue;
+            let facetCategory = facetList.find(x => x.id === tag.category);
+            if(!facetCategory) {
+                facetCategory = {
+                    id: filterCategory.id,
+                    name: filterCategory.name,
+                    open: filterCategory.qOpened,
+                    isFiltering: false,
+                    tags: []
+                };
+                facetList.push(facetCategory);
             }
 
-            // check to be excluded or not
-            for(let tag of descript.tags) {
-                let filterCategory = TradeofferWindow.filterLookupGet(appid, tag.category);
-                if(!filterCategory) {
-                    filterCategory = {
-                        id: tag.category,
-                        name: tag.category_name,
-                        pOpened: false,
-                        qOpened: false,
-                        tags: []
-                    };
-                    filterData.categories.push(filterCategory);
-                    TradeofferWindow.filterLookupUpdateCategory(appid, filterCategory);
-                }
-
-                let filterTag = TradeofferWindow.filterLookupGet(appid, tag.category, tag.internal_name);
-                if(!filterTag) {
-                    filterTag = {
-                        id: tag.internal_name,
-                        name: tag.name,
-                        excluded: false,
-                        filtered: false
-                    };
-                    filterCategory.tags.push(filterTag);
-                    TradeofferWindow.filterLookupUpdateTag(appid, tag.category, filterTag);
-                }
-
-                if(filterTag.excluded) {
-                    excludeAsset = true;
-                    break;
-                }
+            let facetTag = facetCategory.tags.find(x => x.id === filterTag.id);
+            if(!facetTag) {
+                facetTag = {
+                    id: filterTag.id,
+                    name: filterTag.name,
+                    filtered: filterTag.filtered,
+                    count: 0
+                };
+                facetCategory.tags.push(facetTag);
             }
+            facetTag.count++;
 
-            if(!excludeAsset) {
-                // Add to facet list
-                for(let tag of descript.tags) {
-                    let filterCategory = TradeofferWindow.filterLookupGet(appid, tag.category);
-                    let filterTag = TradeofferWindow.filterLookupGet(appid, tag.category, tag.internal_name);
-
-                    let facetCategory = facetList.find(x => x.id === tag.category);
-                    if(!facetCategory) {
-                        facetCategory = {
-                            id: filterCategory.id,
-                            name: filterCategory.name,
-                            open: filterCategory.qOpened,
-                            isFiltering: false,
-                            tags: []
-                        };
-                        facetList.push(facetCategory);
-                    }
-
-                    let facetTag = facetCategory.tags.find(x => x.id === filterTag.id);
-                    if(!facetTag) {
-                        facetTag = {
-                            id: filterTag.id,
-                            name: filterTag.name,
-                            filtered: filterTag.filtered,
-                            count: 0
-                        };
-                        facetCategory.tags.push(facetTag);
-                    }
-                    facetTag.count++;
-
-                    facetCategory.isFiltering ||= facetTag.filtered;
-                    if(facetTag.filtered) {
-                        quickSearchData.filtersSelected++;
-                    }
-                }
-            } else {
-                delete data.rgInventory[assetid];
-                excludedDescriptions.push(`${asset.classid}_${asset.instanceid}`);
+            facetCategory.isFiltering ||= facetTag.filtered;
+            if(facetTag.filtered) {
+                quickSearchData.filtersSelected++;
             }
         }
+    },
+    quickSearchProcessInventory: function(inventory) {
+        for(let assetid in inventory.rgInventory) {
+            let asset = inventory.rgInventory[assetid];
+            let descript = inventory.rgDescriptions[`${asset.classid}_${asset.instanceid}`];
 
-        for(let descriptid of excludedDescriptions) {
-            delete data.rgDescriptions[descriptid];
+            TradeofferWindow.quickSearchProcessInventoryBlockAsset(asset, descript);
         }
-
-        return data;
     },
 
-    quickSearchAddSelectedListener: function(event) {
+    quickSearchAddSelectedListener: async function(event) {
         console.log('quickSearchAddSelectedListener() WIP');
 
-        let { currentContext, inventory } = TradeofferWindow.quickSearchData;
-        let steamInventory;
-        if(unsafeWindow.UserYou.strSteamId === currentContext.profile) {
-            steamInventory = unsafeWindow.UserYou.rgContexts[currentContext.app]?.[currentContext.context]?.inventory?.rgInventory;
-        } else if(unsafeWindow.UserThem.strSteamId === currentContext.profile) {
-            steamInventory = unsafeWindow.UserThem.rgContexts[currentContext.app]?.[currentContext.context]?.inventory?.rgInventory;
-        } else {
-            throw 'TradeofferWindow.quickSearchAddSelectedListener(): current inventory does not belong to either trade partners????';
+        let { currentContext, inventory: { selectedItems } } = TradeofferWindow.quickSearchData;
+
+        let { profile: profileid, app: appid, context: contextid } = currentContext;
+        for(let assetid of selectedItems) {
+            await TradeofferWindow.offerItemlistAddAssetItem(profileid, appid, contextid, assetid, 1);
         }
+        TradeofferWindow.offerUpdateTradeState();
 
-        if(!steamInventory) {
-            throw 'TradeofferWindow.quickSearchAddSelectedListener(): steam inventory is not loaded?!?!';
-        }
-
-        for(let assetid of inventory.selectedItems) {
-            let asset = inventory.data[assetid];
-
-            let steamAsset = steamInventory[assetid];
-            if(!steamAsset) {
-                console.error('TradeofferWindow.quickSearchAddSelectedListener(): steam asset not found?!?!');
-                continue;
-            }
-
-            unsafeWindow.FindSlotAndSetItem(steamAsset);
-        }
-
-        // close overlay
-        TradeofferWindow.overlayCloseListener();
+        TradeofferWindow.overlayBodyToggle('offerWindow');
     },
     quickSearchSelectorProfileSelectListener: function(event) {
         if(!event.currentTarget.matches('.main-control-selector-options')) {
-            throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
+            throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): Not attached to options container!';
         } else if(!event.currentTarget.parentElement.matches('.main-control-selector-container')) {
-            throw 'TradeofferWindow.selectorMenuSelectListener(): Options container is not immediate child of selector container!';
+            throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): Options container is not immediate child of selector container!';
         }
 
-        let { quickSearchShortcuts } = TradeofferWindow;
+        let { data, quickSearchShortcuts, selectorData } = TradeofferWindow;
 
         let optionElem = event.target;
         while (!optionElem.matches('.main-control-selector-option')) {
             if (optionElem.matches('.main-control-selector-options')) {
-                throw 'tradeofferSelectorMenuSelectListener(): No option found! Was the document structured correctly?';
+                throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): No option found! Was the document structured correctly?';
             }
             optionElem = optionElem.parentElement;
         }
@@ -1088,27 +1638,28 @@ const TradeofferWindow = {
 
         TradeofferWindow.selectorMenuSelect(selectorElem, optionElem);
 
+        // reconfigure app selector
+        let selectedProfileid = selectorElem.dataset.id;
+        let selectorAppElem = quickSearchShortcuts.selectorApp;
+
+        let appOptions = selectorData[selectedProfileid];
+        let contextOptions = appOptions[selectorAppElem.dataset.id];
+
         quickSearchShortcuts.selectorApp.classList.remove('disabled', 'active');
-        quickSearchShortcuts.selectorApp.dataset.id = '-1';
-        quickSearchShortcuts.selectorContext.classList.add('disabled');
-        quickSearchShortcuts.selectorContext.classList.remove('active');
-        quickSearchShortcuts.selectorContext.dataset.id = '-1';
 
-        let selectorContextSelectElem = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-select');
-        selectorContextSelectElem.textContent = 'Select app first';
-        selectorContextSelectElem.dataset.id = '-1';
+        if(!contextOptions || !contextOptions.length) {
+            selectorAppElem.dataset.id = '-1';
 
-        let selectorAppSelectElem = quickSearchShortcuts.selectorApp.querySelector('.main-control-selector-select');
-        selectorAppSelectElem.innerHTML = `<img src="${TradeofferWindow.selectorData.blankImg}">`
-          + 'Select App';
-        selectorAppSelectElem.dataset.id = '-1';
+            let selectorAppSelectElem = selectorAppElem.querySelector('.main-control-selector-select');
+            selectorAppSelectElem.innerHTML = `<img src="${selectorData.blankImg}">`
+              + 'Select App';
+            selectorAppSelectElem.dataset.id = '-1';
+        }
 
-        let appOptions, appsData;
-        if(selectorElem.dataset.id === unsafeWindow.UserYou.strSteamId) {
-            appOptions = TradeofferWindow.selectorData.you;
+        let appsData;
+        if(selectedProfileid === data.me.id) {
             appsData = unsafeWindow.UserYou.rgAppInfo;
-        } else if(selectorElem.dataset.id === unsafeWindow.UserThem.strSteamId) {
-            appOptions = TradeofferWindow.selectorData.them;
+        } else if(selectedProfileid === data.them.id) {
             appsData = unsafeWindow.UserThem.rgAppInfo;
         } else {
             throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): profile id is not user nor partner!?!?!';
@@ -1120,6 +1671,39 @@ const TradeofferWindow = {
             newSelectorAppOptionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(appInfo.name, { id: appid }, appInfo.icon);
         }
         quickSearchShortcuts.selectorOptionsApp.innerHTML = newSelectorAppOptionsHTMLString;
+
+
+        // reconfigure context selector
+        let selectorContextElem = quickSearchShortcuts.selectorContext;
+        let contextExists = contextOptions && contextOptions.length;
+        let hasContext = contextExists ? contextOptions.some(x => x === selectorContextElem.dataset.id) : false;
+        quickSearchShortcuts.selectorContext.classList.remove('active');
+
+        if(!contextExists || !hasContext) {
+            if(!contextExists) {
+                selectorContextElem.classList.add('disabled');
+            }
+            selectorContextElem.dataset.id = '-1';
+
+            let selectorContextSelectElem = selectorContextElem.querySelector('.main-control-selector-select');
+            selectorContextSelectElem.textContent = !contextExists ? 'Select app first' : 'Select Category';
+            selectorContextSelectElem.dataset.id = '-1';
+
+            if(contextExists) {
+                let appid = selectorAppElem.dataset.id;
+                let contextsData = appsData[appid].rgContexts;
+
+                let newSelectorContextOptionsHTMLString = '';
+                for(let contextid of contextOptions) {
+                    let contextInfo = contextsData[contextid];
+                    if(parseInt(contextid) === 0) {
+                        continue;
+                    }
+                    newSelectorContextOptionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(contextInfo.name, { id: contextInfo.id });
+                }
+                quickSearchShortcuts.selectorOptionsContext.innerHTML = newSelectorContextOptionsHTMLString;
+            }
+        }
     },
     quickSearchSelectorAppSelectListener: function(event) {
         if(!event.currentTarget.matches('.main-control-selector-options')) {
@@ -1128,7 +1712,7 @@ const TradeofferWindow = {
             throw 'TradeofferWindow.selectorMenuSelectListener(): Options container is not immediate child of selector container!';
         }
 
-        let { quickSearchShortcuts } = TradeofferWindow;
+        let { data, quickSearchShortcuts, selectorData } = TradeofferWindow;
 
         let optionElem = event.target;
         while (!optionElem.matches('.main-control-selector-option')) {
@@ -1155,12 +1739,11 @@ const TradeofferWindow = {
 
         let profileid = quickSearchShortcuts.selectorProfile.dataset.id;
         let appid = optionElem.dataset.id;
-        let contextOptions, contextsData;
-        if(profileid === unsafeWindow.UserYou.strSteamId) {
-            contextOptions = TradeofferWindow.selectorData.you[appid];
+        let contextOptions = selectorData[profileid][appid];
+        let contextsData;
+        if(profileid === data.me.id) {
             contextsData = unsafeWindow.UserYou.rgAppInfo[appid].rgContexts;
-        } else if(profileid === unsafeWindow.UserThem.strSteamId) {
-            contextOptions = TradeofferWindow.selectorData.them[appid];
+        } else if(profileid === data.them.id) {
             contextsData = unsafeWindow.UserThem.rgAppInfo[appid].rgContexts;
         } else {
             throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): profile id is not user nor partner!?!?!';
@@ -1183,40 +1766,16 @@ const TradeofferWindow = {
         }
 
         let { select: selectData, mode, inventory } = TradeofferWindow.quickSearchData;
-        if(!event.shiftKey && !event.ctrlKey) {
-            // let selectedElemList = event.currentTarget.querySelectorAll('.selected');
-            // for(let selectedElem of selectedElemList) {
-            //     let itemData = inventory.data[selectedElem.dataset.id];
-            //     if(itemData) {
-            //         itemData.selected = false;
-            //     }
-            //     selectedElem.classList.remove('selected');
-            // }
+        if(event.shiftKey) {
+            let itemElemList = (mode === 0)
+              ? itemElem.closest('.inventory-page').querySelectorAll('.inventory-item-container')
+              : event.currentTarget.querySelectorAll('.inventory-item-container');
 
-            // if(!(selectedElemList.length === 1 && itemElem.dataset.id === selectData.lastSelected.dataset.id) && !itemElem.classList.contains('disabled')) {
-            //     let itemData = inventory.data[itemElem.dataset.id];
-            //     if(itemData) {
-            //         itemData.selected = true;
-            //         itemElem.classList.add('selected');
-            //     }
-            // }
-
-            let itemData = inventory.data[itemElem.dataset.id];
-            if(itemData) {
-                inventory.selectedItems[ inventory.selectedItems.has(itemData.id) ? 'delete' : 'add' ](itemData.id);
-                itemElem.classList.toggle('selected');
-            }
-        } else if(event.shiftKey) {
+            let noStartIndex = true;
             let prevIndex, currIndex;
-            let itemElemList;
-            if(mode === 0) {
-                itemElemList = itemElem.closest('.inventory-page').querySelectorAll('.inventory-item-container');
-            } else {
-                itemElemList = event.currentTarget.querySelectorAll('.inventory-item-container');
-            }
-
             for(let i=0; i<itemElemList.length; i++) {
                 if(itemElemList[i].dataset.id === selectData.lastSelected?.dataset.id) {
+                    noStartIndex = false;
                     prevIndex = i;
                     if(currIndex !== undefined) {
                         break;
@@ -1247,12 +1806,19 @@ const TradeofferWindow = {
                 inventory.selectedItems.add(itemData.id);
                 itemElemList[i].classList.add('selected');
             }
-            let itemData = inventory.data[itemElemList[currIndex].dataset.id];
-            if(!(itemData && inventory.disabledItems.has(itemData.id))) {
-                inventory.selectedItems.add(itemData.id);
+            let currItemData = inventory.data[itemElemList[currIndex].dataset.id];
+            if(!(currItemData && inventory.disabledItems.has(currItemData.id))) {
+                inventory.selectedItems.add(currItemData.id);
                 itemElemList[currIndex].classList.add('selected');
             }
-        } else if(event.ctrlKey) {
+            if(noStartIndex) {
+                let prevItemData = inventory.data[itemElemList[prevIndex].dataset.id];
+                if(!(prevItemData && inventory.disabledItems.has(prevItemData.id))) {
+                    inventory.selectedItems.add(prevItemData.id);
+                    itemElemList[prevIndex].classList.add('selected');
+                }
+            }
+        } else {
             let itemData = inventory.data[itemElem.dataset.id];
             if(itemData) {
                 inventory.selectedItems[ inventory.selectedItems.has(itemData.id) ? 'delete' : 'add' ](itemData.id);
@@ -1301,7 +1867,7 @@ const TradeofferWindow = {
               +     '<label class="facet-list-entry-label">'
               +         `<input type="checkbox"${entryData.filtered ? ' checked' : ''}>`
               +         `<span class="facet-entry-title">${entryData.name}</span>`
-              +         `<span class="facet-entry-detail">(${entryData.count})</span>`
+              +         `<span class="facet-entry-detail">(${entryData.count.toLocaleString()})</span>`
               +     '<label>'
               + '</div>';
         };
@@ -1448,7 +2014,7 @@ const TradeofferWindow = {
     quickSearchApplyFilter(filter) {
         // NOTE: May or may not need to change simple string comparisons into regex matching, or maybe split string matching
 
-        let { quickSearchData } = TradeofferWindow;
+        let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
         let { inventory, facet, searchText, filtersSelected } = quickSearchData;
 
         if(!inventory) {
@@ -1481,7 +2047,7 @@ const TradeofferWindow = {
                 console.warn('TradeofferWindow.quickSearchApplyFilter(): invalid filter type! Inventory not filtered...');
             }
         } else {
-            searchText = typeof searchText === 'string' ? searchText.toLowerCase() : '';
+            searchText = quickSearchShortcuts.searchInput.value;
             inventory.dataListFiltered = inventory.dataList.filter(item => {
                 let descript = inventory.descriptions[`${item.classid}_${item.instanceid}`];
                 if(typeof searchText === 'string') {
@@ -1553,10 +2119,16 @@ const TradeofferWindow = {
         }
     },
 
-    quickSearchDisplayModeToggleListener: function(event) {
-        // toggle display mode
-        // set config data
+    quickSearchDisplayModeToggleListener: async function(event) {
+        let toggleBtnElem = event.target.closest('[data-qs-mode]');
+        if(!toggleBtnElem) {
+            throw 'TradeofferWindow.quickSearchDisplayModeToggleListener: mode toggle button not detected???';
+        }
+
+        globalSettings.tradeoffer.displayMode = TradeofferWindow.QUICK_SEARCH_MODE_MAP[toggleBtnElem.dataset.qsMode];
         TradeofferWindow.quickSearchDisplaySetup();
+
+        await TradeofferWindow.configSave();
     },
     quickSearchDisplaySetup: function() {
         let { displayMode } = globalSettings.tradeoffer;
@@ -1565,13 +2137,24 @@ const TradeofferWindow = {
             // TradeofferWindow.quickSearchDisplaySetupScrolling();
         }
 
-        let currentMode = TradeofferWindow.quickSearchData.mode;
+        let { quickSearchShortcuts, quickSearchData, QUICK_SEARCH_MODE_MAP } = TradeofferWindow;
+        let currentMode = quickSearchData.mode;
         if(currentMode === undefined || displayMode !== currentMode) {
             if(displayMode === 0) {
                 TradeofferWindow.quickSearchDisplaySetupPaging();
             } else if(displayMode === 1) {
                 TradeofferWindow.quickSearchDisplaySetupScrolling();
             }
+        }
+
+        currentMode = quickSearchData.mode;
+        if(!Number.isInteger(currentMode)) {
+            throw '';
+        }
+
+        let currentModeString = QUICK_SEARCH_MODE_MAP[currentMode];
+        for(let toggleElem of quickSearchShortcuts.displayModeToggle.querySelectorAll('[data-qs-mode]')) {
+            toggleElem.classList[toggleElem.dataset.qsMode === currentModeString ? 'add' : 'remove']('selected');
         }
     },
     quickSearchDisplaySetupPaging: function() {
@@ -1588,7 +2171,6 @@ const TradeofferWindow = {
             // reset non-paging stuff and selections
             if(quickSearchData.mode === 1) {
                 let { scrolling: scrollData } = quickSearchData;
-                TradeofferWindow.quickSearchDisplaySelectReset();
                 scrollData.observer.disconnect();
                 for(let pageElem of scrollData.pages) {
                     pageElem.remove();
@@ -1599,14 +2181,16 @@ const TradeofferWindow = {
         }
 
         quickSearchShortcuts.display.classList.add('paging');
+        let pageNum = 1;
         if(quickSearchData.currentPage) {
-            TradeofferWindow.quickSearchDisplayPopulatePage(quickSearchData.currentPage, 1);
+            pageNum = quickSearchData.currentPage.dataset.page ? parseInt(quickSearchData.currentPage.dataset.page) : 1;
+            TradeofferWindow.quickSearchDisplayPopulatePage(quickSearchData.currentPage, pageNum);
             quickSearchShortcuts.pages.prepend(quickSearchData.currentPage);
             quickSearchData.currentPage.classList.add('active');
             pagingData.pages.fg = quickSearchData.currentPage;
         } else {
             // generate 1st page and set active
-            let pageFgHTMLString = TradeofferWindow.quickSearchDisplayGeneratePageHTMLString(1);
+            let pageFgHTMLString = TradeofferWindow.quickSearchDisplayGeneratePageHTMLString(pageNum);
             quickSearchShortcuts.pages.insertAdjacentHTML('afterbegin', pageFgHTMLString);
             let pageFgElem = quickSearchShortcuts.pages.querySelector('.inventory-page');
             pageFgElem.classList.add('active');
@@ -1618,7 +2202,7 @@ const TradeofferWindow = {
         quickSearchShortcuts.pages.insertAdjacentHTML('afterbegin', pageBgHTMLString);
         let pageBgElem = quickSearchShortcuts.pages.querySelector('.inventory-page:not(.active)');
         pagingData.pages.bg = pageBgElem;
-        TradeofferWindow.quickSearchDisplayUpdatePageNavigationBar(1);
+        TradeofferWindow.quickSearchDisplayUpdatePageNavigationBar(pageNum);
 
         quickSearchData.mode = 0;
     },
@@ -1648,7 +2232,6 @@ const TradeofferWindow = {
             // reset non-scrolling stuff and selections
             if(quickSearchData.mode === 0) {
                 let { paging: pagingData } = quickSearchData;
-                TradeofferWindow.quickSearchDisplaySelectReset();
                 pagingData.pages.fg.classList.remove('active');
                 pagingData.pages.fg.remove();
                 pagingData.pages.bg.remove();
@@ -1688,7 +2271,7 @@ const TradeofferWindow = {
 
         let currentPageNum = parseInt(quickSearchData.currentPage.dataset.page);
         if(currentPageNum > 2) {
-            quickSearchShortcuts.pages.scroll(startOffset*pageHeight);
+            quickSearchShortcuts.pages.scroll(0, startOffset*pageHeight);
         }
 
         quickSearchData.mode = 1;
@@ -1698,11 +2281,11 @@ const TradeofferWindow = {
         let { pageCount, pages } = quickSearchData.scrolling;
         let pageHeightWithoutTop = quickSearchData.display.rows * (5.25+0.5);
 
-        entries.forEach((entry) => {
+        for(let entry of entries) {
             if(quickSearchData.mode !== 1) {
-                return;
+                continue;
             } else if(!entry.isIntersecting) {
-                return;
+                continue;
             }
 
             let pageNum = entry.target.dataset.page;
@@ -1714,6 +2297,7 @@ const TradeofferWindow = {
                 quickSearchShortcuts.pages.prepend(pageElem);
                 pages.unshift(pageElem);
                 quickSearchData.currentPage = quickSearchData.currentPage.previousElementSibling;
+                break;
             } else if(pages[pageCount-1].dataset.page === pageNum) {
                 let pageElem = pages.shift();
                 pageElem.remove();
@@ -1721,13 +2305,14 @@ const TradeofferWindow = {
                 quickSearchShortcuts.pages.append(pageElem);
                 pages.push(pageElem);
                 quickSearchData.currentPage = quickSearchData.currentPage.nextElementSibling;
+                break;
             }
 
             // let pageMargin = Math.max(0, parseInt(pages[0].dataset.page)-1);
             // quickSearchShortcuts.pages.style.paddingTop = pageMargin > 0
             //   ? `${(pageMargin*pageHeightWithoutTop) + 0.5}rem`
             //   : '0rem';
-        });
+        }
     },
     quickSearchDisplayPaginateListener: function(event) {
         let { mode: currentMode, paging: pagingData, inventory: { pageCount: pageNumLast } } = TradeofferWindow.quickSearchData;
@@ -1739,7 +2324,12 @@ const TradeofferWindow = {
             return;
         }
 
-        let pageStep = parseInt(event.target.dataset.step);
+        let paginateElem = event.target.closest('.inventory-page-nav-btn');
+        if(!paginateElem) {
+            return;
+        }
+
+        let pageStep = parseInt(paginateElem.dataset.step);
         if(Number.isNaN(pageStep)) {
             console.error('TradeofferWindow.quickSearchPaginateListener(): Page step is not a number!?!?');
             return;
@@ -1868,11 +2458,24 @@ const TradeofferWindow = {
         let { inventory } = TradeofferWindow.quickSearchData;
         let descript = inventory.descriptions[`${itemData.classid}_${itemData.instanceid}`];
 
+        let styleAttrString = '';
+        styleAttrString += descript.name_color ? ` border-color: #${descript.name_color};` : '';
+        styleAttrString += descript.background_color ? ` background-color: #${descript.background_color};` : '';
+        if(styleAttrString.length) {
+            styleAttrString = ` style="${styleAttrString}"`;
+        }
+
+        let dataAttrString = '';
+        dataAttrString += ` data-id="${itemData.id}"`;
+        if(parseInt(itemData.amount) > 1) {
+            dataAttrString += ` data-amount="${parseInt(itemData.amount).toLocaleString()}"`;
+        }
+
         let imgUrl = descript.icon_url ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f` : '';
         let classStringDisabled = inventory.disabledItems.has(itemData.id) ? ' disabled' : '';
         let classStringSelected = inventory.selectedItems.has(itemData.id) ? ' selected' : '';
-        return `<div class="inventory-item-container${classStringDisabled}${classStringSelected}" data-id="${itemData.id}">`
-          +     (imgUrl ? `<img src="${imgUrl}">` : descript.name)
+        return `<div class="inventory-item-container${classStringDisabled}${classStringSelected}" title="${descript.name}"${dataAttrString}${styleAttrString}>`
+          +     (imgUrl ? `<img loading="lazy" src="${imgUrl}">` : descript.name)
           + '</div>';
     },
     quickSearchDisplayPopulatePage: function(pageElem, pageNum) {
@@ -1950,6 +2553,12 @@ const TradeofferWindow = {
         let descript = inventory.descriptions[`${itemData.classid}_${itemData.instanceid}`];
 
         itemElem.dataset.id = itemData.id;
+        if(parseInt(itemData.amount) > 1) {
+            itemElem.dataset.amount = parseInt(itemData.amount).toLocaleString();
+        } else {
+            delete itemElem.dataset.amount;
+        }
+        itemElem.title = descript.name;
         itemElem.classList[ inventory.disabledItems.has(itemData.id) ? 'add' : 'remove' ]('disabled');
         itemElem.classList[ inventory.selectedItems.has(itemData.id) ? 'add' : 'remove' ]('selected');
         let imgElem = itemElem.querySelector('img');
@@ -1964,11 +2573,26 @@ const TradeofferWindow = {
               : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
             itemElem.prepend(newImgElem);
         }
+
+        let styleString = '';
+        styleString += descript.name_color ? ` border-color: #${descript.name_color};` : '';
+        styleString += descript.background_color ? ` background-color: #${descript.background_color};` : '';
+        itemElem.style.cssText = styleString;
     },
     quickSearchDisplayPageReset: function(pageElem) {
+        let selectData = TradeofferWindow.quickSearchData.select;
+
         let itemElemList = pageElem.querySelectorAll('.inventory-item-container');
         for(let itemElem of itemElemList) {
-            delete itemElem.dataset.id;
+            if(selectData.lastSelected?.dataset.id === itemElem.dataset.id) {
+                selectData.lastSelected = null;
+            }
+
+            for(let key in itemElem.dataset) {
+                delete itemElem.dataset[key];
+            }
+            itemElem.removeAttribute('style');
+            itemElem.removeAttribute('title');
             itemElem.innerHTML = '';
         }
 
@@ -2047,15 +2671,15 @@ const TradeofferWindow = {
             }
         }
 
-        let { selectorData } = TradeofferWindow;
+        let { data, selectorData } = TradeofferWindow;
 
-        if(!selectorData.you) {
-            selectorData.you = {};
-            saveContexts(unsafeWindow.UserYou.rgContexts, selectorData.you);
+        if(!selectorData[data.me.id]) {
+            selectorData[data.me.id] = {};
+            saveContexts(unsafeWindow.UserYou.rgContexts, selectorData[data.me.id]);
         }
-        if(!selectorData.them) {
-            selectorData.them = {};
-            saveContexts(unsafeWindow.UserThem.rgContexts, selectorData.them);
+        if(!selectorData[data.them.id]) {
+            selectorData[data.them.id] = {};
+            saveContexts(unsafeWindow.UserThem.rgContexts, selectorData[data.them.id]);
         }
     },
     generateSelectorOptionHTMLString: function(optionText, dataAttr = {}, imgUrl) {
@@ -2064,7 +2688,7 @@ const TradeofferWindow = {
             dataAttrString += ` data-${attr}="${dataAttr[attr]}"`;
         }
 
-        let HTMLString = `<div class="main-control-selector-option"${dataAttrString}>`;
+        let HTMLString = `<div class="main-control-selector-option userscript-icon-name-container"${dataAttrString}>`;
         if(imgUrl) {
             HTMLString += `<img src="${imgUrl}">`;
         }
@@ -2076,13 +2700,13 @@ const TradeofferWindow = {
     generateAppSelectorHTMLString: function({ useUserApps = true, usePartnerApps = true, id, placeholderText, disabled = false }) {
         TradeofferWindow.getSelectorData();
 
-        let { selectorData } = TradeofferWindow;
+        let { data, selectorData } = TradeofferWindow;
         let applist = [];
         let optionsHTMLString = '';
 
         if(useUserApps) {
             let appInfoYou = unsafeWindow.UserYou.rgAppInfo;
-            for(let appid in selectorData.you) {
+            for(let appid in selectorData[data.me.id]) {
                 if(applist.includes(appid)) {
                     continue;
                 }
@@ -2095,7 +2719,7 @@ const TradeofferWindow = {
 
         if(usePartnerApps) {
             let appInfoThem = unsafeWindow.UserThem.rgAppInfo;
-            for(let appid in selectorData.them) {
+            for(let appid in selectorData[data.them.id]) {
                 if(applist.includes(appid)) {
                     continue;
                 }
@@ -2136,12 +2760,12 @@ const TradeofferWindow = {
     generateContextSelectorHTMLString: function(userIsMe, appid, { id, placeholderText, disabled = false }) {
         TradeofferWindow.getSelectorData();
 
-        let { selectorData } = TradeofferWindow;
+        let { data, selectorData } = TradeofferWindow;
         let optionsHTMLString = '';
         if( !(userIsMe === undefined || appid === undefined) ) {
             let contextInfoList = unsafeWindow[userIsMe ? 'UserYou' : 'UserThem'].rgAppInfo[appid].rgContexts;
 
-            for(let contextid of selectorData[userIsMe ? 'you' : 'them'][appid]) {
+            for(let contextid of selectorData[data[userIsMe ? 'me' : 'them'].id][appid]) {
                 let contextInfo = contextInfoList[contextid];
                 if(parseInt(contextid) === 0) {
                     continue;
@@ -2177,7 +2801,7 @@ const TradeofferWindow = {
         let disabledClassString = disabled ? ' disabled' : '';
 
         return `<div ${idAttrString} class="main-control-selector-container${disabledClassString}" ${widthAttrString} ${selectorDataAttrString}>`
-          +     `<div class="main-control-selector-select">`
+          +     `<div class="main-control-selector-select userscript-icon-name-container">`
           +         selectorContentHTMLString
           +     '</div>'
           +     '<div class="main-control-selector-options">'
@@ -2313,10 +2937,12 @@ const TradeofferWindow = {
 
         return configFilterData;
     },
-    getTradeInventory: function(profileid, appid, contextids, filterfn, forceRequest) {
-        let { inventories } = TradeofferWindow.data;
-        inventories[profileid] ??= {};
+    getTradeInventory: function(profileid, appid, contextids, filterBlockfn, forceRequest) {
+        let { inventories, descriptionClassAssets } = TradeofferWindow.data;
+        inventories[profileid] ??= { [appid]: {} };
         inventories[profileid][appid] ??= {};
+        descriptionClassAssets[profileid] ??= {};
+        descriptionClassAssets[profileid][appid] ??= {};
 
         if(typeof contextids === 'number' || typeof contextids === 'string') {
             contextids = [String(contextids)];
@@ -2331,16 +2957,31 @@ const TradeofferWindow = {
                 return promise;
             }
 
-            return TradeofferWindow.requestTradeInventoryFast2(profileid, appid, contextid, filterfn)
-                .then(inventory => {
-                    inventories[profileid][appid][contextid] = inventory;
-                    inventoryCollection[contextid] = inventory;
-                });
+            return promise.then(() =>
+                TradeofferWindow.requestTradeInventoryFast2(profileid, appid, contextid, filterBlockfn)
+                    .then(inventory => {
+                        inventories[profileid][appid][contextid] = inventory;
+
+                        let descriptClasses = {};
+                        for(let assetid in inventory.rgInventory) {
+                            let assetData = inventory.rgInventory[assetid];
+                            let classInstance = `${assetData.classid}_${assetData.instanceid}`;
+                            descriptClasses[assetData.classid] ??= { count: 0, assets: [], instanceCounts: {} };
+                            descriptClasses[assetData.classid].assets.push({ assetid: assetid, instanceid: assetData.instanceid, amount: parseInt(assetData.amount) });
+                            descriptClasses[assetData.classid].count += parseInt(assetData.amount);
+                            descriptClasses[assetData.classid].instanceCounts[assetData.instanceid] ??= 0;
+                            descriptClasses[assetData.classid].instanceCounts[assetData.instanceid] += parseInt(assetData.amount);
+                        }
+                        descriptionClassAssets[profileid][appid][contextid] = descriptClasses;
+
+                        inventoryCollection[contextid] = inventory;
+                    })
+            );
         }, Promise.resolve()).then(() => {
             return contextids.length === 1 ? inventoryCollection[contextids[0]] : inventoryCollection;
         });
     },
-    requestTradeInventoryFast: function(profileid, appid, contextid, filterFn) {
+    requestTradeInventoryFast: function(profileid, appid, contextid, filterBlockFn) {
         // Send requests in regular intervals in an attempt to shorten overall load time for multiple requests
         // Connection speed dependent: someone with a slower connect could accumulate many requests in progress
 
@@ -2362,7 +3003,7 @@ const TradeofferWindow = {
                     }
                 ).then(
                     data => {
-                        return filterFn ? filterFn(data, optionalInfo) : data;
+                        return typeof filterBlockFn === 'function' ? filterBlockFn(data, optionalInfo) : data;
                     },
                     err => {
                         cancelled = true;
@@ -2413,7 +3054,7 @@ const TradeofferWindow = {
 
         return Promise.all(promises).then(TradeofferWindow.mergeInventory);
     },
-    requestTradeInventoryFast2: function(profileid, appid, contextid, filterFn) {
+    requestTradeInventoryFast2: function(profileid, appid, contextid, filterBlockFn) {
         // Send requests with a maximum number of simultaneous requests at any time
         // Connection speed independent: throttled by number of requests in the task queue
 
@@ -2452,7 +3093,89 @@ const TradeofferWindow = {
             urlList.push({ url: url.href, optionalInfo: { profileid, appid, contextid } });
         }
 
-        return steamToolsUtils.createFetchQueue(urlList, 3, filterFn).then(TradeofferWindow.mergeInventory);
+        return steamToolsUtils.createFetchQueue(urlList, 3, filterBlockFn).then(TradeofferWindow.mergeInventory);
+    },
+    filterInventoryBlockSetup: function(processAssetfn) {
+        function filterInventoryBlock(data, { profileid, appid, contextid }) {
+            if(Array.isArray(data?.rgInventory)) {
+                if(data.rgInventory.length !== 0) {
+                    console.error('TradeofferWindow.filterInventoryBlock(): Inventory data is a populated array?!?!');
+                    console.log(data)
+                }
+                return data;
+            }
+
+            let filterData = TradeofferWindow.filterLookupGet(appid);
+            if(!filterData) {
+                filterData = {
+                    id: appid,
+                    fetched: false,
+                    categories: []
+                };
+                globalSettings.tradeoffer.filter.apps.push(filterData);
+                TradeofferWindow.filterLookupUpdateApp(filterData);
+            }
+
+            let excludedDescriptions = [];
+            for(let assetid in data.rgInventory) {
+                let asset = data.rgInventory[assetid];
+                let excludeAsset = false;
+                let descript = data.rgDescriptions[`${asset.classid}_${asset.instanceid}`];
+
+                if(!descript) {
+                    console.error('TradeofferWindow.filterInventoryBlock(): Description not found for an asset?!?!');
+                    continue;
+                }
+
+                // check to be excluded or not
+                for(let tag of descript.tags) {
+                    let filterCategory = TradeofferWindow.filterLookupGet(appid, tag.category);
+                    if(!filterCategory) {
+                        filterCategory = {
+                            id: tag.category,
+                            name: tag.category_name,
+                            pOpened: false,
+                            qOpened: false,
+                            tags: []
+                        };
+                        filterData.categories.push(filterCategory);
+                        TradeofferWindow.filterLookupUpdateCategory(appid, filterCategory);
+                    }
+
+                    let filterTag = TradeofferWindow.filterLookupGet(appid, tag.category, tag.internal_name);
+                    if(!filterTag) {
+                        filterTag = {
+                            id: tag.internal_name,
+                            name: tag.name,
+                            excluded: false,
+                            filtered: false
+                        };
+                        filterCategory.tags.push(filterTag);
+                        TradeofferWindow.filterLookupUpdateTag(appid, tag.category, filterTag);
+                    }
+
+                    if(filterTag.excluded) {
+                        excludeAsset = true;
+                        break;
+                    }
+                }
+
+                if(excludeAsset) {
+                    delete data.rgInventory[assetid];
+                    excludedDescriptions.push(`${asset.classid}_${asset.instanceid}`);
+                } else if(typeof processAssetfn === 'function') {
+                    processAssetfn(asset, descript);
+                }
+            }
+
+            for(let descriptid of excludedDescriptions) {
+                delete data.rgDescriptions[descriptid];
+            }
+
+            return data;
+        }
+
+        return filterInventoryBlock;
     },
     mergeInventory: function(invBlocks) {
         if(!Array.isArray(invBlocks)) {
