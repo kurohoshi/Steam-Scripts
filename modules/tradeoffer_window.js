@@ -2604,15 +2604,1290 @@ const TradeofferWindow = {
 
 
     itemsSelectorShortcuts: {},
+    itemsSelectorData: {
+        groupBarterEntries: [
+            {
+                name: 'Sacks of Gems',
+                items: [
+                    { appid: '753', contextid: '6', classid: '667933237', amount: 1 }
+                ]
+            },
+            {
+                name: 'Gem',
+                items: [
+                    { appid: '753', contextid: '6', classid: '667924416', amount: 1 }
+                ]
+            },
+            {
+                name: 'TF2 Key',
+                items: [
+                    { appid: '440', contextid: '2', classid: '101785959', amount: 1 }
+                ]
+            },
+            {
+                name: 'Refined Metal',
+                items: [
+                    { appid: '440', contextid: '2', classid: '2674', amount: 1 }
+                ]
+            },
+            {
+                name: 'Reclaimed Metal',
+                items: [
+                    { appid: '440', contextid: '2', classid: '5564', amount: 1 }
+                ]
+            },
+            {
+                name: 'Scrap Metal',
+                items: [
+                    { appid: '440', contextid: '2', classid: '2675', amount: 1 }
+                ]
+            },
+        ],
+        currentProfileid: null, // profileid
+        currentGroupId: null, // group.id
+        currentEntryId: null, // entry.id
+        groups: {
+        /*    groupId: {
+         *        name: string,
+         *        id: number,
+         *        entries: [
+         *            {
+         *                name: string,
+         *                id: number,
+         *                items: [
+         *                    { appid: string, contextid: string, classid: string, instanceid: string, amount: number },
+         *                    ...
+         *                ]
+         *            },
+         *            ...
+         *        ]
+         *    },
+         *    ...
+         */
+        },
+        balancer: {
+            RARITY_MAP: {
+                card: ['Normal', 'Foil'],
+                background: ['Common', 'Uncommon', 'Rare'],
+                emoticon: ['Common', 'Uncommon', 'Rare'],
+            },
+            APP_NAME_MAP: {
+                // appid: string
+            },
+            data: {
+                /* profileid(obj) -> itemType(obj) -> rarity(arr) -> appid(obj) -> classid(arr)
+                 * profileid: {
+                 *     card: [
+                 *         {
+                 *             appid: [
+                 *                 { classid: string, tradables: [], count: number }
+                 *             ]
+                 *         },
+                 *         ...,
+                 *     ],
+                 *     background: [ {}, {}, {} ],
+                 *     emoticon: [ {}, {}, {}]
+                 *     ...
+                 * }
+                 */
+            },
+            // results: // generated from item matching method
+        }
+    },
 
     itemsSelectorSetup: function() {
         console.log('Items Selector WIP');
 
-        if (TradeofferWindow.itemsSelectorShortcuts.body !== undefined) {
+        let { itemsSelectorShortcuts } = TradeofferWindow;
+
+        if(itemsSelectorShortcuts.body !== undefined) {
+            itemsSelectorShortcuts.dialogContainer.classList.remove('active');
+            TradeofferWindow.itemsSelectorRecalculateAvailability();
+            TradeofferWindow.itemsSelectorRecalculateBalancerAvailability();
             return;
         }
 
         // generate prefilter body and attach to overlay body
+        const itemsSelectorDialogHTMLString = '<div class="items-selector-dialog-container">'
+          +     '<div class="items-selector-dialog">'
+          +         '<div class="items-selector-entry-remove">'
+          +         '</div>'
+          +         '<div class="dialog-profile">'
+          +             '<img class="dialog-profile-avatar" src="">'
+          +             '<span class="dialog-profile-name">?????</span>'
+          +         '</div>'
+          +         '<div class="dialog-title">'
+          +             '[<span class="dialog-group-name">?????</span>] '
+          +             '<span class="dialog-entry-name">?????</span>'
+          +         '</div>'
+          +         '<div class="dialog-items">'
+          +             '' // item container elems
+          +         '</div>'
+          +         '<input type="range" name="" class="userscript-input" value="0" min="0" max="0">'
+          +         '<div>'
+          +             'Select'
+          +             '<input type="number" name="" class="userscript-input" value="0" min="0" max="0">'
+          +             'Sets of Items'
+          +         '</div>'
+          +         '<div class="dialog-actions">'
+          +             '<button class="dialog-cancel userscript-btn red">Cancel</button>'
+          +             '<button class="dialog-reset userscript-btn trans-white">Reset</button>'
+          +             '<button class="dialog-confirm userscript-btn green">Apply</button>'
+          +             '<button class="dialog-check userscript-btn purple">Check Availability</button>'
+          +         '</div>'
+          +     '</div>'
+          + '</div>';
+
+        const itemsSelectorBodyHTMLString = '<div class="items-selector-body">'
+          +     '<div class="items-selector-main-control">'
+          +         TradeofferWindow.generateProfileSelectorHTMLString({ id: 'selector-items-selector-profile' })
+          +     '</div>'
+          +     '<div class="items-selector-groups">'
+          +         '' // dynamically populate groups later
+          +     '</div>'
+          +     itemsSelectorDialogHTMLString
+          + '</div>';
+
+        TradeofferWindow.shortcuts.overlayBody.insertAdjacentHTML('beforeend', itemsSelectorBodyHTMLString);
+
+        // add shortcuts
+        itemsSelectorShortcuts.body = TradeofferWindow.shortcuts.overlayBody.querySelector('.items-selector-body');
+        itemsSelectorShortcuts.groups = itemsSelectorShortcuts.body.querySelector('.items-selector-groups');
+        itemsSelectorShortcuts.group = {}; // populated during group loading later
+        itemsSelectorShortcuts.selector = document.getElementById('selector-items-selector-profile');
+        itemsSelectorShortcuts.selectorOptions = itemsSelectorShortcuts.selector.querySelector('.main-control-selector-options');
+        itemsSelectorShortcuts.dialogContainer = itemsSelectorShortcuts.body.querySelector('.items-selector-dialog-container');
+        itemsSelectorShortcuts.dialog = itemsSelectorShortcuts.dialogContainer.querySelector('.items-selector-dialog');
+        itemsSelectorShortcuts.dialogTitle = itemsSelectorShortcuts.dialog.querySelector('.dialog-title');
+        itemsSelectorShortcuts.dialogProfile = itemsSelectorShortcuts.dialog.querySelector('.dialog-profile');
+        itemsSelectorShortcuts.dialogItems = itemsSelectorShortcuts.dialog.querySelector('.dialog-items');
+        itemsSelectorShortcuts.dialogSliderInput = itemsSelectorShortcuts.dialog.querySelector('input[type="range"]');
+        itemsSelectorShortcuts.dialogTextInput = itemsSelectorShortcuts.dialog.querySelector('input[type="number"]');
+        itemsSelectorShortcuts.dialogButtonCancel = itemsSelectorShortcuts.dialog.querySelector('.dialog-cancel');
+        itemsSelectorShortcuts.dialogButtonReset = itemsSelectorShortcuts.dialog.querySelector('.dialog-reset');
+        itemsSelectorShortcuts.dialogButtonConfirm = itemsSelectorShortcuts.dialog.querySelector('.dialog-confirm');
+        itemsSelectorShortcuts.dialogButtonCheck = itemsSelectorShortcuts.dialog.querySelector('.dialog-check');
+
+        // add event listeners
+        itemsSelectorShortcuts.selector.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
+        itemsSelectorShortcuts.selectorOptions.addEventListener('click', TradeofferWindow.itemsSelectorSelectorProfileSelectListener);
+
+        itemsSelectorShortcuts.dialog.querySelector('.items-selector-entry-remove').addEventListener('click', TradeofferWindow.itemsSelectorGroupEntryDialogDeleteEntryListener);
+        itemsSelectorShortcuts.dialogButtonCancel.addEventListener('click', TradeofferWindow.itemsSelectorGroupEntryDialogCancelListener);
+        itemsSelectorShortcuts.dialogButtonReset.addEventListener('click', TradeofferWindow.itemsSelectorGroupEntryDialogResetListener);
+        itemsSelectorShortcuts.dialogButtonConfirm.addEventListener('click', TradeofferWindow.itemsSelectorGroupEntryDialogConfirmListener);
+        itemsSelectorShortcuts.dialogButtonCheck.addEventListener('click', TradeofferWindow.itemsSelectorGroupEntryDialogCheckAvailabilityListener);
+        itemsSelectorShortcuts.dialogSliderInput.addEventListener('input', TradeofferWindow.itemsSelectorGroupEntryDialogUpdateTextListener);
+        itemsSelectorShortcuts.dialogTextInput.addEventListener('input', TradeofferWindow.itemsSelectorGroupEntryDialogUpdateSliderListener);
+
+        TradeofferWindow.itemsSelectorLoadGroups();
+    },
+    itemsSelectorLoadGroups: function() {
+        const addGroup = (groupid, name, entries = [], options = { sort: true }) => {
+            entries = steamToolsUtils.deepClone(entries);
+
+            // position in original dataset
+            for(let i=0; i<entries.length; i++) {
+                entries[i].pos = i;
+            }
+
+            if(options.sort) {
+                entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+            }
+
+            // position in sorted dataset
+            for(let i=0; i<entries.length; i++) {
+                entries[i].id = i;
+            }
+
+            let newGroup = {
+                name: name,
+                id: groupid,
+                entries: entries
+            }
+
+            itemsSelectorData.groups[groupid] = newGroup;
+
+            let groupHTMLString = TradeofferWindow.itemsSelectorGenerateGroup(newGroup);
+            itemsSelectorShortcuts.groups.insertAdjacentHTML('beforeend', groupHTMLString);
+            itemsSelectorShortcuts.group[groupid] = itemsSelectorShortcuts.groups.lastElementChild;
+        };
+
+        let { data, itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+
+        addGroup('custom', 'Custom', globalSettings.tradeoffer.itemsSelectorCustomGroupEntries);
+
+        addGroup('barter', 'Barter Items', itemsSelectorData.groupBarterEntries, { sort: false });
+
+        addGroup('cardSets', 'Steam Card Sets');
+        let cardSetButtonsHTMLString = `<button class="userscript-trade-action half" data-id="${data.me.id}">Check My Inventory</button>`
+            + `<button class="userscript-trade-action half" data-id="${data.them.id}">Check Their Inventory</button>`;
+        itemsSelectorShortcuts.group.cardSets.querySelector('.group-entries').insertAdjacentHTML('beforebegin', cardSetButtonsHTMLString);
+        itemsSelectorShortcuts.group.cardSets.querySelector(`button[data-id="${data.me.id}"]`).addEventListener('click', TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd, { once: true });
+        itemsSelectorShortcuts.group.cardSets.querySelector(`button[data-id="${data.them.id}"]`).addEventListener('click', TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd, { once: true });
+
+        addGroup('balancer', 'Steam Items Balancer');
+        let balancerButtonHTMLString = '<button id="items-selector-add-balancing" class="userscript-trade-action">Balance Steam Items</button>';
+        itemsSelectorShortcuts.group.balancer.querySelector('.group-entries').insertAdjacentHTML('beforebegin', balancerButtonHTMLString);
+        document.getElementById('items-selector-add-balancing').addEventListener('click', TradeofferWindow.itemsSelectorGroupBalancerEntriesAdd, { once: true });
+
+        for(let groupName in itemsSelectorShortcuts.group) {
+            itemsSelectorShortcuts.group[groupName].addEventListener('click', TradeofferWindow.itemsSelectorGroupEntryDialogShowListener);
+            itemsSelectorShortcuts.group[groupName].querySelector('.items-selector-group-header').addEventListener('click', TradeofferWindow.itemsSelectorGroupToggle);
+        }
+
+        TradeofferWindow.itemsSelectorRecalculateAvailability();
+    },
+    itemsSelectorSelectorProfileSelectListener: function(event) {
+        // set selector select contents
+        let optionElem = event.target.closest('.main-control-selector-option');
+        if(!optionElem) {
+            throw 'TradeofferWindow.itemsSelectorSelectorProfileSelectListener(): No option found! Was the document structured correctly?';
+        }
+
+        let selectorElem = event.currentTarget.parentElement;
+        if(selectorElem.dataset.id !== optionElem.dataset.id) {
+            TradeofferWindow.selectorMenuSelect(selectorElem, optionElem);
+            TradeofferWindow.itemsSelectorData.currentProfileid = optionElem.dataset.id;
+        }
+
+        TradeofferWindow.itemsSelectorRecalculateAvailability();
+    },
+    itemsSelectorGroupToggle: function(event) {
+        let groupElem = event.target.closest('.items-selector-group');
+
+        groupElem.classList.toggle('hidden');
+    },
+    itemsSelectorRecalculateAvailability: function(excludeGroupId) {
+        let { group: groupElemList } = TradeofferWindow.itemsSelectorShortcuts;
+
+        for(let groupId in groupElemList) {
+            if(groupId === 'balancer' || groupId === excludeGroupId) {
+                continue;
+            }
+
+            for(let entryElem of groupElemList[groupId].querySelectorAll('.items-selector-entry')) {
+                // NOTE: micro-optimization: check if any profile is selected
+                let availability = TradeofferWindow.itemsSelectorGroupEntryCheckAvailability(entryElem);
+                if(availability === '') {
+                    entryElem.classList.remove('uncertain', 'available', 'unavailable');
+                    continue;
+                } else if(entryElem.classList.contains(availability)) {
+                    continue;
+                }
+
+                entryElem.classList.remove('uncertain', 'available', 'unavailable');
+                entryElem.classList.add(availability);
+            }
+        }
+    },
+    itemsSelectorGroupEntryCheckAvailability: function(entry) {
+        let { data, offerData: { offer }, itemsSelectorData } = TradeofferWindow;
+
+        if(!itemsSelectorData.currentProfileid) {
+            return '';
+        }
+
+        if(entry instanceof HTMLElement) {
+            let entryId = entry.dataset.id;
+            let groupId = entry.closest('.items-selector-group').dataset.id;
+            entry = itemsSelectorData.groups[groupId]?.entries[entryId];
+            if(!entry) {
+                throw 'TradeofferWindow.itemsSelectorGroupEntryCheckAvailability(): No entry data found?!?!';
+            }
+        }
+
+        if(steamToolsUtils.isSimplyObject(entry)) {
+            entry.maxAvailable ??= {};
+
+            let maxAvailable = Number.MAX_SAFE_INTEGER;
+            for(let item of entry.items) {
+                let descriptContext = data.descriptionClassAssets[itemsSelectorData.currentProfileid]?.[item.appid]?.[item.contextid];
+                if(!descriptContext) {
+                    entry.maxAvailable[itemsSelectorData.currentProfileid] = null;
+                    return 'uncertain';
+                }
+
+                let descriptEntryCount = item.instanceid
+                  ? descriptContext[item.classid]?.instanceCounts[item.instanceid]
+                  : descriptContext[item.classid]?.count;
+
+                if(descriptEntryCount === undefined || descriptEntryCount === 0) {
+                    entry.maxAvailable[itemsSelectorData.currentProfileid] = 0;
+                    return 'unavailable';
+                }
+
+                let offerContext = offer[itemsSelectorData.currentProfileid]?.[item.appid]?.[item.contextid];
+                let offerEntryCount = item.instanceid
+                  ? offerContext?.[item.classid]?.instanceCounts[item.instanceid]
+                  : offerContext?.[item.classid]?.count;
+                let availableAssets = descriptEntryCount - (offerEntryCount ?? 0);
+                if(availableAssets < parseInt(item.amount)) {
+                    entry.maxAvailable[itemsSelectorData.currentProfileid] = 0;
+                    return 'unavailable';
+                }
+
+                maxAvailable = Math.min(maxAvailable, Math.floor(availableAssets / item.amount));
+            }
+
+            entry.maxAvailable[itemsSelectorData.currentProfileid] = maxAvailable;
+            return 'available';
+        }
+
+        return '';
+    },
+    itemsSelectorRecalculateBalancerAvailability: function() {
+        let { itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+
+        let balancerGroupElem = itemsSelectorShortcuts?.group.balancer;
+        if(!balancerGroupElem) {
+            return;
+        }
+
+        let balancerGroupData = itemsSelectorData.groups.balancer;
+        if(!balancerGroupData) {
+            return;
+        }
+
+        for(let entryElem of balancerGroupElem.querySelectorAll('.items-selector-entry')) {
+            let isAvailable = TradeofferWindow.itemsSelectorGroupBalancerCheckAvailability(entryElem);
+            entryElem.classList.remove(isAvailable ? 'unavailable' : 'available');
+            entryElem.classList.add(isAvailable ? 'available' : 'unavailable');
+        }
+    },
+    itemsSelectorGroupBalancerCheckAvailability: function(entry) {
+        const checkIsAvailabile = (items, descriptContext, offerContext) => {
+            for(let item of items) {
+                let descriptCount = descriptContext[item.classid]?.count ?? 0;
+                let offerCount = offerContext?.[item.classid]?.count ?? 0;
+                let totalAvailable = descriptCount - offerCount;
+                if(totalAvailable < parseInt(item.amount)) {
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+        let { data, offerData: { offer }, itemsSelectorData } = TradeofferWindow;
+
+        let descriptSteamContext1 = data.descriptionClassAssets[data.me.id]?.['753']?.['6'];
+        let descriptSteamContext2 = data.descriptionClassAssets[data.them.id]?.['753']?.['6'];
+        if(!descriptSteamContext1 || !descriptSteamContext2) {
+            console.error('TradeofferWindow.itemsSelectorGroupBalancerCheckAvailability(): At least 1 of the steam inventories is not present!?!?');
+            entry.isAvailable = false;
+            return entry.isAvailable;
+        }
+
+        if(entry instanceof HTMLElement) {
+            let entryId = entry.dataset.id;
+            entry = itemsSelectorData.groups.balancer?.entries[entryId];
+            if(!entry) {
+                throw 'TradeofferWindow.itemsSelectorGroupBalancerCheckAvailability(): No entry data found?!?!';
+            }
+        }
+
+        let offerSteamContext1 = offer[data.me.id]?.['753']?.['6'];
+        let offerSteamContext2 = offer[data.them.id]?.['753']?.['6'];
+
+        if(steamToolsUtils.isSimplyObject(entry)) {
+            entry.isAvailable = checkIsAvailabile(entry.items1, descriptSteamContext1, offerSteamContext1)
+                && checkIsAvailabile(entry.items2, descriptSteamContext2, offerSteamContext2);
+            return entry.isAvailable;
+        }
+
+        return false;
+    },
+
+    itemsSelectorGroupCustomEntryAdd: function(name, itemList) {
+        // itemList: [ { appid, contextid, classid, instanceid, amount }, ... ]
+
+        let { custom: groupCustomData } = TradeofferWindow.itemsSelectorData.groups;
+
+        if(typeof name !== 'string' || !Array.isArray(itemList)) {
+            throw 'TradeofferWindow.itemsSelectorAddCustomGroupEntry(): invalid arg types!';
+        }
+
+        let newEntry = {
+            name: name,
+            id: groupCustomData.entries.length,
+            items: itemList.map(item => {
+                if(!steamToolsUtils.isSimplyObject(item)) {
+                    throw 'TradeofferWindow.itemsSelectorAddCustomGroupEntry(): invalid item object! Group entry will not be added...';
+                }
+
+                return {
+                    appid: item.appid,
+                    contextid: item.contextid,
+                    classid: item.classid,
+                    instanceid: item.instanceid,
+                    amount: item.amount
+                };
+            }),
+        };
+
+        groupCustomData.entries.push(newEntry);
+
+        let { itemsSelectorShortcuts } = TradeofferWindow;
+        if(itemsSelectorShortcuts.body === undefined) {
+            return;
+        }
+
+        let entryHTMLString = TradeofferWindow.itemsSelectorGenerateGroupEntry(newEntry);
+        itemsSelectorShortcuts.group.custom.insertAdjacentHTML('beforeend', entryHTMLString);
+    },
+    itemsSelectorGroupCustomEntryRemove: function() {
+        // get custom entry's group id and entry id, grab pos(ition) and delete from original custom entries list
+    },
+    itemsSelectorGroupCardSetsEntriesAdd: async function(event) {
+        let { data, itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+
+        if(itemsSelectorShortcuts.body === undefined) {
+            throw 'TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd(): This method executed before Items Selector has been set up!';
+        }
+
+        itemsSelectorShortcuts.group.cardSets.classList.add('loading');
+
+        let profileid = event.target.dataset.id;
+        let steamInventory = data.inventories[profileid]?.['753']?.['6'];
+        if(!steamInventory) {
+            steamInventory = await TradeofferWindow.getTradeInventory(profileid, 753, 6, TradeofferWindow.filterInventoryBlockSetup());
+            TradeofferWindow.itemsSelectorRecalculateAvailability();
+        }
+
+        let cardAppsTracker = {};
+        for(let classInstance in steamInventory.rgDescriptions) {
+            let descript = steamInventory.rgDescriptions[classInstance];
+            let isCard = descript.tags?.some(x => x.category === 'item_class' && x.internal_name === 'item_class_2') ?? false;
+            if(!isCard) {
+                continue;
+            }
+
+            let cardborder = descript.tags?.find(x => x.category === 'cardborder');
+            if(!cardborder) {
+                console.warn('TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd(): Cardborder not found for card tag?!?!');
+                continue;
+            }
+            cardborder = cardborder.internal_name.replace('cardborder_', '');
+
+            let appFoilLabel = `${descript.market_fee_app}_${cardborder}`;
+            cardAppsTracker[appFoilLabel] ??= [];
+            // NOTE: Assumption: all distinct cards have the same classids
+            if(!cardAppsTracker[appFoilLabel].some(x => x.classid === descript.classid)) {
+                cardAppsTracker[appFoilLabel].push(descript);
+            }
+        }
+
+        let entries = [];
+        for(let appidCardborder in cardAppsTracker) {
+            let [ appid, cardborder ] = appidCardborder.split('_');
+
+            if(cardAppsTracker[appidCardborder].length < 5) {
+                continue;
+            }
+
+            let appData = await Profile.findAppMetaData(appid, { cards: true, foil: cardborder === '1' });
+            if(!appData?.cards) {
+                console.error('TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd(): Cards info not found in meta data?!?!', appid);
+                continue;
+            }
+
+            if(appData.cards.length === cardAppsTracker[appidCardborder].length) {
+                let tmpDescript = cardAppsTracker[appidCardborder][0];
+                let appName = tmpDescript.tags.find(x => x.category === 'Game')?.name;
+                appName ??= `⁇ (App ${tmpDescript.tags.market_fee_app})`;
+                appName = cardborder === '1' ? '★ '+appName : appName;
+
+                let imgMissCount = 0;
+                let entryItems = cardAppsTracker[appidCardborder].reduce((newItems, descript) => {
+                    let cardIndex = appData.cards.findIndex(x => x[`img_card${cardborder}`] === descript.icon_url);
+                    if(cardIndex === -1) {
+                        console.warn('TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd(): No matching card image found with description image!', appid);
+                        cardIndex = cardAppsTracker[appidCardborder].length + imgMissCount;
+                        imgMissCount++;
+                    }
+                    newItems[cardIndex] = {
+                        appid: '753',
+                        contextid: '6',
+                        classid: descript.classid,
+                        amount: 1
+                    }
+
+                    return newItems;
+                }, []);
+
+                // NOTE: We can naively filter this way because we are dealing with objects only!
+                entries.push({
+                    name: appName,
+                    items: entryItems.filter(x => x)
+                });
+            }
+        }
+
+        // NOTE: Inefficient?
+        entries.sort((a, b) => {
+            if(a.name.startsWith('★ ⁇ ')) {
+                if(b.name.startsWith('★ ⁇ ')) {
+                    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+                } else {
+                    return 1;
+                }
+            } else if(a.name.startsWith('★ ')) {
+                if(b.name.startsWith('★ ⁇ ')) {
+                    return -1;
+                } else if(b.name.startsWith('★ ')) {
+                    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+                } else {
+                    return 1;
+                }
+            } else {
+                if(b.name.startsWith('★ ')) {
+                    return -1;
+                } else {
+                    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+                }
+            }
+        });
+
+        let mergedEntries = [];
+        let newEntryIndex = 0;
+        let entryList = itemsSelectorData.groups.cardSets.entries;
+        let entryElemList = itemsSelectorShortcuts.group.cardSets.querySelectorAll('.items-selector-entry');
+        if(entryList.length !== entryElemList.length) {
+            throw 'TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd(): Entry list length and element list length mismatch!';
+        }
+
+        for(let i=0; i<entryList.length; i++) {
+            let currEntry = entryList[i];
+            let currEntryElem = entryElemList[i];
+            if(currEntry.id !== parseInt(currEntryElem.dataset.id)) {
+                throw 'TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd(): Entry data id does not match element\'s id!';
+            }
+
+            while(newEntryIndex<entries.length && entries[newEntryIndex].name.localeCompare(currEntry.name, undefined, { sensitivity: 'base' })<0) {
+                let newEntry = entries[newEntryIndex];
+
+                newEntry.id = mergedEntries.length;
+                mergedEntries.push(newEntry);
+
+                let entryHTMLString = TradeofferWindow.itemsSelectorGenerateGroupEntry(newEntry);
+                currEntryElem.insertAdjacentHTML('beforebegin', entryHTMLString);
+
+                newEntryIndex++;
+            }
+
+            if(newEntryIndex<entries.length && entries[newEntryIndex].name.localeCompare(currEntry.name, undefined, { sensitivity: 'base' }) === 0) {
+                newEntryIndex++;
+            }
+
+            currEntryElem.dataset.id = currEntry.id = mergedEntries.length;
+            mergedEntries.push(currEntry);
+        }
+
+        let entriesHTMLString = '';
+        while(newEntryIndex<entries.length) {
+            let newEntry = entries[newEntryIndex];
+
+            newEntry.id = mergedEntries.length;
+            mergedEntries.push(newEntry);
+
+            entriesHTMLString += TradeofferWindow.itemsSelectorGenerateGroupEntry(newEntry);
+
+            newEntryIndex++;
+        }
+        itemsSelectorShortcuts.group.cardSets.querySelector('.group-entries').insertAdjacentHTML('beforeend', entriesHTMLString);;
+        itemsSelectorData.groups.cardSets.entries = mergedEntries;
+
+        event.target.remove();
+        itemsSelectorShortcuts.group.cardSets.querySelector('button')?.classList.remove('half');
+
+        TradeofferWindow.itemsSelectorRecalculateAvailability('cardSets');
+
+        itemsSelectorShortcuts.group.cardSets.classList.remove('loading');
+    },
+    itemsSelectorGroupBalancerEntriesAdd: async function(event) {
+        let { data, itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+
+        if(itemsSelectorShortcuts.body === undefined) {
+            throw 'TradeofferWindow.itemsSelectorGroupBalancerEntriesAdd(): This method executed before Items Selector has been set up!';
+        }
+
+        let { RARITY_MAP, APP_NAME_MAP } = itemsSelectorData.balancer;
+
+        itemsSelectorShortcuts.group.balancer.classList.add('loading');
+
+        let matchResults = await TradeofferWindow.itemsSelectorGroupBalancerMatchSteamItems();
+
+        // generate entries
+        let entries = [];
+        let inventoryData1 = itemsSelectorData.balancer.data[data.me.id];
+        let inventoryData2 = itemsSelectorData.balancer.data[data.them.id];
+        for(let [result, appid, rarity, itemType] of TradeofferWindow.itemsSelectorItemSetsIter(matchResults)) {
+            let { swap } = result;
+
+            let items1 = [];
+            let items2 = [];
+            for(let i=0; i<swap.length; i++) {
+                let classData, inventory, itemList;
+                if(swap[i] < 0) {
+                    classData = inventoryData1[itemType][rarity][appid];
+                    inventory = data.inventories[data.me.id]['753']['6'];
+                    itemList = items1;
+                } else if(swap[i] > 0) {
+                    classData = inventoryData2[itemType][rarity][appid];
+                    inventory = data.inventories[data.them.id]['753']['6'];
+                    itemList = items2;
+                } else {
+                    continue;
+                }
+
+                itemList.push({
+                    appid: '753',
+                    contextid: '6',
+                    classid: classData[i].classid,
+                    amount: Math.abs(swap[i])
+                });
+            }
+
+            let name = `[${RARITY_MAP[itemType][rarity].charAt(0).toUpperCase()}]`;
+            name += `[${itemType.charAt(0).toUpperCase()}]`;
+            name +=  APP_NAME_MAP[appid] ? ` ${APP_NAME_MAP[appid]}` : ` (App ${appid})`;
+
+            entries.push({
+                name: name,
+                id: entries.length,
+                itemType: itemType,
+                rarity: rarity,
+                items1: items1,
+                items2: items2,
+            });
+        }
+
+        itemsSelectorData.groups.balancer.entries = entries;
+
+        // generate and insert HTML string
+        let balancerGroupElem = itemsSelectorShortcuts.group.balancer;
+
+        let resultsHTMLString = '';
+        for(let entryData of entries) {
+            resultsHTMLString += TradeofferWindow.itemsSelectorGenerateBalancerEntry(entryData);
+        }
+        balancerGroupElem.querySelector('.group-entries').insertAdjacentHTML('beforeend', resultsHTMLString);
+
+        // replace current button with 3 buttons
+        balancerGroupElem.querySelector('#items-selector-add-balancing').remove();
+        let addButtonsHTMLString = '<button id="items-selector-add-normal-cards" class="userscript-trade-action third">Add All Normal Cards</button>'
+          + '<button id="items-selector-add-backgrounds" class="userscript-trade-action third">Add All Backgrounds</button>'
+          + '<button id="items-selector-add-emoticons" class="userscript-trade-action third">Add All Emoticons</button>';
+        balancerGroupElem.querySelector('.group-entries').insertAdjacentHTML('beforebegin', addButtonsHTMLString);
+
+        document.getElementById('items-selector-add-normal-cards').addEventListener('click', TradeofferWindow.itemsSelectorGroupBalancerAddAllNormalCardsListener);
+        document.getElementById('items-selector-add-backgrounds').addEventListener('click', TradeofferWindow.itemsSelectorGroupBalancerAddAllBackgroundsListener);
+        document.getElementById('items-selector-add-emoticons').addEventListener('click', TradeofferWindow.itemsSelectorGroupBalancerAddAllEmoticonsListener);
+
+        TradeofferWindow.itemsSelectorRecalculateBalancerAvailability();
+        TradeofferWindow.itemsSelectorRecalculateAvailability('cardSets');
+
+        itemsSelectorShortcuts.group.balancer.classList.remove('loading');
+    },
+    itemsSelectorGroupBalancerGenerateItemDataCategories: async function(profileid) {
+        let { APP_NAME_MAP } = TradeofferWindow.itemsSelectorData.balancer;
+        let steamInventory = await TradeofferWindow.getTradeInventory(profileid, '753', '6', TradeofferWindow.filterInventoryBlockSetup());
+
+        let data = TradeofferWindow.itemsSelectorData.balancer.data[profileid] = { card: [], background: [], emoticon: [] };
+        for(let assetid in steamInventory.rgInventory) {
+            let asset = steamInventory.rgInventory[assetid];
+            let descript = steamInventory.rgDescriptions[`${asset.classid}_${asset.instanceid}`];
+
+            let itemType = descript.tags.find(x => x.category === 'item_class');
+            if(!itemType) {
+                console.warn('TradeofferWindow.itemsSelectorGroupBalancerGenerateItemDataCategories(): Description has no item type??');
+                console.log(descript);
+                continue;
+            }
+
+            let rarity = itemType.internal_name === 'item_class_2'
+              ? descript.tags.find(x => x.category === 'cardborder')
+              : descript.tags.find(x => x.category === 'droprate');
+            if(!rarity) {
+                console.warn('TradeofferWindow.itemsSelectorGroupBalancerGenerateItemDataCategories(): Description has no rarity??');
+                console.log(descript);
+                continue;
+            }
+
+            itemType = Profile.ITEM_TYPE_MAP[itemType.internal_name];
+            rarity = Profile.ITEM_TYPE_MAP[rarity.internal_name] ?? parseInt(rarity.internal_name.replace(/\D+/g, ''));
+
+            data[itemType] ??= [{}];
+            while(data[itemType].length <= rarity) {
+                data[itemType].push({});
+            }
+
+            let itemList = data[itemType][rarity];
+
+            let appNameTag = descript.tags.find(x => x.category === 'Game');
+            if(!appNameTag) {
+                console.warn('TradeofferWindow.itemsSelectorGroupBalancerGenerateItemDataCategories(): Description has no app name??');
+                console.log(descript);
+                appNameTag = { internal_name: '' };
+            }
+
+            APP_NAME_MAP[descript.market_fee_app] ??= appNameTag.name;
+
+            // NOTE: Too much of a performance hit, figure out a different way to save data
+            // await Profile.updateAppMetaData(descript.market_fee_app, { appid: parseInt(descript.market_fee_app), name: appNameTag.name }, false);
+
+            asset.amount = parseInt(asset.amount);
+
+            itemList[descript.market_fee_app] ??= [];
+            let classItemGroup = itemList[descript.market_fee_app].find(x => x.classid === asset.classid);
+            if(!classItemGroup) {
+                classItemGroup = {
+                    classid: asset.classid,
+                    tradables: [],
+                    count: 0
+                };
+                itemList[descript.market_fee_app].push(classItemGroup);
+            }
+
+            if(descript.tradable) {
+                classItemGroup.tradables.push({ assetid: asset.id, instanceid: asset.instanceid, count: asset.amount });
+            }
+            classItemGroup.count += asset.amount;
+        }
+
+        return data;
+    },
+    itemsSelectorGroupBalancerMatchSteamItems: async function() {
+        const fillMissingItems = (target, source) => {
+            for(let i=0; i<source.length; i++) {
+                if(!target.some(x => x.classid === source[i].classid)) {
+                    target.push({ classid: source[i].classid, tradables: [], count: 0 });
+                }
+            }
+        }
+
+        let { data, itemsSelectorData: { balancer: balancerData } } = TradeofferWindow;
+
+        let itemSetsData1 = await TradeofferWindow.itemsSelectorGroupBalancerGenerateItemDataCategories(data.me.id);
+        if(!itemSetsData1) {
+            throw 'TradeofferWindow.itemsSelectorGroupBalancerMatchSteamItems(): User\'s steam item data not available??';
+        }
+
+        let itemSetsData2 = await TradeofferWindow.itemsSelectorGroupBalancerGenerateItemDataCategories(data.them.id);
+        if(!itemSetsData2) {
+            throw 'TradeofferWindow.itemsSelectorGroupBalancerMatchSteamItems(): Partner\'s steam item data not available??';
+        }
+
+        let matchResults = balancerData.results = {};
+        for(let [set1, appid, rarity, itemType] of TradeofferWindow.itemsSelectorItemSetsIter(itemSetsData1)) {
+            if(!Matcher.MATCH_TYPE_LIST.includes(itemType)) {
+                continue;
+            }
+
+            let set2 = itemSetsData2[itemType]?.[rarity]?.[appid];
+            if(!set2) {
+                continue;
+            }
+
+            fillMissingItems(set1, set2);
+            fillMissingItems(set2, set1);
+
+            if(set1.length !== set2.length) {
+                console.error(`TradeofferWindow.itemsSelectorGroupBalancerMatchSteamItems(): Sets have unequal number of item entries! ItemType: ${itemType}, Appid: ${appid}`);
+                continue;
+            } else if(set1.length === 1) {
+                continue;
+            }
+
+            let swap = Array(set1.length).fill(0);
+            let history = [];
+
+            set1.sort((a, b) => a.classid.localeCompare(b.classid));
+            set2.sort((a, b) => a.classid.localeCompare(b.classid));
+
+            for(let i=0; i<Matcher.MAX_MATCH_ITER; i++) {
+                let flip = i % 2;
+                let swapset1 = set1.map((x, i) => x.count + swap[i]);
+                let swapset2 = set2.map((x, i) => x.count - swap[i]);
+                let mode = -1; // mutual only mode
+
+                let balanceResult = Matcher.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), false, mode);
+                if(balanceResult.history.length === 0) {
+                    break;
+                }
+
+                for(let x=0; x<swap.length; x++) {
+                    swap[x] += (flip ? -balanceResult.swap[x] : balanceResult.swap[x]);
+                }
+                for(let y=0; y<balanceResult.history.length; y++) {
+                    history.push([balanceResult.history[y][flip], balanceResult.history[y][1-flip]]);
+                }
+            }
+
+            if(swap.some(x => x)) {
+                matchResults[itemType] ??= [{}];
+                while(matchResults[itemType].length <= rarity) {
+                    matchResults[itemType].push({});
+                }
+                matchResults[itemType][rarity][appid] = { swap, history };
+            }
+        }
+
+        return matchResults;
+    },
+    itemsSelectorGenerateBalancerEntry: function(entryData) {
+        if(entryData.id === undefined) {
+            console.warn('TradeofferWindow.itemsSelectorGenerateBalancerEntry(): id not found! Entry will not have an id...');
+        }
+
+        if(entryData.items1.length<1 || entryData.items1.length>14) {
+            console.warn('TradeofferWindow.itemsSelectorGenerateBalancerEntry(): Number of items not between 1-14??');
+        } else if(entryData.items2.length<1 || entryData.items2.length>14) {
+            console.warn('TradeofferWindow.itemsSelectorGenerateBalancerEntry(): Number of items not between 1-14??');
+        }
+
+        let dataIdAttrString = entryData.id !== undefined ? ` data-id="${entryData.id}"` : '';
+        dataIdAttrString += entryData.itemType !== undefined ? ` data-item-type="${entryData.itemType}"` : '';
+        dataIdAttrString += entryData.rarity !== undefined ? ` data-rarity="${entryData.rarity}"` : '';
+        let items1HTMLString = '';
+        for(let item of entryData.items1) {
+            items1HTMLString += TradeofferWindow.itemsSelectorGenerateItem(item);
+        }
+
+        let items2HTMLString = '';
+        for(let item of entryData.items2) {
+            items2HTMLString += TradeofferWindow.itemsSelectorGenerateItem(item);
+        }
+
+        // calculate container sizes
+        let items1SpanLength = entryData.items1.length>2 ? Math.ceil(entryData.items1.length / 2) : entryData.items1.length;
+        let items2SpanLength = entryData.items2.length>2 ? Math.ceil(entryData.items2.length / 2) : entryData.items2.length;
+        while(items1SpanLength + items2SpanLength > 10) {
+            items1SpanLength--;
+            if(items1SpanLength + items2SpanLength > 10) {
+                items2SpanLength--;
+            }
+        }
+        let totalSpanLength = items1SpanLength + items2SpanLength + 1;
+
+        let items1ContainerSizeString = ` split${items1SpanLength}`;
+        let items2ContainerSizeString = ` split${items2SpanLength}`;
+        let entrySizeString = ` span${totalSpanLength}`;
+
+        return `<div class="items-selector-entry available${entrySizeString}"${dataIdAttrString}>`
+          +     '<div class="items-selector-entry-header">'
+          +         `<div class="entry-title" title="${entryData.name}">`
+          +             entryData.name
+          +         '</div>'
+          +     '</div>'
+          +     '<div class="items-selector-balancer-container">'
+          +         `<div class="items-selector-inventory-items${items1ContainerSizeString}">`
+          +             items1HTMLString
+          +         '</div>'
+          +         '<div class="balancer-arrows userscript-bg-filtered alt-arrows"></div>'
+          +         `<div class="items-selector-inventory-items${items2ContainerSizeString}">`
+          +             items2HTMLString
+          +         '</div>'
+          +     '</div>'
+          + '</div>';
+
+    },
+    itemsSelectorItemSetsIter: function(itemSetsData) {
+        function* itemSetsIter(dataset) {
+            for(let type in dataset) {
+                for(let rarity=0; rarity<dataset[type].length; rarity++) {
+                    for(let appid in dataset[type][rarity]) {
+                        yield [ dataset[type][rarity][appid], appid, rarity, type ];
+                    }
+                }
+            }
+        }
+
+        return itemSetsIter(itemSetsData);
+    },
+
+    itemsSelectorGroupBalancerAddAllNormalCardsListener: function(event) {
+        TradeofferWindow.itemsSelectorGroupBalancerAddAllItemsOfType('card', 0);
+    },
+    itemsSelectorGroupBalancerAddAllBackgroundssListener: function(event) {
+        TradeofferWindow.itemsSelectorGroupBalancerAddAllItemsOfType('background');
+    },
+    itemsSelectorGroupBalancerAddAllEmoticonsListener: function(event) {
+        TradeofferWindow.itemsSelectorGroupBalancerAddAllItemsOfType('emoticon');
+    },
+    itemsSelectorGroupBalancerAddAllItemsOfType: async function(itemType, rarityLevel) {
+        const addItemList = async (items, profileid, addReverse) => {
+            for(let itemData of items) {
+                await TradeofferWindow.offerItemlistAddClassItems(profileid, itemData.appid, itemData.contextid, itemData.classid, itemData.instanceid, itemData.amount, addReverse);
+            }
+        }
+
+        let { data, itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+        let groupBalancerData = itemsSelectorData.groups.balancer;
+        let groupBalancerElem = itemsSelectorShortcuts.group.balancer;
+
+        if(!itemType) {
+            throw 'TradeofferWindow.itemsSelectorGroupBalancerAddAllItemsOfType(): item type not specified! Aborting...';
+        }
+
+        if(rarityLevel !== undefined) {
+            rarityLevel = String(rarityLevel);
+        }
+        for(let entryElem of groupBalancerElem.querySelectorAll('.items-selector-entry')) {
+            if(entryElem.dataset.itemType !== itemType) {
+                continue;
+            } else if(rarityLevel !== undefined && entryElem.dataset.rarity !== rarityLevel) {
+                continue;
+            }
+
+            let entryData = groupBalancerData.entries[entryElem.dataset.id];
+            await addItemList(entryData.items1, data.me.id, true);
+            await addItemList(entryData.items2, data.them.id, true);
+        }
+        TradeofferWindow.offerUpdateTradeState();
+
+        TradeofferWindow.overlayBodyToggle('offerWindow');
+    },
+
+    itemsSelectorGroupEntryDialogShowListener: function(event) {
+        console.log('TradeofferWindow.itemsSelectorGroupEntryDialogShow() WIP');
+
+        let { itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+
+        let groupElem = event.currentTarget;
+        if(!groupElem.matches('.items-selector-group')) {
+            throw 'TradeofferWindow.itemsSelectorGroupEntryDialogShow(): Not attached to a items selector group element???';
+        }
+
+        if(groupElem.dataset.id !== 'balancer' && !itemsSelectorData.currentProfileid) {
+            return;
+        }
+
+        let entryElem = event.target.closest('.items-selector-entry');
+        if(!entryElem) {
+            return;
+        }
+
+        TradeofferWindow.itemsSelectorGroupEntryDialogUpdate(groupElem.dataset.id, entryElem.dataset.id);
+        itemsSelectorShortcuts.dialogContainer.classList.add('active');
+    },
+    itemsSelectorGroupEntryDialogDeleteEntryListener: async function(event) {
+        let { itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+        let { currentGroupId, currentEntryId } = itemsSelectorData;
+
+        if(currentGroupId === null || currentEntryId === null) {
+            console.warn('TradeofferWindow.itemsSelectorGroupEntryDialogDeleteEntryListener(): No current group or entry id set! Nothing will be deleted...');
+            return;
+        } else if(currentGroupId !== 'custom') {
+            console.warn('TradeofferWindow.itemsSelectorGroupEntryDialogDeleteEntryListener(): Only entries from the custom group should be deleted! Nothing will be deleted...');
+            return;
+        }
+
+        let groupData = itemsSelectorData.groups[currentGroupId];
+        let entryData = groupData.entries[currentEntryId];
+
+        let configGroupEntries = globalSettings.tradeoffer.itemsSelectorCustomGroupEntries;
+        let configEntry = configGroupEntries[entryData.pos];
+        if(!configEntry) {
+            console.warn('TradeofferWindow.itemsSelectorGroupEntryDialogDeleteEntryListener(): Entry not found in configs! Nothing will be deleted...');
+            return;
+        }
+
+        let entryElem = itemsSelectorShortcuts.group[currentGroupId].querySelector(`[data-id="${currentEntryId}"]`);
+        if(!entryElem) {
+            console.warn('TradeofferWindow.itemsSelectorGroupEntryDialogDeleteEntryListener(): Entry element not found???? Nothing will be deleted...');
+            return;
+        }
+
+        delete configGroupEntries[currentEntryId];
+        delete groupData.entries[currentEntryId];
+        entryElem.remove();
+
+        await TradeofferWindow.configSave();
+    },
+    itemsSelectorGroupEntryDialogCancelListener: function(event) {
+        let { currentGroupId, currentEntryId } = TradeofferWindow.itemsSelectorShortcuts;
+        currentGroupId = null;
+        currentEntryId = null;
+        TradeofferWindow.itemsSelectorShortcuts.dialogContainer.classList.remove('active');
+    },
+    itemsSelectorGroupEntryDialogResetListener: function(event) {
+        let { itemsSelectorShortcuts } = TradeofferWindow;
+
+        if(itemsSelectorShortcuts.body === undefined) {
+            return;
+        }
+
+        itemsSelectorShortcuts.dialogTextInput.value = itemsSelectorShortcuts.dialogTextInput.getAttribute('value') ?? 0;
+        itemsSelectorShortcuts.dialogSliderInput.value = itemsSelectorShortcuts.dialogSliderInput.getAttribute('value') ?? 0;
+    },
+    itemsSelectorGroupEntryDialogConfirmListener: async function(event) {
+        const addItemList = async (items, profileid, addReverse) => {
+            for(let itemData of items) {
+                let amountToAdd = value*itemData.amount;
+                await TradeofferWindow.offerItemlistAddClassItems(profileid, itemData.appid, itemData.contextid, itemData.classid, itemData.instanceid, amountToAdd, addReverse);
+            }
+        }
+
+        let { data, itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+        let { currentProfileid, currentGroupId, currentEntryId } = itemsSelectorData;
+
+        if(currentGroupId === null || currentEntryId === null) {
+            console.error('TradeofferWindow.itemsSelectorGroupEntryDialogConfirmListener(): No current group or entry id set! No items will be added...');
+            return;
+        } else if(!itemsSelectorShortcuts.dialogTextInput) {
+            console.error('TradeofferWindow.itemsSelectorGroupEntryDialogConfirmListener(): Text input element not found!?!? No items will be added...');
+            return;
+        }
+
+        let value = parseInt(itemsSelectorShortcuts.dialogTextInput.value);
+        let entryData = itemsSelectorData.groups[currentGroupId].entries[currentEntryId];
+        if(currentGroupId === 'balancer') {
+            await addItemList(entryData.items1, data.me.id, true);
+            await addItemList(entryData.items2, data.them.id, true);
+        } else {
+            await addItemList(entryData.items, currentProfileid, false);
+        }
+        TradeofferWindow.offerUpdateTradeState();
+
+        TradeofferWindow.itemsSelectorShortcuts.dialogContainer.classList.remove('active');
+        TradeofferWindow.overlayBodyToggle('offerWindow');
+    },
+    itemsSelectorGroupEntryDialogCheckAvailabilityListener: async function() {
+        let { itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+
+        console.log('Dialog Check Availability WIP!');
+
+        let entryData = itemsSelectorData.groups[itemsSelectorData.currentGroupId]?.entries[itemsSelectorData.currentEntryId];
+        if(!entryData) {
+            throw 'TradeofferWindow.itemsSelectorGroupEntryDialogCheckAvailabilityListener(): No entry data found?!?!';
+        }
+
+        itemsSelectorShortcuts.dialogButtonCheck.setAttribute('disabled', '');
+
+        let loadedInvTracker = new Set();
+        for(let itemData of entryData.items) {
+            let appContext = `${itemData.appid}_${itemData.contextid}`;
+            if(!loadedInvTracker.has(appContext)) {
+                await TradeofferWindow.getTradeInventory(itemsSelectorData.currentProfileid, itemData.appid, itemData.contextid, TradeofferWindow.filterInventoryBlockSetup());
+                loadedInvTracker.add(appContext);
+            }
+        }
+
+        TradeofferWindow.itemsSelectorRecalculateAvailability('cardSets');
+        TradeofferWindow.itemsSelectorGroupEntryDialogUpdate(itemsSelectorData.currentGroupId, itemsSelectorData.currentEntryId);
+    },
+    itemsSelectorGroupEntryDialogUpdate: function(groupId, entryId) {
+        let { itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+
+        let groupData = itemsSelectorData.groups[groupId];
+        if(!groupData) {
+            throw 'TradeofferWindow.itemsSelectorGroupEntryDialogShow(): group data not found???';
+        }
+
+        let entryData = groupData.entries[entryId];
+        if(!entryData) {
+            throw 'TradeofferWindow.itemsSelectorGroupEntryDialogShow(): entry data not found???';
+        }
+
+        // hide entry deletion button if its not a custom entry
+        if(groupData.id === 'custom') {
+            itemsSelectorShortcuts.dialog.querySelector('.items-selector-entry-remove').classList.remove('hidden');
+        } else {
+            itemsSelectorShortcuts.dialog.querySelector('.items-selector-entry-remove').classList.add('hidden');
+        }
+
+        // populate dialog: profile
+        let dialogProfileElem = itemsSelectorShortcuts.dialogProfile;
+        if(dialogProfileElem.dataset.id !== itemsSelectorData.currentProfileid) {
+            dialogProfileElem.querySelector('.dialog-profile-avatar').src = '';
+            dialogProfileElem.querySelector('.dialog-profile-name').textContent = '';
+            dialogProfileElem.dataset.id = itemsSelectorData.currentProfileid;
+        }
+
+        itemsSelectorShortcuts.dialogTitle.querySelector('.dialog-group-name').textContent = groupData.name;
+        itemsSelectorShortcuts.dialogTitle.querySelector('.dialog-entry-name').textContent = entryData.name;
+
+        let inputVal = 0;
+        if(groupData.id === 'balancer') {
+            itemsSelectorShortcuts.dialogItems.innerHTML = '<div class="items-selector-balancer-container">'
+              +     `<div class="items-selector-inventory-items">`
+              +         entryData.items1.map(item => TradeofferWindow.itemsSelectorGenerateItem(item)).join('')
+              +     '</div>'
+              +     '<div class="balancer-arrows userscript-bg-filtered alt-arrows"></div>'
+              +     `<div class="items-selector-inventory-items">`
+              +         entryData.items2.map(item => TradeofferWindow.itemsSelectorGenerateItem(item)).join('')
+              +     '</div>'
+              + '</div>';
+
+
+            itemsSelectorShortcuts.dialogSliderInput.setAttribute('disabled', '');
+            itemsSelectorShortcuts.dialogTextInput.setAttribute('disabled', '');
+            itemsSelectorShortcuts.dialogButtonReset.setAttribute('disabled', '');
+            itemsSelectorShortcuts.dialogButtonCheck.setAttribute('disabled', '');
+
+            if(entryData.isAvailable) {
+                inputVal = 1;
+                itemsSelectorShortcuts.dialogButtonConfirm.removeAttribute('disabled');
+            } else {
+                inputVal = 0;
+                itemsSelectorShortcuts.dialogButtonConfirm.setAttribute('disabled', '');
+            }
+
+            itemsSelectorShortcuts.dialogSliderInput.setAttribute('max', String(inputVal));
+            itemsSelectorShortcuts.dialogTextInput.setAttribute('max', String(inputVal));
+        } else {
+            itemsSelectorShortcuts.dialogItems.innerHTML = `<div class="items-selector-inventory-items">`
+              +     entryData.items.map(item => TradeofferWindow.itemsSelectorGenerateItem(item)).join('')
+              + '</div>';
+
+            let maxAvailable = entryData.maxAvailable?.[itemsSelectorData.currentProfileid];
+            if(Number.isInteger(maxAvailable)) {
+                itemsSelectorShortcuts.dialogButtonCheck.setAttribute('disabled', '');
+            } else {
+                itemsSelectorShortcuts.dialogButtonCheck.removeAttribute('disabled');
+            }
+            if(maxAvailable === undefined || maxAvailable === null || maxAvailable === 0) {
+                inputVal = 0;
+                itemsSelectorShortcuts.dialogSliderInput.setAttribute('disabled', '');
+                itemsSelectorShortcuts.dialogTextInput.setAttribute('disabled', '');
+                itemsSelectorShortcuts.dialogButtonReset.setAttribute('disabled', '');
+                itemsSelectorShortcuts.dialogButtonConfirm.setAttribute('disabled', '');
+            } else if(maxAvailable > 0) {
+                inputVal = 1;
+                itemsSelectorShortcuts.dialogSliderInput.removeAttribute('disabled');
+                itemsSelectorShortcuts.dialogTextInput.removeAttribute('disabled');
+                itemsSelectorShortcuts.dialogButtonReset.removeAttribute('disabled');
+                itemsSelectorShortcuts.dialogButtonConfirm.removeAttribute('disabled');
+            } else {
+                throw 'TradeofferWindow.itemsSelectorGroupEntryDialogShow(): maxAvailable is not a valid value!';
+            }
+
+            itemsSelectorShortcuts.dialogSliderInput.setAttribute('max', String(maxAvailable));
+            itemsSelectorShortcuts.dialogTextInput.setAttribute('max', String(maxAvailable));
+        }
+
+        itemsSelectorShortcuts.dialogSliderInput.setAttribute('value', String(inputVal));
+        itemsSelectorShortcuts.dialogTextInput.setAttribute('value', String(inputVal));
+        itemsSelectorShortcuts.dialogSliderInput.value = inputVal;
+        itemsSelectorShortcuts.dialogTextInput.value = inputVal;
+
+        itemsSelectorData.currentGroupId = groupData.id;
+        itemsSelectorData.currentEntryId = entryData.id;
+    },
+    itemsSelectorGroupEntryDialogUpdateSliderListener: function(event) {
+        TradeofferWindow.itemsSelectorShortcuts.dialogSliderInput.value = event.target.value;
+    },
+    itemsSelectorGroupEntryDialogUpdateTextListener: function(event) {
+        TradeofferWindow.itemsSelectorShortcuts.dialogTextInput.value = event.target.value;
+    },
+
+    itemsSelectorGenerateGroup: function(groupData) {
+        if(groupData.id === undefined) {
+            console.warn('TradeofferWindow.itemsSelectorGenerateGroup(): id not found! Group will not have an id...');
+        }
+
+        let dataIdAttrString = groupData.id !== undefined ? ` data-id="${groupData.id}"` : '';
+        let groupEntriesHTMLString = '';
+        for(let groupEntry of groupData.entries) {
+            groupEntriesHTMLString += TradeofferWindow.itemsSelectorGenerateGroupEntry(groupEntry);
+        }
+
+        return `<div class="items-selector-group"${dataIdAttrString}>`
+          +     '<div class="items-selector-group-header">'
+          +         '<div class="group-title">'
+          +             groupData.name
+          +         '</div>'
+          +     '</div>'
+          +     '<div class="group-entries">'
+          +         groupEntriesHTMLString
+          +     '</div>'
+          +     cssAddThrobber()
+          + '</div>';
+    },
+    itemsSelectorGenerateGroupEntry: function(entryData) {
+        if(entryData.id === undefined) {
+            console.warn('TradeofferWindow.itemsSelectorGenerateGroupEntry(): id not found! Entry will not have an id...');
+        }
+
+        let availability = TradeofferWindow.itemsSelectorGroupEntryCheckAvailability(entryData);
+        if(availability !== '') {
+            availability = ' ' + availability;
+        }
+        let dataIdAttrString = entryData.id !== undefined ? ` data-id="${entryData.id}"` : '';
+        let itemsHTMLString = '';
+        for(let item of entryData.items) {
+            itemsHTMLString += TradeofferWindow.itemsSelectorGenerateItem(item);
+        }
+        let containerSizeString = (entryData.items.length > 22) ? ''
+            : (entryData.items.length < 3) ? ' span2'
+            : ` span${Math.ceil(entryData.items.length/2)}`;
+
+        return `<div class="items-selector-entry${availability}${containerSizeString}"${dataIdAttrString}>`
+          +     '<div class="items-selector-entry-header">'
+          +         `<div class="entry-title" title="${entryData.name}">`
+          +             entryData.name
+          +         '</div>'
+          +     '</div>'
+          +     `<div class="items-selector-inventory-items">`
+          +         itemsHTMLString
+          +     '</div>'
+          + '</div>';
+    },
+    itemsSelectorGenerateItem: function(itemData) {
+        // get description data from somewhere to access image and name
+        // jank, but works for now ... need to pool together descriptions to make things easier
+        let { inventories, descriptionClassAssets } = TradeofferWindow.data;
+
+        let descript;
+        for(let profileid in inventories) {
+            if(descript) {
+                break;
+            }
+
+            let inventoryContext = inventories[profileid]?.[itemData.appid]?.[itemData.contextid];
+            if(!inventoryContext) {
+                continue;
+            }
+
+            let descriptClass = descriptionClassAssets[profileid]?.[itemData.appid]?.[itemData.contextid]?.[itemData.classid];
+            if(!descriptClass || descriptClass.count === 0) {
+                continue;
+            }
+
+            if(itemData.instanceid) {
+                descript = inventoryContext.rgDescriptions[`${itemData.classid}_${itemData.instanceid}`];
+            } else if(itemData.classid && descriptClass.assets.length > 0) {
+                let arbitraryAsset = descriptClass.assets[0];
+                descript = inventoryContext.rgDescriptions[`${itemData.classid}_${arbitraryAsset.instanceid}`];
+            }
+        }
+
+        if(!descript) {
+            console.error('TradeofferWindow.itemsSelectorGenerateItem(): No description found!!!');
+        }
+
+        let imgUrl = descript?.icon_url ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f` : '';
+        let name = descript?.name ?? '???';
+
+        let styleAttrString = '';
+        styleAttrString += descript?.name_color ? `border-color: #${descript.name_color};` : '';
+        styleAttrString += descript?.background_color ? `background-color: #${descript.background_color};` : '';
+        if(styleAttrString.length) {
+            styleAttrString = ` style="${styleAttrString}"`;
+        }
+
+        let dataAttrString = '';
+        dataAttrString += itemData.appid ? ` data-appid="${itemData.appid}"` : '';
+        dataAttrString += itemData.contextid ? ` data-contextid="${itemData.contextid}"` : '';
+        dataAttrString += itemData.classid ? ` data-classid="${itemData.classid}"` : '';
+        dataAttrString += itemData.instanceid ? ` data-instanceid="${itemData.instanceid}"` : '';
+        dataAttrString += itemData.amount ? ` data-amount="${parseInt(itemData.amount).toLocaleString()}"` : '';
+
+        return `<div class="inventory-item-container" title="${name}"${dataAttrString}${styleAttrString}>`
+          +     `<img loading="lazy" src="${imgUrl}" alt="${name}">`
+          + '</div>';
     },
 
 
