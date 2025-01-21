@@ -514,7 +514,7 @@ const BoosterCrafter = {
                 entryElem.dataset.qtyTradable = boosterEntry.tradableCount;
                 entryElem.dataset.qtyNontradable = boosterEntry.nontradableCount;
             } else {
-                let appData = await Profile.findAppMetaData(appid);
+                let appData = await Profile.findAppMetaData(appid, { cards: false });
                 // let HTMLString = `<div class="userscript-config-list-entry booster" data-appid="${appid}" data-qty-tradable="${boosterEntry.tradableCount}" data-qty-nontradable="${boosterEntry.nontradableCount}" title="${appData.name}">`
                 // +    `<img src="https://community.cloudflare.steamstatic.com/economy/boosterpack/${appid}?l=english&single=1&v=2&size=75x" alt="">`
                 // + '</div>';
