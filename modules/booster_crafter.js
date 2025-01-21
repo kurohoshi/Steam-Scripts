@@ -514,7 +514,7 @@ const BoosterCrafter = {
                 entryElem.dataset.qtyTradable = boosterEntry.tradableCount;
                 entryElem.dataset.qtyNontradable = boosterEntry.nontradableCount;
             } else {
-                let appData = await Profile.findAppMetaData(appid);
+                let appData = await Profile.findAppMetaData(appid, { cards: false });
                 // let HTMLString = `<div class="userscript-config-list-entry booster" data-appid="${appid}" data-qty-tradable="${boosterEntry.tradableCount}" data-qty-nontradable="${boosterEntry.nontradableCount}" title="${appData.name}">`
                 // +    `<img src="https://community.cloudflare.steamstatic.com/economy/boosterpack/${appid}?l=english&single=1&v=2&size=75x" alt="">`
                 // + '</div>';
@@ -1303,7 +1303,7 @@ const BoosterCrafter = {
     openerListDecrementListener: function() {
         BoosterCrafter.openerListChangeValue(-1);
     },
-    openerListChangeValu: function(value) {
+    openerListChangeValue: function(value) {
         if(typeof value !== 'number') {
             return;
         }
@@ -1469,7 +1469,7 @@ const BoosterCrafter = {
             }
 
             for(let cardData of responseData.rgItems) {
-                let imgUrl = cardData.image.replace(/https:\/\/community\.(akamai|cloudflare)\.steamstatic\.com\/economy\/image\//g, '');
+                let imgUrl = cardData.image.replace(/https:\/\/community\.[^.]+\.steamstatic\.com\/economy\/image\//g, '');
                 currentDropStats[appid][imgUrl] ??= { imgUrl: imgUrl, name: cardData.name, foil: cardData.foil, count: 0 };
                 currentDropStats[appid][imgUrl].count++;
                 dropStats[appid][imgUrl] ??= { imgUrl: imgUrl, name: cardData.name, foil: cardData.foil, count: 0 };

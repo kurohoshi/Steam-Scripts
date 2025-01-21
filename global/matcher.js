@@ -178,7 +178,7 @@ let Matcher = {
         return this.matchResultsList[inventory1.meta.profileid][inventory2.meta.profileid];
     },
     // mode (<0: mutual only, =0: neutral or good, >0: helper mode)
-    balanceVariance(set1, set2, lowToHigh=false, mode=0) {
+    balanceVariance(set1, set2, lowToHigh=false, mode=-1) {
         function binReorder(bin, index, isSortedLowToHigh, incremented, binLUT, lutIndex) {
             const cmp = (val1, val2) => incremented ? val1>=val2 : val1<=val2;
             const shiftIndex = (next, offset) => {
@@ -215,8 +215,16 @@ let Matcher = {
         }
 
         let setlen = set1.length;
-        let bin1 = set1.map((x, i) => [i, x]).sort((a, b) => lowToHigh ? b[1]-a[1] : a[1]-b[1]);
-        let bin2 = set2.map((x, i) => [i, x]).sort((a, b) => lowToHigh ? b[1]-a[1] : a[1]-b[1]);
+
+        let sortAscendingFn = (a, b) => a[1]-b[1];
+        let sortDescendingFn = (a, b) => b[1]-a[1];
+        let sortAscending1 = mode<=0 && lowToHigh;
+        let sortAscending2 = mode>0 || lowToHigh;
+        let sortFn1 = sortAscending1 ? sortAscendingFn : sortDescendingFn;
+        let sortFn2 = sortAscending2 ? sortAscendingFn : sortDescendingFn;
+
+        let bin1 = set1.map((x, i) => [i, x]).sort(sortFn1);
+        let bin2 = set2.map((x, i) => [i, x]).sort(sortFn2);
         if(bin1[0][1] === bin1[bin1.length-1][1] || bin2[0][1] === bin2[bin2.length-1][1]) {
             return { swap: Array(setlen).fill(0), history: [] };
         }
@@ -265,14 +273,14 @@ let Matcher = {
                 let isHelpful = (mode > 0) && bin2vardiff<0;
                 if(isMutual || isNeutralOrGood || isHelpful) {
                     bin1[i][1]++;
-                    binReorder(bin1, i, lowToHigh, true, binIndices, 0);
+                    binReorder(bin1, i, sortAscending1, true, binIndices, 0);
                     bin1_j_elem[1]--;
-                    binReorder(bin1, bin1_j_elem[0], lowToHigh, false, binIndices, 0);
+                    binReorder(bin1, bin1_j_elem[0], sortAscending1, false, binIndices, 0);
 
                     bin2[j][1]++;
-                    binReorder(bin2, j, lowToHigh, true, binIndices, 1);
+                    binReorder(bin2, j, sortAscending2, true, binIndices, 1);
                     bin2_i_elem[1]--;
-                    binReorder(bin2, bin2_i_elem[0], lowToHigh, false, binIndices, 1);
+                    binReorder(bin2, bin2_i_elem[0], sortAscending2, false, binIndices, 1);
 
                     history.push([bin2[j][0], bin1[i][0]]);
                 } else {
@@ -287,9 +295,7 @@ let Matcher = {
         };
     },
     validate(profile1, profile2) {
-        let roundZero = (num) => {
-            return num<1e-10 && num>-1e-10 ? 0.0 : num;
-        }
+        let { roundZero } = steamToolsUtils;
 
         if(!this.exists(profile1, profile2, 1)) {
             return;
@@ -304,17 +310,23 @@ let Matcher = {
             let set2 = group2[itemType][rarity][appid];
 
             set.avg = [
-                set1.reduce((a, b) => a + b.count, 0.0) / set1.length,
-                set2.reduce((a, b) => a + b.count, 0.0) / set2.length,
+                [
+                    set1.reduce((a, b) => a + b.count, 0.0) / set1.length,
+                    set1.reduce((a, b, i) => a + (b.count+set.swap[i]), 0.0) / set1.length,
+                ],
+                [
+                    set2.reduce((a, b) => a + b.count, 0.0) / set2.length,
+                    set2.reduce((a, b, i) => a + (b.count-set.swap[i]), 0.0) / set2.length,
+                ]
             ];
             set.variance = [
                 [
-                    roundZero((set1.reduce((a, b) => a + (b.count ** 2), 0.0) / set1.length) - (set.avg[0] ** 2)),
-                    roundZero((set1.reduce((a, b, i) => a + ((b.count+set.swap[i]) ** 2), 0.0) / set1.length) - (set.avg[0] ** 2))
+                    roundZero((set1.reduce((a, b) => a + (b.count ** 2), 0.0) / set1.length) - (set.avg[0][0] ** 2)),
+                    roundZero((set1.reduce((a, b, i) => a + ((b.count+set.swap[i]) ** 2), 0.0) / set1.length) - (set.avg[0][1] ** 2))
                 ],
                 [
-                    roundZero((set2.reduce((a, b) => a + (b.count ** 2), 0.0) / set2.length) - (set.avg[1] ** 2)),
-                    roundZero((set2.reduce((a, b, i) => a + ((b.count-set.swap[i]) ** 2), 0.0) / set2.length) - (set.avg[1] ** 2))
+                    roundZero((set2.reduce((a, b) => a + (b.count ** 2), 0.0) / set2.length) - (set.avg[1][0] ** 2)),
+                    roundZero((set2.reduce((a, b, i) => a + ((b.count-set.swap[i]) ** 2), 0.0) / set2.length) - (set.avg[1][1] ** 2))
                 ]
             ];
             set.stddev = [
@@ -474,9 +486,9 @@ let Matcher = {
         }
 
         // figure out a good way to include game trade post params as a way to send trade offers
-        let generateTradeOfferCreateParams = async (profile1, profile2) => {
+        let generateTradeOfferCreateParams = async () => {
             // preliminary checks means profile2 is either friend or has trade token
-            return (await profile1.isFriend(profileid2))
+            return (await profile1.isFriend(profile2))
               ? {}
               : { trade_offer_access_token: profile2.tradeToken };
         }

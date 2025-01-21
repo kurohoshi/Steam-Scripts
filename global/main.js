@@ -52,7 +52,7 @@ async function main() {
         BoosterCrafter.setup();
     }
 
-    if(window.location.pathname.startsWith('/tradeoffer/new/')) {
+    if(window.location.pathname.startsWith('/tradeoffer/')) {
         TradeofferWindow.setup();
     }
 

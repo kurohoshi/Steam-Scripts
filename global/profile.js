@@ -105,8 +105,14 @@ class Profile {
           ? 'online' : 'offline';
     }
 
-    getProfileURL(idOnly=false) {
-        return `https://steamcommunity.com/${(idOnly || !this.url) ? ('profiles/'+this.id) : ('id/'+this.url)}`
+    getProfileURLString(idOnly=false, path) {
+        let profilePath = (idOnly || !this.url) ? ('profiles/'+this.id) : ('id/'+this.url);
+        let urlString = `https://steamcommunity.com/${profilePath}`;
+        if(typeof path === 'string') {
+            urlString += '/' + path;
+        }
+
+        return urlString;
     }
 
     async getFriends() {
@@ -279,9 +285,9 @@ class Profile {
        }
     }
 
-    static #mergeProfiles(id, url) {
-        // merge together profile instances that are duplicate due to obtaining id and url separately without each others other info
-    }
+    // static #mergeProfiles(id, url) {
+    //     // merge together profile instances that are duplicate due to obtaining id and url separately without each others other info
+    // }
 
     static async findMoreDataForProfile(profile) {
         if(!profile.id && !profile.url) {
@@ -329,7 +335,7 @@ class Profile {
         }
 
         profiledata = doc.querySelector('.profile_header .playerAvatar');
-        profile.pfp = profiledata.querySelector('.playerAvatarAutoSizeInner > img').src.replace(/(https:\/\/avatars\.(cloudflare|akamai)\.steamstatic\.com\/)|(_full\.jpg)/g, '');
+        profile.pfp = profiledata.querySelector('.playerAvatarAutoSizeInner > img').src.replace(/(https:\/\/avatars\.[^.]+\.steamstatic\.com\/)|(_full\.jpg)/g, '');
         profile.state = profiledata.classList.contains("in-game")
           ? 2 : profiledata.classList.contains("online")
           ? 1 : profiledata.classList.contains("offline")
@@ -386,20 +392,37 @@ class Profile {
     /***********************************************************************/
     /***************************** App Methods *****************************/
     /***********************************************************************/
-    static async findAppMetaData(appid) {
+    static async findAppMetaData(appid, options = { cards: true, foil: false }) {
         if(!Profile.appMetaData[appid]) {
             await Profile.loadAppMetaData(appid);
         }
 
-        // attempt to use user's own badgepage to scrape basic app data
-        if(!Profile.appMetaData[appid]) {
-            let myProfile = Profile.me ?? (await Profile.findProfile(Profile.utils.getMySteamId()));
+        let myProfile = Profile.me ?? (await Profile.findProfile(Profile.utils.getMySteamId()));
+        if(!myProfile) {
+            console.error('findAppMetaData(): Somehow user\'s profile cannot be found!');
+            return;
+        }
 
-            if(!myProfile) {
-                console.error('findAppMetaData(): Somehow user\'s profile cannot be found!');
+        if(options.cards) {
+            if(!Profile.appMetaData[appid]?.cards) {
+                await myProfile.getBadgepageStock(appid, options.foil);
+            }
+
+            if(!Profile.appMetaData[appid] || (Profile.appMetaData[appid] && !Profile.appMetaData[appid].cards)) {
+                console.warn('Profile.findAppMetaData(): Unable to scrape badgepage data?!?!');
                 return;
             }
-            await myProfile.getBadgepageStock(appid);
+
+            // NOTE: theoretically should only call getBadgepageStock once
+            for(let cardData of Profile.appMetaData[appid].cards) {
+                if(!options.foil && !cardData.img_card0) {
+                    console.warn('Profile.findAppMetaData(): Normal card img url not present! Scraping for normal card data...');
+                    await myProfile.getBadgepageStock(appid, options.foil);
+                } else if(options.foil && !cardData.img_card1) {
+                    console.warn('Profile.findAppMetaData(): Foil card img url not present! Scraping for foil card data...');
+                    await myProfile.getBadgepageStock(appid, options.foil);
+                }
+            }
         }
 
         return Profile.appMetaData[appid];
@@ -473,6 +496,7 @@ class Profile {
             if(newObj.cards) {
                 Profile.appMetaData[appid].cards ??= [];
                 for(let i=0; i<newObj.cards.length; i++) {
+                    Profile.appMetaData[appid].cards[i] ??= {};
                     for(let prop in newObj.cards[i]) {
                         Profile.appMetaData[appid].cards[i][prop] ??= newObj.cards[i][prop];
                     }
@@ -663,42 +687,32 @@ class Profile {
                     continue;
                 }
 
-                let appname = desc.tags.find(x => x.category === "Game");
-                if(!appname) {
+                let appName = desc.tags.find(x => x.category === "Game");
+                if(!appName) {
                     console.warn(`getInventory(): No game name tag found for description:`);
                     console.log(desc);
-                    appname = {internal_name: ""};
+                    appName = {internal_name: ""};
                 }
 
-                // await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
+                // await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appName.localized_tag_name }, false);
 
                 asset.amount = parseInt(asset.amount);
                 let assetInsertEntry = { assetid: asset.assetid, count: asset.amount };
-                if(itemList[desc.market_fee_app]) { // app subgroup exists
-                    let classItemGroup = itemList[desc.market_fee_app].find(x => x.classid === asset.classid);
-                    if(classItemGroup) { // class item subgroup exists
-                        if(desc.tradable) {
-                            classItemGroup.tradables.push(assetInsertEntry);
-                        } else {
-                            classItemGroup.nontradables.push(assetInsertEntry);
-                        }
-                        classItemGroup.count += asset.amount;
-                    } else { // class item subgroup does not exist
-                        itemList[desc.market_fee_app].push({
-                            classid: asset.classid,
-                            tradables: desc.tradable ? [assetInsertEntry]: [],
-                            nontradables: desc.tradable ? [] : [assetInsertEntry],
-                            count: asset.amount
-                        });
-                    }
-                } else { // app subgroup does not exist
-                    itemList[desc.market_fee_app] = [{
+
+                itemList[desc.market_fee_app] ??= [];
+                let classItemGroup = itemList[desc.market_fee_app].find(x => x.classid === asset.classid);
+                if(!classItemGroup) {
+                    classItemGroup = {
                         classid: asset.classid,
-                        tradables: desc.tradable ? [assetInsertEntry]: [],
-                        nontradables: desc.tradable ? [] : [assetInsertEntry],
-                        count: asset.amount
-                    }]
+                        tradables: [],
+                        nontradables: [],
+                        count: 0
+                    };
+                    itemList[desc.market_fee_app].push(classItemGroup);
                 }
+
+                classItemGroup[`${desc.tradable ? 'tradables' : 'nontradables'}`].push(assetInsertEntry);
+                classItemGroup.count += asset.amount;
 
                 this.updateItemDescription(desc.classid, desc);
             }
@@ -822,37 +836,32 @@ class Profile {
                     continue;
                 }
 
-                let appname = desc.tags.find(x => x.category === "Game");
-                if(!appname) {
+                let appName = desc.tags.find(x => x.category === "Game");
+                if(!appName) {
                     console.warn(`getInventory(): No game name tag found for description:`);
                     console.log(desc);
-                    appname = {internal_name: ""};
+                    appName = { internal_name: null, name: null };
                 }
 
-                // await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appname.localized_tag_name });
+                // await Profile.updateAppMetaData(desc.market_fee_app, { appid: parseInt(desc.market_fee_app), name: appName.name }, false);
 
                 asset.amount = parseInt(asset.amount);
-                if(itemList[desc.market_fee_app]) { // app subgroup exists
-                    let classItemGroup = itemList[desc.market_fee_app].find(x => x.classid === asset.classid);
-                    if(classItemGroup) { // class item subgroup exists
-                        if(desc.tradable) {
-                            classItemGroup.tradables.push({ assetid: asset.id, count: asset.amount });
-                        }
-                       classItemGroup.count += asset.amount;
-                    } else { // class item subgroup does not exist
-                        itemList[desc.market_fee_app].push({
-                            classid: asset.classid,
-                            tradables: desc.tradable ? [{ assetid: asset.id, count: asset.amount }]: [],
-                            count: asset.amount
-                        });
-                    }
-                } else { // app subgroup does not exist
-                    itemList[desc.market_fee_app] = [{
+
+                itemList[desc.market_fee_app] ??= [];
+                let classItemGroup = itemList[desc.market_fee_app].find(x => x.classid === asset.classid);
+                if(!classItemGroup) {
+                    classItemGroup = {
                         classid: asset.classid,
-                        tradables: desc.tradable ? [{ assetid: asset.id, count: asset.amount }]: [],
-                        count: asset.amount
-                    }];
+                        tradables: [],
+                        count: 0
+                    };
+                    itemList[desc.market_fee_app].push(classItemGroup);
                 }
+
+                if(desc.tradable) {
+                    classItemGroup.tradables.push({ assetid: asset.id, count: asset.amount });
+                }
+                classItemGroup.count += asset.amount;
 
                 this.updateItemDescription(desc.classid, desc);
             }
@@ -903,7 +912,7 @@ class Profile {
         }
 
         console.log(`getBadgepageStock(): getting badgepage of app ${appid} from profile ${this.id}`);
-        let response = await fetch(`https://steamcommunity.com/profiles/${this.id}/gamecards/${appid}/${foil ? "?border=1" : ""}`);
+        let response = await fetch(this.getProfileURLString(false, `gamecards/${appid}${foil ? "?border=1" : ""}`));
         await Profile.utils.sleep(Profile.utils.FETCH_DELAY);
 
         let parser = new DOMParser();
@@ -930,7 +939,7 @@ class Profile {
         let level = doc.querySelector('.badge_info_description :nth-child(2)')?.textContent.trim().match(/\d+/g)[0];
         if(level) {
             let badgeImg = doc.querySelector('.badge_icon')
-              ?.src.replace(/https:\/\/cdn\.(cloudflare|akamai)\.steamstatic\.com\/steamcommunity\/public\/images\/items\//, '')
+              ?.src.replace(/https:\/\/cdn\.[^.]+\.steamstatic\.com\/steamcommunity\/public\/images\/items\//, '')
               .replace(/^\d+\//, '').replace('.png', '');
             metadata.badges[foil?'foil':'normal'][level] = badgeImg;
         }
@@ -943,7 +952,7 @@ class Profile {
             metadata.cards[i] = {};
             metadata.cards[i].name = x.children[1].childNodes[x.children[1].childNodes.length-3].textContent.trim();
             metadata.cards[i][`img_card${rarity}`] = x.children[0].querySelector(".gamecard")
-              ?.src.replace(/https:\/\/community\.(cloudflare|akamai)\.steamstatic\.com\/economy\/image\//g, '');
+              ?.src.replace(/https:\/\/community\.[^.]+\.steamstatic\.com\/economy\/image\//g, '');
             let img_full = x.querySelector('.with_zoom');
             if(img_full) {
                 img_full = img_full.outerHTML.match(/onclick="[^"]+"/g)[0]
@@ -958,6 +967,7 @@ class Profile {
 
         await Profile.updateAppMetaData(appid, metadata, false);
         this.badgepages[rarity][appid] = newData;
+        return newData;
     }
 
     async getBadgepageStockAll(list, foil=false) {

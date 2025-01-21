@@ -1,9 +1,11 @@
 const TradeofferWindow = {
     SETTINGSDEFAULTS: {
         disabled: [], // disable any unwanted tabs here
+        selectors: {
+            // pLastSelected: string,
+            // qLastSelected: { profile, app, context } // strings
+        },
         filter: {
-            pLastSelected: null,
-            qLastSelected: null,
             apps: [
             /*     { // app
              *         id: string,
@@ -32,22 +34,88 @@ const TradeofferWindow = {
             ]
         },
         // displayMode: int // set by display setup for quick search
+        itemsSelectorCustomGroupEntries: [
+        /*    {
+         *        name: string,
+         *        items: [
+         *            { appid, contextid, classInstance, amount }
+         *            ...
+         *        ]
+         *    },
+         *    ...
+         */
+        ]
     },
 
+    QUICK_SEARCH_MODE_MAP: {
+        page: 0,    '0': 'page',
+        scroll: 1,  '1': 'scroll',
+    },
     FEATURE_LIST: {
-        prefilter: { title: 'Prefilter', tabContent: 'P', entry: 'prefilterSetup' },
-        quickSearch: { title: 'Quick Search', tabContent: 'Q', entry: 'quickSearchSetup' },
-        itemsSelector: { title: 'Items Selector', tabContent: 'I', entry: 'itemsSelectorSetup' },
-        message: { title: 'Message', tabContent: 'M', entry: 'messageSetup' },
-        summary: { title: 'Summary', tabContent: 'S', entry: 'summarySetup' },
+        offerWindow: { title: 'Offer Window', entry: 'offerSetup' },
+        offerSummary: { title: 'Offer Summary', entry: 'summarySetup' },
+        prefilter: { title: 'Prefilter', entry: 'prefilterSetup' },
+        quickSearch: { title: 'Quick Search', entry: 'quickSearchSetup' },
+        itemsSelector: { title: 'Items Selector', entry: 'itemsSelectorSetup' },
+        itemClassPicker: { title: 'Item Class Options', entry: 'itemClassPickerSetup' },
+        message: { title: 'Saved Offer Messages', entry: 'messageSetup' },
+        history: { title: 'Trade History', entry: 'historySetup' },
     },
     MIN_TAG_SEARCH: 20,
     INPUT_DELAY: 400, // ms
 
     shortcuts: {},
-    data: {},
+    data: {
+        inventories: {
+        /*    profileid: {
+         *        appid: {
+         *            contextid: {
+         *                full_load: boolean
+         *                rgInventory: {},
+         *                rgCurrency: {},
+         *                rgDescriptions: {}
+         *            },
+         *            ...
+         *        },
+         *        ...
+         *    },
+         *    ...
+         */
+        },
+        descriptionClassAssets: {
+        /*    profileid: {
+         *        appid: {
+         *            contextid: {
+         *                classid: {
+         *                    count: number
+         *                    assets: [
+         *                        { assetid, instanceid, amount },
+         *                        ...
+         *                    ],
+         *                    instanceCounts: {
+         *                        instanceid: number,
+         *                        ...
+         *                    },
+         *                },
+         *                ...
+         *            },
+         *            ...
+         *        },
+         *        ...
+         *    },
+         *   ...
+         */
+        },
+        offerId: null,
+        offerMessage: '',
+        offerItems: new Set(),
+        // states: 0: new offer, 1: existing offer (unchanged), 2: counteroffer
+        tradeState: 0,
+        appInfo: {}
+    },
 
     setup: async function() {
+        let { shortcuts, data } = TradeofferWindow;
         // resize existing tabs
         let tabsContainerElem = document.querySelector('.inventory_user_tabs');
         let userTabElem = tabsContainerElem.querySelector('#inventory_select_your_inventory');
@@ -65,93 +133,132 @@ const TradeofferWindow = {
         }
 
         // Add CSS Styles
+        GM_addStyle(cssGlobal);
         GM_addStyle(cssTradeofferWindow);
 
         // load config
         await TradeofferWindow.configLoad();
 
-        // set up overlay
-        const overlayHTMLString = '<div class="userscript-trade-overlay">'
+        addSvgBlock(document.querySelector('.trade_area'));
+
+        // Get and organize appInfo
+        const extractAppInfo = (appContextData) => {
+            for(let appid in appContextData) {
+                let appData = appContextData[appid];
+                data.appInfo[appid] ??= {
+                    id: appData.appid,
+                    icon: appData.icon,
+                    logo: appData.inventory_logo,
+                    link: appData.link,
+                    name: appData.name,
+                    contexts: {}
+                };
+
+                for(let contextid in appData.rgContexts) {
+                    let contextData = appData.rgContexts[contextid];
+                    data.appInfo[appid].contexts[contextid] ??= {
+                        id: contextData.id,
+                        name: contextData.name
+                    };
+                }
+            }
+        }
+        extractAppInfo(unsafeWindow.g_rgAppContextData);
+        extractAppInfo(unsafeWindow.g_rgPartnerAppContextData);
+
+        // Get names, ids, urls for both parties in the trade offer window
+        // NOTE: Since we don't have direct access to user's own name, we resort to extracting it out of the hidden escrow message
+        Object.assign(data, { me: {}, them: {} });
+        let partnerName = data.them.name = document.getElementById('trade_theirs').querySelector('.offerheader h2 > a').textContent;
+        let partnerEscrowMessage = document.getElementById('trade_escrow_for_them').textContent;
+        let userEscrowMessage = document.getElementById('trade_escrow_for_me').textContent;
+        data.me.name = userEscrowMessage.slice(partnerEscrowMessage.indexOf(partnerName), partnerEscrowMessage.indexOf(partnerName) + partnerName.length - partnerEscrowMessage.length);
+
+        data.them.id = unsafeWindow.UserThem.strSteamId
+        data.them.url = unsafeWindow.UserThem.strProfileURL;
+        data.them.img = document.getElementById('trade_theirs').querySelector('.avatarIcon img').src;
+        data.them.escrowDays = unsafeWindow.g_daysTheirEscrow;
+        data.me.id = unsafeWindow.UserYou.strSteamId;
+        data.me.url = unsafeWindow.UserYou.strProfileURL;
+        data.me.img = document.getElementById('trade_yours').querySelector('.avatarIcon img').src;
+        data.me.escrowDays = unsafeWindow.g_daysMyEscrow;
+
+        // Check trade state
+        let offerParamsArr = document.body.innerHTML.match(/BeginTradeOffer\([^)]+\)/g)[0].split(' ');
+        data.offerId = offerParamsArr[1].match(/\d+/)[0];
+        if(data.offerId !== '0') {
+            data.tradeState = 1;
+            // TODO: figure out how to determine an empty mssg vs a "<none>" message????
+            // data.offerMessage = document.getElementById('tradeoffer_includedmessage').querySelector('.included_trade_offer_note')..trim()
+            for(let assetData of unsafeWindow.g_rgCurrentTradeStatus.me.assets) {
+                data.offerItems.add(`${data.me.id}_${assetData.appid}_${assetData.contextid}_${assetData.assetid}_${assetData.amount}`);
+            }
+            for(let assetData of unsafeWindow.g_rgCurrentTradeStatus.them.assets) {
+                data.offerItems.add(`${data.them.id}_${assetData.appid}_${assetData.contextid}_${assetData.assetid}_${assetData.amount}`);
+            }
+        }
+
+        // add app entries into filter
+        await TradeofferWindow.addAppFilterApps();
+
+        let cookieValue = steamToolsUtils.getCookie('strTradeLastInventoryContext');
+
+        // Add tab to the user_tabs section and attach event listeners
+        let userTabHTMLString = `<div class="inventory_user_tab userscript-tab" data-name="advanced-options">`
+          +     '<div>Advanced</div>'
+          + '</div>'
+          + `<div class="inventory_user_tab userscript-tab" data-name="remove-last-inv-cookie">`
+          +     `<div id="inventory-cookie-removal-status">${cookieValue ? '🔴' : '🟢'}</div>`
+          + '</div>';
+
+        // tabsContainerElem.querySelector('[style="clear: both;"]')
+        tabsContainerElem.querySelector('.inventory_user_tab_gap')
+            .insertAdjacentHTML('beforebegin', userTabHTMLString);
+
+        shortcuts.userSelectTabs = tabsContainerElem;
+        shortcuts.overlayContainer = document.querySelector('.trade_area');
+
+        tabsContainerElem.querySelector('[data-name="advanced-options"]').addEventListener('click', TradeofferWindow.overlayOpenListener);
+        if(cookieValue) {
+            tabsContainerElem.querySelector('[data-name="remove-last-inv-cookie"]').addEventListener('click', TradeofferWindow.removeLastTradeInventoryCookieListener);
+        }
+
+        // Add overlay to the DOM and attach event listeners
+        const overlayHTMLString = '<div class="userscript-trade-overlay userscript-vars">'
           +     '<div class="userscript-trade-overlay-header">'
-                  // the title will be changed when a feature setup is triggered
           +         '<span class="userscript-trade-overlay-title">?????</span>'
           +     '</div>'
           +     '<div class="userscript-trade-overlay-close">'
           +     '</div>'
           +     '<div class="userscript-trade-overlay-body">'
           +         '' // the body will be generated on each feature setup
-          +     '</div>'
-          + '</div>';
+          +     '</div>';
 
-        let tradeAreaElem = document.querySelector('.trade_area');
-        tradeAreaElem.insertAdjacentHTML('beforeend', overlayHTMLString);
+        shortcuts.overlayContainer.insertAdjacentHTML('beforeend', overlayHTMLString);
 
-        // Get names, ids, urls for both parties in the trade offer window
-        // NOTE: Since we don't have immediate access to user's own name, we resort to extracting it out of the hidden escrow message
-        Object.assign(TradeofferWindow.data, { me: {}, them: {} });
-        let partnerName = TradeofferWindow.data.them.name = document.getElementById('trade_theirs').querySelector('.offerheader h2 > a').textContent;
-        let partnerEscrowMessage = document.getElementById('trade_escrow_for_them').textContent;
-        let userEscrowMessage = document.getElementById('trade_escrow_for_me').textContent;
-        TradeofferWindow.data.me.name = userEscrowMessage.slice(partnerEscrowMessage.indexOf(partnerName), partnerEscrowMessage.indexOf(partnerName) + partnerName.length - partnerEscrowMessage.length);
+        shortcuts.overlay = shortcuts.overlayContainer.querySelector('& > .userscript-trade-overlay');
+        shortcuts.overlayTitle = shortcuts.overlay.querySelector('.userscript-trade-overlay-title');
+        shortcuts.overlayBody = shortcuts.overlay.querySelector('.userscript-trade-overlay-body');
 
-        TradeofferWindow.data.them.id = unsafeWindow.UserThem.strSteamId;
-        TradeofferWindow.data.them.url = unsafeWindow.UserThem.strProfileURL;
-        TradeofferWindow.data.them.img = document.getElementById('trade_theirs').querySelector('.avatarIcon img').src;
-        TradeofferWindow.data.me.id = unsafeWindow.UserYou.strSteamId;
-        TradeofferWindow.data.me.url = unsafeWindow.UserYou.strProfileURL;
-        TradeofferWindow.data.me.img = document.getElementById('trade_yours').querySelector('.avatarIcon img').src;
-
-        // add app entries into filter
-        await TradeofferWindow.addAppFilterApps();
-
-        // Add tabs to the user_tabs section
-        const generateUserTabHTMLString = (featureName, featureData) => {
-            return `<div class="inventory_user_tab userscript-tab" data-name=${featureName}>`
-              +     '<div>'
-              +         featureData.tabContent
-              +     '</div>'
-              + '</div>';
-        };
-        let newTabsHTMLString = '';
-        for(let tabName in TradeofferWindow.FEATURE_LIST) {
-            if(!globalSettings.tradeoffer.disabled.includes(tabName)) {
-                newTabsHTMLString += generateUserTabHTMLString(tabName, TradeofferWindow.FEATURE_LIST[tabName]);
-            }
-        }
-
-        // tabsContainerElem.querySelector('[style="clear: both;"]')
-        tabsContainerElem.querySelector('.inventory_user_tab_gap')
-            .insertAdjacentHTML('beforebegin', newTabsHTMLString);
-
-        TradeofferWindow.shortcuts.userSelectTabs = tabsContainerElem;
-        TradeofferWindow.shortcuts.overlay = tradeAreaElem.querySelector('.userscript-trade-overlay');
-        TradeofferWindow.shortcuts.overlayTitle = tradeAreaElem.querySelector('.userscript-trade-overlay-title');
-        TradeofferWindow.shortcuts.overlayBody = tradeAreaElem.querySelector('.userscript-trade-overlay-body');
-
-        tabsContainerElem.addEventListener('click', TradeofferWindow.selectCustomTabListener);
-        TradeofferWindow.shortcuts.overlay.querySelector('.userscript-trade-overlay-close').addEventListener('click', TradeofferWindow.overlayCloseListener);
+        shortcuts.overlay.querySelector('.userscript-trade-overlay-close').addEventListener('click', TradeofferWindow.overlayCloseListener);
     },
-    selectCustomTabListener: function(event) {
-        let tabElem = event.target;
-        while(!tabElem.matches('.inventory_user_tab')) {
-            if(tabElem.matches('.inventory_user_tabs')) {
-                console.error('TradeofferWindow.selectCustomTabListener(): No tab element found!');
-                return;
-            }
-            tabElem = tabElem.parentElement;
+    removeLastTradeInventoryCookieListener: function() {
+        let activeInventory = unsafeWindow.g_ActiveInventory;
+        if(!activeInventory) {
+            return;
         }
 
-        let tabData = TradeofferWindow.FEATURE_LIST[tabElem.dataset.name];
-        if (!tabData || (typeof TradeofferWindow[tabData.entry] !== 'function')) {
-            throw 'TradeofferWindow.selectCustomTabListener(): Invalid function name! Was something set up incorrectly?';
+        // document.cookie = 'strTradeLastInventoryContext=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/tradeoffer/';
+        steamToolsUtils.removeCookie('strTradeLastInventoryContext', '/tradeoffer/');
+
+        if(activeInventory.owner.cLoadsInFlight > 0) {
+            // inventory is currently loading, try deleting cookie again
+            setTimeout(TradeofferWindow.removeLastTradeInventoryCookieListener, 1000);
+        } else {
+            document.getElementById('inventory-cookie-removal-status').textContent = '🟢';
+            TradeofferWindow.shortcuts.tabsContainerElem.querySelector('[data-name="remove-last-inv-cookie"]')
+                .removeEventListener('click', TradeofferWindow.removeLastTradeInventoryCookieListener);
         }
-
-        TradeofferWindow.shortcuts.overlayTitle.textContent = tabData.title;
-
-        TradeofferWindow[tabData.entry]();
-
-        TradeofferWindow.shortcuts.overlayBody.dataset.name = tabElem.dataset.name;
-        TradeofferWindow.shortcuts.overlay.parentElement.classList.add('overlay');
     },
     addAppFilterApps: async function() {
         let filterData = globalSettings.tradeoffer.filter;
@@ -293,20 +400,543 @@ const TradeofferWindow = {
 
         return data.data;
     },
-
-
-
-
-
     overlayCloseListener: function() {
-        TradeofferWindow.shortcuts.overlay.parentElement.classList.remove('overlay');
-    },
-    selectorMenuToggleListener: function(event) {
-        if(!event.currentTarget.matches('.main-control-selector-container')) {
-            throw 'TradeofferWindow.selectorMenuToggle(): Not attached to selector container!';
+        let { shortcuts } = TradeofferWindow;
+
+        if(!shortcuts.overlayContainer.classList.contains('overlay')) {
+            shortcuts.overlayContainer.classList.add('overlay');
         }
 
-        event.currentTarget.classList.toggle('active');
+        let activeOverlayBody = shortcuts.overlayBody.dataset.name;
+        if(activeOverlayBody === 'offerWindow') {
+            shortcuts.overlayContainer.classList.remove('overlay');
+        } else {
+            TradeofferWindow.overlayBodyToggle('offerWindow');
+        }
+    },
+    overlayOpenListener: function() {
+        TradeofferWindow.overlayBodyToggle('offerWindow');
+    },
+    overlayBodyToggleListener: function(event) {
+        let { shortcuts } = TradeofferWindow;
+        let toggleElem = event.target.closest('.overlay-toggle');
+        if(toggleElem === null) {
+            throw 'TradeofferWindow.overlayBodyToggleListener(): Toggle element not found! Was something set up incorrectly?';
+        }
+
+        TradeofferWindow.overlayBodyToggle(toggleElem.dataset.name);
+    },
+    overlayBodyToggle: function(name) {
+        let { shortcuts } = TradeofferWindow;
+
+        let overlayData = TradeofferWindow.FEATURE_LIST[name];
+        if(!overlayData || (typeof TradeofferWindow[overlayData.entry] !== 'function')) {
+            throw 'TradeofferWindow.overlayBodyToggle(): Invalid function! Was something set up incorrectly?';
+        }
+
+        shortcuts.overlayTitle.textContent = overlayData.title;
+
+        // TODO: toggle on a dedicated loading overlay
+
+        TradeofferWindow[overlayData.entry]();
+
+        shortcuts.overlayBody.dataset.name = name;
+        shortcuts.overlayContainer.classList.add('overlay');
+    },
+
+
+
+
+
+    offerShortcuts: {},
+    offerData: {
+        offer: {
+        /*    profileid: {
+         *        appid: {
+         *            contextid: {
+         *                classid: {
+         *                    elem: element,
+         *                    count: number,
+         *                    assets: [
+         *                        { assetid, instanceid, amount },
+         *                        ...
+         *                    ],
+         *                    instanceCounts: {
+         *                        instanceid: number,
+         *                        ...
+         *                    },
+         *                },
+         *                ...
+         *            },
+         *            ...
+         *        },
+         *        ...
+         *    },
+         *    ...
+         */
+        },
+        itemlistLastSelected: {
+            // profileid: { appid, contextid, classid }
+        }
+    },
+
+    offerSetup: async function() {
+        let { shortcuts, data, offerShortcuts, offerData } = TradeofferWindow;
+
+        if(offerShortcuts.body !== undefined) {
+            return;
+        }
+
+        // set up overlay
+        const offerBodyHTMLString = '<div class="offer-window-body">'
+          +     '<div class="offer-window-main-control">'
+          +         '<div class="main-control-section">'
+          +             '<div class="offer-window-comment-box">'
+          +                 '<textarea id="offer-window-comment-box" maxlength="128" placeholder="(Optional) Add comment to offer">'
+          +                 '</textarea>'
+          +             '</div>'
+          +             '<button class="userscript-trade-action main-control-action overlay-toggle" data-name="message">Select Comment</button>'
+          +         '</div>'
+          +         '<div class="main-control-action-group">'
+          +             '<button class="userscript-trade-action main-control-action overlay-toggle" data-name="history">History</button>'
+          +             '<button class="userscript-trade-action main-control-action overlay-toggle" data-name="offerSummary">Finalize Offer</button>'
+          +         '</div>'
+          +     '</div>'
+          +     `<div id="offer-window-itemlist-me" class="offer-itemlist" data-id="${data.me.id}">`
+          +         '<div class="itemlist-header">'
+          +             '<div class="userscript-icon-name-container">'
+          +                 `<img src="${data.me.img}">`
+          +                 data.me.name
+          +             '</div>'
+          +         '</div>'
+          +         '<div class="itemlist-list">'
+          +         '</div>'
+          +         '<div class="itemlist-overlay">'
+          +         '</div>'
+          +     '</div>'
+          +     '<div class="offer-window-actions">'
+          +         '<div class="offer-window-action overlay-toggle" data-name="prefilter">P</div>'
+          +         '<div class="offer-window-action overlay-toggle" data-name="quickSearch">Q</div>'
+          +         '<div class="offer-window-action overlay-toggle" data-name="itemsSelector">I</div>'
+          +      '<div class="offer-window-action" data-name="deleteItems">D</div>'
+          +         '<div class="offer-window-action" data-name="resetItems">R</div>'
+          +     '</div>'
+          +     `<div id="offer-window-itemlist-them" class="offer-itemlist" data-id="${data.them.id}">`
+          +         '<div class="itemlist-header">'
+          +             '<div class="userscript-icon-name-container">'
+          +                 `<img src="${data.them.img}">`
+          +                 data.them.name
+          +             '</div>'
+          +         '</div>'
+          +         '<div class="itemlist-list">'
+          +         '</div>'
+          +         '<div class="itemlist-overlay">'
+          +         '</div>'
+          +     '</div>'
+          + '</div>';
+
+        shortcuts.overlayBody.insertAdjacentHTML('beforeend', offerBodyHTMLString);
+
+        offerShortcuts.body = shortcuts.overlayBody.querySelector('& > .offer-window-body');
+        offerShortcuts.message = document.getElementById('offer-window-comment-box');
+        offerShortcuts.itemListMe = document.getElementById('offer-window-itemlist-me');
+        offerShortcuts.itemListThem = document.getElementById('offer-window-itemlist-them');
+        offerShortcuts.itemList = {
+            [data.me.id]: offerShortcuts.itemListMe,
+            [data.them.id]: offerShortcuts.itemListThem,
+        };
+
+        // TODO: add comment and send offer listeners here
+        offerShortcuts.body.querySelector('[data-name="message"]').addEventListener('click', TradeofferWindow.overlayBodyToggleListener);
+        offerShortcuts.body.querySelector('[data-name="history"]').addEventListener('click', TradeofferWindow.overlayBodyToggleListener);
+        offerShortcuts.body.querySelector('[data-name="offerSummary"]').addEventListener('click', TradeofferWindow.overlayBodyToggleListener);
+
+        // toggle summary overlay
+        // toggle comments overlay
+        let offerActionsElem = offerShortcuts.body.querySelector('.offer-window-actions');
+        offerActionsElem.querySelector('[data-name="prefilter"]').addEventListener('click', TradeofferWindow.overlayBodyToggleListener);
+        offerActionsElem.querySelector('[data-name="quickSearch"]').addEventListener('click', TradeofferWindow.overlayBodyToggleListener);
+        offerActionsElem.querySelector('[data-name="itemsSelector"]').addEventListener('click', TradeofferWindow.overlayBodyToggleListener);
+        offerActionsElem.querySelector('[data-name="deleteItems"]').addEventListener('click', TradeofferWindow.offerItemlistDeleteSelectedListener);
+        offerActionsElem.querySelector('[data-name="resetItems"]').addEventListener('click', TradeofferWindow.offerResetListener);
+
+        for(let profileid in offerShortcuts.itemList) {
+            offerShortcuts.itemList[profileid].querySelector('.itemlist-list').addEventListener('click', TradeofferWindow.offerItemlistSelectItemsListener);
+        }
+
+        offerData.offer = {
+            [data.me.id]: {},
+            [data.them.id]: {},
+        };
+        offerData.lastSelected = {
+            [data.me.id]: null,
+            [data.them.id]: null,
+        };
+
+        // Populate items of the created offer
+        if(data.tradeState !== 0) {
+            // enable overlay to prevent interaction
+
+            for(let offerItemData of data.offerItems) {
+                let [profileid, appid, contextid, assetid, amount] = offerItemData.split('_');
+                await TradeofferWindow.offerItemlistAddAssetItem(profileid, appid, contextid, assetid, parseInt(amount));
+            }
+
+            // disable overlay
+        }
+    },
+    offerUpdateTradeState: function() {
+        const containsAllProfileItems = (isMe) => {
+            let profileid = data[isMe ? 'me' : 'them'].id;
+            for(let [classData, classid, contextid, appid] of TradeofferWindow.offerProfileDataIter(offer[profileid])) {
+                totalOfferItemsCount += classData.assets;
+                for(let offerAsset of classData.assets) {
+                    if( !data.offerItems.has(`${profileid}_${appid}_${contextid}_${offerAsset.assetid}_${offerAsset.amount}`) ) {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        };
+
+        let { data, offerData: { offer } } = TradeofferWindow;
+        let totalOfferItemsCount = 0;
+
+        if(data.tradeState === 0) {
+            return;
+        }
+
+        let isInitState = containsAllProfileItems(true) && containsAllProfileItems(false)
+          && data.offerItems.size === totalOfferItemsCount;
+
+        data.tradeState = isInitState ? 1 : 2;
+    },
+    offerItemlistAddClassItems: async function(profileid, appid, contextid, classid, instanceid, amount = 1, reverse = false) {
+        let { offerShortcuts, offerData, data } = TradeofferWindow;
+
+        if(amount === 0) {
+            console.warn('TradeofferWindow.offerItemlistAddClassItems(): Adding 0 items?');
+            return;
+        }
+
+        let inventory = await TradeofferWindow.getTradeInventory(profileid, appid, contextid, TradeofferWindow.filterInventoryBlockSetup());
+        if(!inventory) {
+            console.warn('TradeofferWindow.offerItemlistAddClassItems(): Inventory not found, exiting...');
+            return;
+        }
+
+        let descriptClass = data.descriptionClassAssets[profileid]?.[appid]?.[contextid]?.[classid];
+        if(!descriptClass) {
+            console.warn('TradeofferWindow.offerItemlistAddClassItems(): Class in descriptions not found, exiting...');
+            return;
+        }
+        let descriptClassAssets = descriptClass.assets;
+
+        let offerClass = offerData.offer[profileid]?.[appid]?.[contextid]?.[classid];
+        if(!offerClass) {
+            offerClass = { elem: null, count: 0, assets: [], instanceCounts: {} };
+            offerData.offer[profileid] ??= {};
+            offerData.offer[profileid][appid] ??= {};
+            offerData.offer[profileid][appid][contextid] ??= {};
+            offerData.offer[profileid][appid][contextid][classid] ??= offerClass;
+        }
+
+        let count = 0;
+        if(reverse) {
+            descriptClassAssets = descriptClassAssets.toReversed();
+        }
+        for(let descriptAsset of descriptClassAssets) {
+            let amountNeeded = amount - count;
+            if(amountNeeded === 0) {
+                break;
+            }
+
+            if(instanceid !== undefined && descriptAsset.instanceid !== instanceid) {
+                continue;
+            }
+
+            let offerAsset = offerClass.assets.find(x => x.assetid === descriptAsset.assetid);
+            if(offerAsset) {
+                let amountAvailable = descriptAsset.amount - offerAsset.amount;
+                if(amountAvailable === 0) {
+                    continue;
+                }
+
+                let amountToAdd = Math.min(amountAvailable, amountNeeded);
+                offerAsset.amount += amountToAdd;
+                offerClass.count += amountToAdd;
+                offerClass.instanceCounts[descriptAsset.instanceid] += amountToAdd;
+                count += amountToAdd;
+            } else {
+                let amountToAdd = Math.min(descriptAsset.amount, amountNeeded);
+                offerClass.assets.push({ assetid: descriptAsset.assetid, instanceid: descriptAsset.instanceid, amount: amountToAdd });
+                offerClass.count += amountToAdd;
+                offerClass.instanceCounts[descriptAsset.instanceid] ??= 0;
+                offerClass.instanceCounts[descriptAsset.instanceid] += amountToAdd;
+                count += amountToAdd;
+            }
+        }
+
+        if(count !== amount) {
+            console.warn(`TradeofferWindow.offerItemlistAddClassItems(): There was not enough assets to add to offer (${count}/${amount})?!?!`);
+        }
+
+        // close itemlist classinstance viewer before updating elems
+
+        if(offerClass.elem === null) {
+            let itemHTMLString = TradeofferWindow.offerGenerateItemHTMLString(appid, contextid, classid);
+            let itemListElem = offerShortcuts.itemList[profileid].querySelector('.itemlist-list');
+            itemListElem.insertAdjacentHTML('beforeend', itemHTMLString);
+            offerClass.elem = itemListElem.lastElementChild;
+        }
+
+        offerClass.elem.dataset.amount = offerClass.count.toLocaleString();
+        return count;
+    },
+    offerItemlistAddAssetItem: async function(profileid, appid, contextid, assetid, amount = 1) {
+        let { offerShortcuts, offerData, data } = TradeofferWindow;
+
+        let inventory = await TradeofferWindow.getTradeInventory(profileid, appid, contextid, TradeofferWindow.filterInventoryBlockSetup());
+        if(!inventory) {
+            console.warn('TradeofferWindow.offerItemlistAddAssetItem(): Inventory not found, exiting...');
+            return;
+        }
+
+        let assetData = inventory.rgInventory[assetid];
+        if(!assetData) {
+            throw 'TradeofferWindow.offerItemlistAddAssetItem(): Asset data not found?!?!';
+        }
+
+        let offerClass = offerData.offer[profileid]?.[appid]?.[contextid]?.[assetData.classid];
+        if(!offerClass) {
+            offerClass = { elem: null, count: 0, assets: [], instanceCounts: {} };
+            offerData.offer[profileid] ??= {};
+            offerData.offer[profileid][appid] ??= {};
+            offerData.offer[profileid][appid][contextid] ??= {};
+            offerData.offer[profileid][appid][contextid][assetData.classid] ??= offerClass;
+        }
+
+        if(amount > parseInt(assetData.amount)) {
+            console.warn('TradeofferWindow.offerItemlistAddAssetItem(): Amount to be added is greater than asset\'s total amount, adding maximum amount...');
+        }
+
+        let amountToSet = Math.min(parseInt(assetData.amount), amount);
+        let existingOfferAsset = offerClass.assets.find(x => x.assetid === assetid);
+        if(existingOfferAsset) {
+            let assetCountDiff = amountToSet - existingOfferAsset.amount;
+            existingOfferAsset.amount = amountToSet;
+            offerClass.count += assetCountDiff;
+            offerClass.instanceCounts[assetData.instanceid] += assetCountDiff;
+        } else {
+            offerClass.assets.push({ assetid: assetid, instanceid: assetData.instanceid, amount: amountToSet });
+            offerClass.count += amountToSet;
+            offerClass.instanceCounts[assetData.instanceid] ??= 0;
+            offerClass.instanceCounts[assetData.instanceid] += amountToSet;
+        }
+
+        // close itemlist classinstance viewer before updating elems
+
+        if(offerClass.elem === null) {
+            let itemHTMLString = TradeofferWindow.offerGenerateItemHTMLString(appid, contextid, assetData.classid);
+            let itemListElem = offerShortcuts.itemList[profileid].querySelector('.itemlist-list');
+            itemListElem.insertAdjacentHTML('beforeend', itemHTMLString);
+            offerClass.elem = itemListElem.lastElementChild;
+        }
+
+        offerClass.elem.dataset.amount = offerClass.count.toLocaleString();
+    },
+    offerGenerateItemHTMLString: function(appid, contextid, classid) {
+        // Find the description data for this classinstance
+        // This is a little jank, but works for now until descriptions gets refactored
+        let { inventories, descriptionClassAssets } = TradeofferWindow.data;
+
+        let descript;
+        for(let profileid in inventories) {
+            if(descript) {
+                break;
+            }
+
+            let inventoryContext = inventories[profileid]?.[appid]?.[contextid];
+            if(!inventoryContext) {
+                continue;
+            }
+
+            let descriptClass = descriptionClassAssets[profileid]?.[appid]?.[contextid]?.[classid];
+            if(!descriptClass || descriptClass.count === 0) {
+                continue;
+            }
+
+            let arbitraryAsset = descriptClass.assets[0];
+            descript = inventoryContext.rgDescriptions[`${classid}_${arbitraryAsset.instanceid}`];
+        }
+
+        if(!descript) {
+            console.error('TradeofferWindow.itemsSelectorGenerateItem(): No description found!!!');
+        }
+
+        let imgUrl = descript?.icon_url ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f` : '';
+        let name = descript?.name ?? '???';
+
+        let styleAttrString = '';
+        styleAttrString += descript?.name_color ? `border-color: #${descript.name_color};` : '';
+        styleAttrString += descript?.background_color ? `background-color: #${descript.background_color};` : '';
+        if(styleAttrString.length) {
+            styleAttrString = ` style="${styleAttrString}"`;
+        }
+
+        let dataAttrString = '';
+        dataAttrString += ` data-appid="${appid}"`;
+        dataAttrString += ` data-contextid="${contextid}"`;
+        dataAttrString += ` data-classid="${classid}"`;
+
+        return `<div class="inventory-item-container" title="${name}"${dataAttrString}${styleAttrString}>`
+          +     `<img loading="lazy" src="${imgUrl}" alt="${name}">`
+          + '</div>';
+    },
+
+    offerItemlistSelectItemsListener: function(event) {
+        let { offerData: { lastSelected } } = TradeofferWindow;
+
+        let targetItemElem = event.target.closest('.inventory-item-container');
+        if(!targetItemElem) {
+            return;
+        }
+
+        let itemlistElem = event.target.closest('.itemlist-list');
+        if(!itemlistElem) {
+            console.error('TradeofferWindow.offerItemlistSelectItemsListener(): item list element not found, but item element exists???');
+            return;
+        }
+
+        if(event.ctrlKey) {
+            TradeofferWindow.overlayBodyToggle('itemClassPicker');
+            return;
+        }
+
+        let lastSelectedData = lastSelected[itemlistElem.dataset.id];
+        // if(!event.shiftKey && !event.ctrlKey) {
+        if(event.shiftKey) {
+            let itemElemList = itemlistElem.querySelectorAll('.inventory-item-container');
+
+            let prevIndex, currIndex;
+            if(lastSelectedData === null) {
+                prevIndex = 0;
+            }
+            for(let i=0; i<itemElemList.length; i++) {
+                if(itemElemList[i].dataset.appid === lastSelectedData.appid
+                  && itemElemList[i].dataset.contextid === lastSelectedData.contextid
+                  && itemElemList[i].dataset.classid === lastSelectedData.classid) {
+                    prevIndex = i;
+                    if(currIndex !== undefined) {
+                        break;
+                    }
+                }
+
+                if(itemElemList[i].dataset.appid === targetItemElem.dataset.appid
+                  && itemElemList[i].dataset.contextid === targetItemElem.dataset.contextid
+                  && itemElemList[i].dataset.classid === targetItemElem.dataset.classid) {
+                    currIndex = i;
+                    if(prevIndex !== undefined) {
+                        break;
+                    }
+                }
+            }
+
+            if(prevIndex === currIndex) {
+                return;
+            }
+
+            let minIndex = Math.min(prevIndex, currIndex);
+            let maxIndex = Math.max(prevIndex, currIndex);
+
+            for(let i=minIndex+1; i<maxIndex; i++) {
+                itemElemList[i].classList.add('selected');
+            }
+            itemElemList[currIndex].classList.add('selected');
+        } else {
+            targetItemElem.classList.toggle('selected');
+        }
+
+        lastSelected[itemlistElem.dataset.id] = {
+            appid: targetItemElem.dataset.appid,
+            contextid: targetItemElem.dataset.contextid,
+            classid: targetItemElem.dataset.classid,
+        };
+    },
+    offerItemlistDeleteSelectedListener: function() {
+        let { data, offerShortcuts: { itemListMe, itemListThem }, offerData: { offer, lastSelected } } = TradeofferWindow;
+
+        const removeSelectedItems = (selectedItems, isMe) => {
+            let profileid = data[isMe ? 'me' : 'them'].id;
+            for(let itemElem of selectedItems) {
+                let { appid, contextid, classid } = itemElem.dataset;
+
+                let offerContext = offer[profileid]?.[appid]?.[contextid];
+                if(!offerContext?.[classid]) {
+                    console.error('TradeofferWindow.offerDeleteSelected(): class instance not found in offer data?!?!?');
+                } else {
+                    delete offerContext[classid];
+                }
+
+                itemElem.remove();
+            }
+        };
+
+        removeSelectedItems(itemListMe.querySelectorAll('.selected'), true);
+        removeSelectedItems(itemListThem.querySelectorAll('.selected'), false);
+
+        lastSelected[itemListMe.dataset.id] = null;
+        lastSelected[itemListThem.dataset.id] = null;
+    },
+    offerResetListener: async function() {
+        let { data, offerShortcuts, offerData } = TradeofferWindow;
+
+        offerData.offer = {};
+        for(let itemElem of offerShortcuts.itemListMe.querySelectorAll('.itemlist-list .inventory-item-container')) {
+            itemElem.remove();
+        }
+        for(let itemElem of offerShortcuts.itemListThem.querySelectorAll('.itemlist-list .inventory-item-container')) {
+            itemElem.remove();
+        }
+
+        for(let offerItemData of data.offerItems) {
+            let [profileid, appid, contextid, assetid, amount] = offerItemData.split('_');
+            await TradeofferWindow.offerItemlistAddAssetItem(profileid, appid, contextid, assetid, parseInt(amount));
+        }
+        offerShortcuts.message.value = data.offerMessage;
+
+        offerData.lastSelected[offerShortcuts.itemListMe.dataset.id] = null;
+        offerData.lastSelected[offerShortcuts.itemListThem.dataset.id] = null;
+    },
+    offerProfileDataIter: function(offerProfileData) {
+        function* offerDataIter(dataset) {
+            for(let appid in dataset) {
+                for(let contextid in dataset[appid]) {
+                    for(let classid in dataset[appid][contextid]) {
+                        yield [ dataset[appid][contextid][classid], classid, contextid, appid ];
+                    }
+                }
+            }
+        }
+
+        return offerDataIter(offerProfileData);
+    },
+
+
+
+
+
+    selectorMenuToggleListener: function(event) {
+        if(!event.currentTarget.matches('.main-control-selector-container')) {
+            throw 'TradeofferWindow.selectorMenuToggleListener(): Not attached to selector container!';
+        }
+
+        if(event.target.closest('.main-control-selector-select')) {
+            event.currentTarget.classList.toggle('active');
+        } else if(event.target.closest('.main-control-selector-options')) {
+            event.currentTarget.classList.remove('active');
+        }
     },
     selectorMenuSelectListener: function(event) {
         if(!event.currentTarget.matches('.main-control-selector-options')) {
@@ -341,7 +971,9 @@ const TradeofferWindow = {
             throw 'TradeofferWindow.selectorMenuSelect(): option element provided is not an option!';
         }
 
-        selectorElem.querySelector('.main-control-selector-select').innerHTML = option.innerHTML;
+        let selectorSelectElem = selectorElem.querySelector('.main-control-selector-select');
+        selectorSelectElem.innerHTML = option.innerHTML;
+        Object.assign(selectorSelectElem.dataset, option.dataset);
         Object.assign(selectorElem.dataset, option.dataset);
     },
 
@@ -385,12 +1017,14 @@ const TradeofferWindow = {
         prefilterShortcuts.selector.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
         prefilterShortcuts.selectorOptions.addEventListener('click', TradeofferWindow.prefilterAppSelectorMenuSelectListener);
 
-        let lastSelectedApp = globalSettings.tradeoffer.filter.pLastSelected;
+        let lastSelectedApp = globalSettings.tradeoffer.selectors.pLastSelected;
         if(lastSelectedApp) {
             prefilterShortcuts.selectorOptions.querySelector(`[data-id="${lastSelectedApp}"]`)?.click();
         }
     },
     prefilterAppSelectorMenuSelectListener: async function(event) {
+        event.stopPropagation();
+
         if(!event.currentTarget.matches('.main-control-selector-options')) {
             throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
         } else if(!event.currentTarget.parentElement.matches('.main-control-selector-container')) {
@@ -453,10 +1087,8 @@ const TradeofferWindow = {
             }
         }
 
-        globalSettings.tradeoffer.filter.pLastSelected = optionId;
+        globalSettings.tradeoffer.selectors.pLastSelected = optionId;
         await TradeofferWindow.configSave();
-
-        // the event bubbling will take care of toggling the selector menu back off
     },
     // TODO: collapsable category containers, hides only unselected tags
     prefilterRepopulateCategoryElement: function(categoryElem, categoryData) {
@@ -635,15 +1267,13 @@ const TradeofferWindow = {
     quickSearchShortcuts: {},
     quickSearchData: {
         currentContext: { profile: null, app: null, context: null },
-        offerItems: { // items already selected in offer
-            // appid: {
-            //     contextid: { you: [assetids], them: [assetids] }
-            // }
-        },
         // inventory: {
         //     full_load: boolean
-        //     data: array,
+        //     data: object,
+        //     dataList: array,
         //     dataFiltered: array,
+        //     selectedItems: object,
+        //     disabledItems: object,
         //     pageCount: number,
         //     currency: array,
         //     descriptions: object,
@@ -694,10 +1324,10 @@ const TradeofferWindow = {
     quickSearchSetup: function() {
         console.log('Quick Search WIP');
 
-        let { quickSearchShortcuts } = TradeofferWindow;
+        let { data, quickSearchShortcuts } = TradeofferWindow;
 
         TradeofferWindow.quickSearchDisplaySelectResetAll();
-        TradeofferWindow.quickSearchOfferItemsUpdate();
+        TradeofferWindow.quickSearchDisabledItemsReset();
 
         if (quickSearchShortcuts.body !== undefined) {
             return;
@@ -709,12 +1339,16 @@ const TradeofferWindow = {
           +         TradeofferWindow.generateProfileSelectorHTMLString({ id: 'selector-quick-search-profile' })
           +         TradeofferWindow.generateAppSelectorHTMLString({ useUserApps: false, usePartnerApps: false, id: 'selector-quick-search-app', placeholderText: 'Select profile first', disabled: true })
           +         TradeofferWindow.generateContextSelectorHTMLString(undefined, undefined, { id: 'selector-quick-search-context', placeholderText: 'Select profile/app first', disabled: true })
-          +         '<button id="quick-search-load-inventory" class="main-control-selector-action">'
+          +         '<button id="quick-search-inventory-load" class="userscript-trade-action">'
           +             'Load'
           +         '</button>'
           +     '</div>'
+          +     '<div id="quick-search-display-mode-toggle" class="main-control-action-group">'
+          +         '<button class="userscript-trade-action main-control-action" data-qs-mode="page">P</button>'
+          +         '<button class="userscript-trade-action main-control-action" data-qs-mode="scroll">S</button>'
+          +     '</div>'
           +     '<div class="main-control-section">'
-          +         '<button id="quick-search-add-to-offer" class="main-control-selector-action">'
+          +         '<button id="quick-search-add-to-offer" class="userscript-trade-action">'
           +             'Add Selected'
           +         '</button>'
           +     '</div>'
@@ -745,10 +1379,14 @@ const TradeofferWindow = {
           +         `<button class="inventory-page-nav-btn" data-step="${Number.MAX_SAFE_INTEGER}">&gt|</button>`
           +     '</div>'
           + '</div>';
+        const quickSearchInventoryOverlayHTMLString = '<div class="quick-search-inventory-overlay userscript-overlay loading">'
+          +     cssAddThrobber()
+          + '</div>';
         const quickSearchBodyHTMLString = '<div class="quick-search-body">'
           +     quickSearchMainControlHTMLString
           +     quickSearchInventoryFacetHTMLString
           +     quickSearchInventoryDisplayHTMLString
+          +     quickSearchInventoryOverlayHTMLString
           + '</div>';
 
         TradeofferWindow.shortcuts.overlayBody.insertAdjacentHTML('beforeend', quickSearchBodyHTMLString);
@@ -761,13 +1399,17 @@ const TradeofferWindow = {
         quickSearchShortcuts.selectorOptionsApp = quickSearchShortcuts.selectorApp.querySelector('.main-control-selector-options');
         quickSearchShortcuts.selectorContext = document.getElementById('selector-quick-search-context');
         quickSearchShortcuts.selectorOptionsContext = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-options');
+        quickSearchShortcuts.displayModeToggle = document.getElementById('quick-search-display-mode-toggle');
 
+        quickSearchShortcuts.searchInput = document.getElementById('quick-search-search-inventory');
         quickSearchShortcuts.facet = document.getElementById('quick-search-facet');
 
         quickSearchShortcuts.display = quickSearchShortcuts.body.querySelector('.quick-search-inventory-display');
         quickSearchShortcuts.pages = document.getElementById('quick-search-pages');
         quickSearchShortcuts.pageNavigationBar = document.getElementById('quick-search-page-nav');
         quickSearchShortcuts.pageNumbers = quickSearchShortcuts.pageNavigationBar.querySelector('.inventory-page-nav-numbers');
+
+        quickSearchShortcuts.overlay = quickSearchShortcuts.body.querySelector('.quick-search-inventory-overlay');
 
         // add event listeners to everything in the quick search body
         quickSearchShortcuts.selectorProfile.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
@@ -777,68 +1419,57 @@ const TradeofferWindow = {
         quickSearchShortcuts.selectorContext.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
         quickSearchShortcuts.selectorOptionsContext.addEventListener('click', TradeofferWindow.selectorMenuSelectListener);
 
-        document.getElementById('quick-search-load-inventory').addEventListener('click', TradeofferWindow.quickSearchLoadInventoryListener);
+        document.getElementById('quick-search-inventory-load').addEventListener('click', TradeofferWindow.quickSearchLoadInventoryListener);
+        quickSearchShortcuts.displayModeToggle.addEventListener('click', TradeofferWindow.quickSearchDisplayModeToggleListener);
         document.getElementById('quick-search-add-to-offer').addEventListener('click', TradeofferWindow.quickSearchAddSelectedListener);
 
-        document.getElementById('quick-search-search-inventory').addEventListener('input', steamToolsUtils.debounceFunction(TradeofferWindow.quickSearchFacetSearchInventoryInputListener, TradeofferWindow.INPUT_DELAY));
+        quickSearchShortcuts.searchInput.addEventListener('input', steamToolsUtils.debounceFunction(TradeofferWindow.quickSearchFacetSearchInventoryInputListener, TradeofferWindow.INPUT_DELAY));
 
         quickSearchShortcuts.pages.addEventListener('click', TradeofferWindow.quickSearchDisplaySelectItemsListener);
         quickSearchShortcuts.pageNavigationBar.addEventListener('click', TradeofferWindow.quickSearchDisplayPaginateListener);
+
+        // Select the profile/app/context selectors from last load, default to user
+        let lastLoadedContext = globalSettings.tradeoffer.selectors.qLastSelected;
+        if(lastLoadedContext) {
+            quickSearchShortcuts.selectorOptionsProfile.querySelector(`[data-id="${data.me.id}"]`)?.click();
+            quickSearchShortcuts.selectorOptionsApp.querySelector(`[data-id="${lastLoadedContext.app}"]`)?.click();
+            quickSearchShortcuts.selectorOptionsContext.querySelector(`[data-id="${lastLoadedContext.context}"]`)?.click();
+        }
     },
-    quickSearchOfferItemsUpdate: function() {
+    quickSearchDisabledItemsReset: function() {
         // grab items from both sides and update item list to disable during quick search
         // update disable state for currently rendered items
-        let offerItems = {};
 
-        const addOfferItems = (offerItemElemList, isMe) => {
-            // go through loaded inventories to update their disabled state also
-            for(let offerItemElem of offerItemElemList) {
-                let itemData = offerItemElem.rgItem;
-                if(!itemData) {
-                    console.warn('TradeofferWindow.quickSearchOfferItemsUpdate(): item data not found on item elem??');
-                    console.log(offerItemElem);
-                    continue;
-                }
-
-                offerItems[itemData.appid] ??= {
-                    [itemData.contextid]: { you: [], them: [] }
-                };
-                offerItems[itemData.appid][itemData.contextid] ??= { you: [], them: [] };
-                offerItems[itemData.appid][itemData.contextid][isMe ? 'you' : 'them'].push(itemData.id);
-            }
-        };
-
-        addOfferItems(document.getElementById('your_slots').querySelectorAll('.item'), true);
-        addOfferItems(document.getElementById('their_slots').querySelectorAll('.item'), false);
-        TradeofferWindow.quickSearchData.offerItems = offerItems;
-
-        let { quickSearchShortcuts, quickSearchData: { currentContext, inventory } } = TradeofferWindow;
+        let { offerData: { offer }, quickSearchShortcuts, quickSearchData: { currentContext, inventory } } = TradeofferWindow;
         if(!quickSearchShortcuts.body || !currentContext.context) {
             return;
         }
 
-        let offerAssetsList = offerItems[currentContext.app]?.[currentContext.context]?.[currentContext.profile === steamToolsUtils.getMySteamId() ? 'you' : 'them'];
-        if(!offerAssetsList) {
-            offerAssetsList = [];
-        }
+        let offerClassItems = offer[currentContext.profile]?.[currentContext.app]?.[currentContext.context] ?? {};
 
         // update inventory data here
-        for(let asset of inventory.dataList) {
-            if(!asset) {
-                continue;
+        inventory.disabledItems.clear();
+        for(let classid in offerClassItems) {
+            for(let assetData of offerClassItems[classid].assets) {
+                if(assetData.amount > 0) {
+                    inventory.disabledItems.add(assetData.assetid);
+                }
             }
-            asset.disabled = offerAssetsList.includes(asset.id);
-            asset.selected &&= !asset.disabled;
+        }
+        for(let selectedItem of inventory.selectedItems) {
+            if(inventory.disabledItems.has(selectedItem)) {
+                inventory.selectedItems.delete(selectedItem);
+            }
         }
 
         // update inventory items in DOM
         for(let itemElem of quickSearchShortcuts.body.querySelectorAll('.inventory-item-container')) {
             let itemData = inventory.data[itemElem.dataset.id];
             if(!itemData) {
-                throw 'TradeofferWindow.quickSearchOfferItemsUpdate(): an item in DOM has no item data?!?!';
+                continue;
             }
 
-            if(itemData.disabled) {
+            if(inventory.disabledItems.has(itemData.id)) {
                 itemElem.classList.remove('selected');
                 itemElem.classList.add('disabled');
             } else {
@@ -866,7 +1497,8 @@ const TradeofferWindow = {
         quickSearchData.facet = [];
         quickSearchData.filtersSelected = 0;
 
-        // activate loading animation
+        // activate loading overlay
+        quickSearchShortcuts.body.classList.add('overlay');
 
         // hide facet lists
         quickSearchShortcuts.facet.classList.add('loading');
@@ -876,31 +1508,26 @@ const TradeofferWindow = {
             TradeofferWindow.quickSearchDisplayPageReset(pageElem);
         }
 
-        let inventory = await TradeofferWindow.getTradeInventoryFast2(profileid, appid, contextid, TradeofferWindow.quickSearchFilterInventoryBlock);
+        quickSearchShortcuts.selectorProfile.classList.remove('active');
+        quickSearchShortcuts.selectorApp.classList.remove('active');
+        quickSearchShortcuts.selectorContext.classList.remove('active');
 
-        // put items into an ordered array
-        let assetList = [];
-        let nonpositionedAssets = [];
-        for(let assetid in inventory.rgInventory) {
-            let asset = inventory.rgInventory[assetid];
-            let assetIndex = parseInt(asset.pos);
+        let inventoryFilterBlockfn = TradeofferWindow.filterInventoryBlockSetup(TradeofferWindow.quickSearchProcessInventoryBlockAsset);
+        let inventory = await TradeofferWindow.getTradeInventory(profileid, appid, contextid, inventoryFilterBlockfn);
+        let inventorySorted = INVENTORY_ITEM_PRIORITY.toSorted(appid, inventory.rgInventory, inventory.rgDescriptions);
 
-            if(!Number.isInteger(assetIndex)) {
-                nonpositionedAssets.push(asset);
-            }
-            if(assetList[asset.pos] === undefined) {
-                assetList[asset.pos] = asset;
-            } else {
-                nonpositionedAssets.push(asset);
-            }
+        // likely have not been processed yet
+        if(quickSearchData.facet.length === 0) {
+            TradeofferWindow.quickSearchProcessInventory(inventory);
         }
-        assetList.concat(nonpositionedAssets);
 
         quickSearchData.inventory = {
             full_load: inventory.full_load,
             data: inventory.rgInventory,
-            dataList: assetList,
+            dataList: inventorySorted,
             dataFiltered: [],
+            selectedItems: new Set(),
+            disabledItems: new Set(),
             pageCount: 0,
             currency: inventory.rgCurrency,
             descriptions: inventory.rgDescriptions
@@ -910,178 +1537,96 @@ const TradeofferWindow = {
             app: appid,
             context: contextid
         };
+        globalSettings.tradeoffer.selectors.qLastSelected = quickSearchData.currentContext;
+
+        TradeofferWindow.quickSearchDisabledItemsReset();
 
         // set up inventroy display
         TradeofferWindow.quickSearchFacetGenerate(quickSearchData.facet);
         TradeofferWindow.quickSearchApplyFilter();
         TradeofferWindow.quickSearchDisplaySetup();
 
-        // deactivate loading animation
-
         // show facet lists
         quickSearchShortcuts.facet.classList.remove('loading');
 
+        // deactivate loading overlay
+        quickSearchShortcuts.body.classList.remove('overlay');
+
         await TradeofferWindow.configSave();
     },
-    quickSearchFilterInventoryBlock: function(data, { profileid, appid, contextid }) {
-        let filterData = TradeofferWindow.filterLookupGet(appid);
-        if(!filterData) {
-            filterData = {
-                id: appid,
-                fetched: false,
-                categories: []
-            };
-            globalSettings.tradeoffer.filter.apps.push(filterData);
-            TradeofferWindow.filterLookupUpdateApp(filterData);
-        }
+    quickSearchProcessInventoryBlockAsset: function(asset, descript) {
         let { quickSearchData } = TradeofferWindow;
         let { facet: facetList } = quickSearchData;
-        let offerItemList = quickSearchData.offerItems?.[appid]?.[contextid]?.[steamToolsUtils.getMySteamId() === profileid ? 'you' : 'them'];
 
-        let excludedDescriptions = [];
-        for(let assetid in data.rgInventory) {
-            let asset = data.rgInventory[assetid];
-            let excludeAsset = false;
-            let descript = data.rgDescriptions[`${asset.classid}_${asset.instanceid}`];
+        for(let tag of descript.tags) {
+            let filterCategory = TradeofferWindow.filterLookupGet(descript.appid, tag.category);
+            let filterTag = TradeofferWindow.filterLookupGet(descript.appid, tag.category, tag.internal_name);
 
-            if(!descript) {
-                console.error('TradeofferWindow.quickSearchFilterInventoryBlock(): Description not found for an asset?!?!');
-                continue;
+            let facetCategory = facetList.find(x => x.id === tag.category);
+            if(!facetCategory) {
+                facetCategory = {
+                    id: filterCategory.id,
+                    name: filterCategory.name,
+                    open: filterCategory.qOpened,
+                    isFiltering: false,
+                    tags: []
+                };
+                facetList.push(facetCategory);
             }
 
-            // check to be excluded or not
-            for(let tag of descript.tags) {
-                let filterCategory = TradeofferWindow.filterLookupGet(appid, tag.category);
-                if(!filterCategory) {
-                    filterCategory = {
-                        id: tag.category,
-                        name: tag.category_name,
-                        pOpened: false,
-                        qOpened: false,
-                        tags: []
-                    };
-                    filterData.categories.push(filterCategory);
-                    TradeofferWindow.filterLookupUpdateCategory(appid, filterCategory);
-                }
-
-                let filterTag = TradeofferWindow.filterLookupGet(appid, tag.category, tag.internal_name);
-                if(!filterTag) {
-                    filterTag = {
-                        id: tag.internal_name,
-                        name: tag.name,
-                        excluded: false,
-                        filtered: false
-                    };
-                    filterCategory.tags.push(filterTag);
-                    TradeofferWindow.filterLookupUpdateTag(appid, tag.category, filterTag);
-                }
-
-                if(filterTag.excluded) {
-                    excludeAsset = true;
-                    break;
-                }
+            let facetTag = facetCategory.tags.find(x => x.id === filterTag.id);
+            if(!facetTag) {
+                facetTag = {
+                    id: filterTag.id,
+                    name: filterTag.name,
+                    filtered: filterTag.filtered,
+                    count: 0
+                };
+                facetCategory.tags.push(facetTag);
             }
+            facetTag.count++;
 
-            if(!excludeAsset) {
-                // Add to facet list
-                for(let tag of descript.tags) {
-                    let filterCategory = TradeofferWindow.filterLookupGet(appid, tag.category);
-                    let filterTag = TradeofferWindow.filterLookupGet(appid, tag.category, tag.internal_name);
-
-                    let facetCategory = facetList.find(x => x.id === tag.category);
-                    if(!facetCategory) {
-                        facetCategory = {
-                            id: filterCategory.id,
-                            name: filterCategory.name,
-                            open: filterCategory.qOpened,
-                            isFiltering: false,
-                            tags: []
-                        };
-                        facetList.push(facetCategory);
-                    }
-
-                    let facetTag = facetCategory.tags.find(x => x.id === filterTag.id);
-                    if(!facetTag) {
-                        facetTag = {
-                            id: filterTag.id,
-                            name: filterTag.name,
-                            filtered: filterTag.filtered,
-                            count: 0
-                        };
-                        facetCategory.tags.push(facetTag);
-                    }
-                    facetTag.count++;
-
-                    facetCategory.isFiltering ||= facetTag.filtered;
-                    if(facetTag.filtered) {
-                        quickSearchData.filtersSelected++;
-                    }
-                }
-
-                // flag current offer items
-                asset.disabled = offerItemList ? offerItemList.includes(asset.id) : false;
-                asset.selected = false;
-            } else {
-                delete data.rgInventory[assetid];
-                excludedDescriptions.push(`${asset.classid}_${asset.instanceid}`);
+            facetCategory.isFiltering ||= facetTag.filtered;
+            if(facetTag.filtered) {
+                quickSearchData.filtersSelected++;
             }
         }
+    },
+    quickSearchProcessInventory: function(inventory) {
+        for(let assetid in inventory.rgInventory) {
+            let asset = inventory.rgInventory[assetid];
+            let descript = inventory.rgDescriptions[`${asset.classid}_${asset.instanceid}`];
 
-        for(let descriptid of excludedDescriptions) {
-            delete data.rgDescriptions[descriptid];
+            TradeofferWindow.quickSearchProcessInventoryBlockAsset(asset, descript);
         }
-
-        return data;
     },
 
-    quickSearchAddSelectedListener: function(event) {
+    quickSearchAddSelectedListener: async function(event) {
         console.log('quickSearchAddSelectedListener() WIP');
 
-        let { currentContext, inventory } = TradeofferWindow.quickSearchData;
-        let steamInventory;
-        if(unsafeWindow.UserYou.strSteamId === currentContext.profile) {
-            steamInventory = unsafeWindow.UserYou.rgContexts[currentContext.app]?.[currentContext.context]?.inventory?.rgInventory;
-        } else if(unsafeWindow.UserThem.strSteamId === currentContext.profile) {
-            steamInventory = unsafeWindow.UserThem.rgContexts[currentContext.app]?.[currentContext.context]?.inventory?.rgInventory;
-        } else {
-            throw 'TradeofferWindow.quickSearchAddSelectedListener(): current inventory does not belong to either trade partners????';
+        let { currentContext, inventory: { selectedItems } } = TradeofferWindow.quickSearchData;
+
+        let { profile: profileid, app: appid, context: contextid } = currentContext;
+        for(let assetid of selectedItems) {
+            await TradeofferWindow.offerItemlistAddAssetItem(profileid, appid, contextid, assetid, 1);
         }
+        TradeofferWindow.offerUpdateTradeState();
 
-        if(!steamInventory) {
-            throw 'TradeofferWindow.quickSearchAddSelectedListener(): steam inventory is not loaded?!?!';
-        }
-
-        for(let assetid in inventory.data) {
-            let asset = inventory.data[assetid];
-            if(!asset.selected) {
-                continue;
-            }
-
-            let steamAsset = steamInventory[asset.id];
-            if(!steamAsset) {
-                console.error('TradeofferWindow.quickSearchAddSelectedListener(): steam asset not found?!?!');
-                continue;
-            }
-
-            unsafeWindow.FindSlotAndSetItem(steamAsset);
-        }
-
-        // close overlay
-        TradeofferWindow.overlayCloseListener();
+        TradeofferWindow.overlayBodyToggle('offerWindow');
     },
     quickSearchSelectorProfileSelectListener: function(event) {
         if(!event.currentTarget.matches('.main-control-selector-options')) {
-            throw 'TradeofferWindow.selectorMenuSelectListener(): Not attached to options container!';
+            throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): Not attached to options container!';
         } else if(!event.currentTarget.parentElement.matches('.main-control-selector-container')) {
-            throw 'TradeofferWindow.selectorMenuSelectListener(): Options container is not immediate child of selector container!';
+            throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): Options container is not immediate child of selector container!';
         }
 
-        let { quickSearchShortcuts } = TradeofferWindow;
+        let { data, quickSearchShortcuts, selectorData } = TradeofferWindow;
 
         let optionElem = event.target;
         while (!optionElem.matches('.main-control-selector-option')) {
             if (optionElem.matches('.main-control-selector-options')) {
-                throw 'tradeofferSelectorMenuSelectListener(): No option found! Was the document structured correctly?';
+                throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): No option found! Was the document structured correctly?';
             }
             optionElem = optionElem.parentElement;
         }
@@ -1093,27 +1638,28 @@ const TradeofferWindow = {
 
         TradeofferWindow.selectorMenuSelect(selectorElem, optionElem);
 
+        // reconfigure app selector
+        let selectedProfileid = selectorElem.dataset.id;
+        let selectorAppElem = quickSearchShortcuts.selectorApp;
+
+        let appOptions = selectorData[selectedProfileid];
+        let contextOptions = appOptions[selectorAppElem.dataset.id];
+
         quickSearchShortcuts.selectorApp.classList.remove('disabled', 'active');
-        quickSearchShortcuts.selectorApp.dataset.id = '-1';
-        quickSearchShortcuts.selectorContext.classList.add('disabled');
-        quickSearchShortcuts.selectorContext.classList.remove('active');
-        quickSearchShortcuts.selectorContext.dataset.id = '-1';
 
-        let selectorContextSelectElem = quickSearchShortcuts.selectorContext.querySelector('.main-control-selector-select');
-        selectorContextSelectElem.textContent = 'Select app first';
-        selectorContextSelectElem.dataset.id = '-1';
+        if(!contextOptions || !contextOptions.length) {
+            selectorAppElem.dataset.id = '-1';
 
-        let selectorAppSelectElem = quickSearchShortcuts.selectorApp.querySelector('.main-control-selector-select');
-        selectorAppSelectElem.innerHTML = `<img src="${TradeofferWindow.selectorData.blankImg}">`
-          + 'Select App';
-        selectorAppSelectElem.dataset.id = '-1';
+            let selectorAppSelectElem = selectorAppElem.querySelector('.main-control-selector-select');
+            selectorAppSelectElem.innerHTML = `<img src="${selectorData.blankImg}">`
+              + 'Select App';
+            selectorAppSelectElem.dataset.id = '-1';
+        }
 
-        let appOptions, appsData;
-        if(selectorElem.dataset.id === unsafeWindow.UserYou.strSteamId) {
-            appOptions = TradeofferWindow.selectorData.you;
+        let appsData;
+        if(selectedProfileid === data.me.id) {
             appsData = unsafeWindow.UserYou.rgAppInfo;
-        } else if(selectorElem.dataset.id === unsafeWindow.UserThem.strSteamId) {
-            appOptions = TradeofferWindow.selectorData.them;
+        } else if(selectedProfileid === data.them.id) {
             appsData = unsafeWindow.UserThem.rgAppInfo;
         } else {
             throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): profile id is not user nor partner!?!?!';
@@ -1125,6 +1671,39 @@ const TradeofferWindow = {
             newSelectorAppOptionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(appInfo.name, { id: appid }, appInfo.icon);
         }
         quickSearchShortcuts.selectorOptionsApp.innerHTML = newSelectorAppOptionsHTMLString;
+
+
+        // reconfigure context selector
+        let selectorContextElem = quickSearchShortcuts.selectorContext;
+        let contextExists = contextOptions && contextOptions.length;
+        let hasContext = contextExists ? contextOptions.some(x => x === selectorContextElem.dataset.id) : false;
+        quickSearchShortcuts.selectorContext.classList.remove('active');
+
+        if(!contextExists || !hasContext) {
+            if(!contextExists) {
+                selectorContextElem.classList.add('disabled');
+            }
+            selectorContextElem.dataset.id = '-1';
+
+            let selectorContextSelectElem = selectorContextElem.querySelector('.main-control-selector-select');
+            selectorContextSelectElem.textContent = !contextExists ? 'Select app first' : 'Select Category';
+            selectorContextSelectElem.dataset.id = '-1';
+
+            if(contextExists) {
+                let appid = selectorAppElem.dataset.id;
+                let contextsData = appsData[appid].rgContexts;
+
+                let newSelectorContextOptionsHTMLString = '';
+                for(let contextid of contextOptions) {
+                    let contextInfo = contextsData[contextid];
+                    if(parseInt(contextid) === 0) {
+                        continue;
+                    }
+                    newSelectorContextOptionsHTMLString += TradeofferWindow.generateSelectorOptionHTMLString(contextInfo.name, { id: contextInfo.id });
+                }
+                quickSearchShortcuts.selectorOptionsContext.innerHTML = newSelectorContextOptionsHTMLString;
+            }
+        }
     },
     quickSearchSelectorAppSelectListener: function(event) {
         if(!event.currentTarget.matches('.main-control-selector-options')) {
@@ -1133,7 +1712,7 @@ const TradeofferWindow = {
             throw 'TradeofferWindow.selectorMenuSelectListener(): Options container is not immediate child of selector container!';
         }
 
-        let { quickSearchShortcuts } = TradeofferWindow;
+        let { data, quickSearchShortcuts, selectorData } = TradeofferWindow;
 
         let optionElem = event.target;
         while (!optionElem.matches('.main-control-selector-option')) {
@@ -1160,12 +1739,11 @@ const TradeofferWindow = {
 
         let profileid = quickSearchShortcuts.selectorProfile.dataset.id;
         let appid = optionElem.dataset.id;
-        let contextOptions, contextsData;
-        if(profileid === unsafeWindow.UserYou.strSteamId) {
-            contextOptions = TradeofferWindow.selectorData.you[appid];
+        let contextOptions = selectorData[profileid][appid];
+        let contextsData;
+        if(profileid === data.me.id) {
             contextsData = unsafeWindow.UserYou.rgAppInfo[appid].rgContexts;
-        } else if(profileid === unsafeWindow.UserThem.strSteamId) {
-            contextOptions = TradeofferWindow.selectorData.them[appid];
+        } else if(profileid === data.them.id) {
             contextsData = unsafeWindow.UserThem.rgAppInfo[appid].rgContexts;
         } else {
             throw 'TradeofferWindow.quickSearchSelectorProfileSelectListener(): profile id is not user nor partner!?!?!';
@@ -1188,40 +1766,16 @@ const TradeofferWindow = {
         }
 
         let { select: selectData, mode, inventory } = TradeofferWindow.quickSearchData;
-        if(!event.shiftKey && !event.ctrlKey) {
-            // let selectedElemList = event.currentTarget.querySelectorAll('.selected');
-            // for(let selectedElem of selectedElemList) {
-            //     let itemData = inventory.data[selectedElem.dataset.id];
-            //     if(itemData) {
-            //         itemData.selected = false;
-            //     }
-            //     selectedElem.classList.remove('selected');
-            // }
+        if(event.shiftKey) {
+            let itemElemList = (mode === 0)
+              ? itemElem.closest('.inventory-page').querySelectorAll('.inventory-item-container')
+              : event.currentTarget.querySelectorAll('.inventory-item-container');
 
-            // if(!(selectedElemList.length === 1 && itemElem.dataset.id === selectData.lastSelected.dataset.id) && !itemElem.classList.contains('disabled')) {
-            //     let itemData = inventory.data[itemElem.dataset.id];
-            //     if(itemData) {
-            //         itemData.selected = true;
-            //         itemElem.classList.add('selected');
-            //     }
-            // }
-
-            let itemData = inventory.data[itemElem.dataset.id];
-            if(itemData) {
-                itemData.selected = !itemData.selected;
-                itemElem.classList.toggle('selected');
-            }
-        } else if(event.shiftKey) {
+            let noStartIndex = true;
             let prevIndex, currIndex;
-            let itemElemList;
-            if(mode === 0) {
-                itemElemList = itemElem.closest('.inventory-page').querySelectorAll('.inventory-item-container');
-            } else {
-                itemElemList = event.currentTarget.querySelectorAll('.inventory-item-container');
-            }
-
             for(let i=0; i<itemElemList.length; i++) {
                 if(itemElemList[i].dataset.id === selectData.lastSelected?.dataset.id) {
+                    noStartIndex = false;
                     prevIndex = i;
                     if(currIndex !== undefined) {
                         break;
@@ -1245,22 +1799,29 @@ const TradeofferWindow = {
 
             for(let i=minIndex+1; i<maxIndex; i++) {
                 let itemData = inventory.data[itemElemList[i].dataset.id];
-                if(itemData?.disabled) {
+                if(itemData && inventory.disabledItems.has(itemData.id)) {
                     continue;
                 }
 
-                itemData.selected = true;
+                inventory.selectedItems.add(itemData.id);
                 itemElemList[i].classList.add('selected');
             }
-            let itemData = inventory.data[itemElemList[currIndex].dataset.id];
-            if(!itemData?.disabled) {
-                itemData.selected = true;
+            let currItemData = inventory.data[itemElemList[currIndex].dataset.id];
+            if(!(currItemData && inventory.disabledItems.has(currItemData.id))) {
+                inventory.selectedItems.add(currItemData.id);
                 itemElemList[currIndex].classList.add('selected');
             }
-        } else if(event.ctrlKey) {
+            if(noStartIndex) {
+                let prevItemData = inventory.data[itemElemList[prevIndex].dataset.id];
+                if(!(prevItemData && inventory.disabledItems.has(prevItemData.id))) {
+                    inventory.selectedItems.add(prevItemData.id);
+                    itemElemList[prevIndex].classList.add('selected');
+                }
+            }
+        } else {
             let itemData = inventory.data[itemElem.dataset.id];
             if(itemData) {
-                itemData.selected = !itemData.selected;
+                inventory.selectedItems[ inventory.selectedItems.has(itemData.id) ? 'delete' : 'add' ](itemData.id);
                 itemElem.classList.toggle('selected');
             }
         }
@@ -1275,9 +1836,7 @@ const TradeofferWindow = {
             return;
         }
 
-        for(let assetid in inventory.data) {
-            inventory.data[assetid].selected = false;
-        }
+        inventory.selectedItems.clear();
 
         for(let itemElem of quickSearchShortcuts.pages.querySelectorAll('.selected')) {
             itemElem.classList.remove('selected');
@@ -1292,7 +1851,7 @@ const TradeofferWindow = {
         for(let itemElem of pageElem.querySelectorAll('.selected')) {
             let itemData = inventory.data[itemElem.dataset.id];
             if(itemData) {
-                itemData.selected = false;
+                inventory.selectedItems.delete(itemData.id);
             }
             itemElem.classList.remove('selected');
 
@@ -1308,7 +1867,7 @@ const TradeofferWindow = {
               +     '<label class="facet-list-entry-label">'
               +         `<input type="checkbox"${entryData.filtered ? ' checked' : ''}>`
               +         `<span class="facet-entry-title">${entryData.name}</span>`
-              +         `<span class="facet-entry-detail">(${entryData.count})</span>`
+              +         `<span class="facet-entry-detail">(${entryData.count.toLocaleString()})</span>`
               +     '<label>'
               + '</div>';
         };
@@ -1455,7 +2014,7 @@ const TradeofferWindow = {
     quickSearchApplyFilter(filter) {
         // NOTE: May or may not need to change simple string comparisons into regex matching, or maybe split string matching
 
-        let { quickSearchData } = TradeofferWindow;
+        let { quickSearchShortcuts, quickSearchData } = TradeofferWindow;
         let { inventory, facet, searchText, filtersSelected } = quickSearchData;
 
         if(!inventory) {
@@ -1488,7 +2047,7 @@ const TradeofferWindow = {
                 console.warn('TradeofferWindow.quickSearchApplyFilter(): invalid filter type! Inventory not filtered...');
             }
         } else {
-            searchText = typeof searchText === 'string' ? searchText.toLowerCase() : '';
+            searchText = quickSearchShortcuts.searchInput.value;
             inventory.dataListFiltered = inventory.dataList.filter(item => {
                 let descript = inventory.descriptions[`${item.classid}_${item.instanceid}`];
                 if(typeof searchText === 'string') {
@@ -1560,10 +2119,16 @@ const TradeofferWindow = {
         }
     },
 
-    quickSearchDisplayModeToggleListener: function(event) {
-        // toggle display mode
-        // set config data
+    quickSearchDisplayModeToggleListener: async function(event) {
+        let toggleBtnElem = event.target.closest('[data-qs-mode]');
+        if(!toggleBtnElem) {
+            throw 'TradeofferWindow.quickSearchDisplayModeToggleListener: mode toggle button not detected???';
+        }
+
+        globalSettings.tradeoffer.displayMode = TradeofferWindow.QUICK_SEARCH_MODE_MAP[toggleBtnElem.dataset.qsMode];
         TradeofferWindow.quickSearchDisplaySetup();
+
+        await TradeofferWindow.configSave();
     },
     quickSearchDisplaySetup: function() {
         let { displayMode } = globalSettings.tradeoffer;
@@ -1572,13 +2137,24 @@ const TradeofferWindow = {
             // TradeofferWindow.quickSearchDisplaySetupScrolling();
         }
 
-        let currentMode = TradeofferWindow.quickSearchData.mode;
+        let { quickSearchShortcuts, quickSearchData, QUICK_SEARCH_MODE_MAP } = TradeofferWindow;
+        let currentMode = quickSearchData.mode;
         if(currentMode === undefined || displayMode !== currentMode) {
             if(displayMode === 0) {
                 TradeofferWindow.quickSearchDisplaySetupPaging();
             } else if(displayMode === 1) {
                 TradeofferWindow.quickSearchDisplaySetupScrolling();
             }
+        }
+
+        currentMode = quickSearchData.mode;
+        if(!Number.isInteger(currentMode)) {
+            throw '';
+        }
+
+        let currentModeString = QUICK_SEARCH_MODE_MAP[currentMode];
+        for(let toggleElem of quickSearchShortcuts.displayModeToggle.querySelectorAll('[data-qs-mode]')) {
+            toggleElem.classList[toggleElem.dataset.qsMode === currentModeString ? 'add' : 'remove']('selected');
         }
     },
     quickSearchDisplaySetupPaging: function() {
@@ -1595,7 +2171,6 @@ const TradeofferWindow = {
             // reset non-paging stuff and selections
             if(quickSearchData.mode === 1) {
                 let { scrolling: scrollData } = quickSearchData;
-                TradeofferWindow.quickSearchDisplaySelectReset();
                 scrollData.observer.disconnect();
                 for(let pageElem of scrollData.pages) {
                     pageElem.remove();
@@ -1606,14 +2181,16 @@ const TradeofferWindow = {
         }
 
         quickSearchShortcuts.display.classList.add('paging');
+        let pageNum = 1;
         if(quickSearchData.currentPage) {
-            TradeofferWindow.quickSearchDisplayPopulatePage(quickSearchData.currentPage, 1);
+            pageNum = quickSearchData.currentPage.dataset.page ? parseInt(quickSearchData.currentPage.dataset.page) : 1;
+            TradeofferWindow.quickSearchDisplayPopulatePage(quickSearchData.currentPage, pageNum);
             quickSearchShortcuts.pages.prepend(quickSearchData.currentPage);
             quickSearchData.currentPage.classList.add('active');
             pagingData.pages.fg = quickSearchData.currentPage;
         } else {
             // generate 1st page and set active
-            let pageFgHTMLString = TradeofferWindow.quickSearchDisplayGeneratePageHTMLString(1);
+            let pageFgHTMLString = TradeofferWindow.quickSearchDisplayGeneratePageHTMLString(pageNum);
             quickSearchShortcuts.pages.insertAdjacentHTML('afterbegin', pageFgHTMLString);
             let pageFgElem = quickSearchShortcuts.pages.querySelector('.inventory-page');
             pageFgElem.classList.add('active');
@@ -1625,7 +2202,7 @@ const TradeofferWindow = {
         quickSearchShortcuts.pages.insertAdjacentHTML('afterbegin', pageBgHTMLString);
         let pageBgElem = quickSearchShortcuts.pages.querySelector('.inventory-page:not(.active)');
         pagingData.pages.bg = pageBgElem;
-        TradeofferWindow.quickSearchDisplayUpdatePageNavigationBar(1);
+        TradeofferWindow.quickSearchDisplayUpdatePageNavigationBar(pageNum);
 
         quickSearchData.mode = 0;
     },
@@ -1655,7 +2232,6 @@ const TradeofferWindow = {
             // reset non-scrolling stuff and selections
             if(quickSearchData.mode === 0) {
                 let { paging: pagingData } = quickSearchData;
-                TradeofferWindow.quickSearchDisplaySelectReset();
                 pagingData.pages.fg.classList.remove('active');
                 pagingData.pages.fg.remove();
                 pagingData.pages.bg.remove();
@@ -1695,7 +2271,7 @@ const TradeofferWindow = {
 
         let currentPageNum = parseInt(quickSearchData.currentPage.dataset.page);
         if(currentPageNum > 2) {
-            quickSearchShortcuts.pages.scroll(startOffset*pageHeight);
+            quickSearchShortcuts.pages.scroll(0, startOffset*pageHeight);
         }
 
         quickSearchData.mode = 1;
@@ -1705,11 +2281,11 @@ const TradeofferWindow = {
         let { pageCount, pages } = quickSearchData.scrolling;
         let pageHeightWithoutTop = quickSearchData.display.rows * (5.25+0.5);
 
-        entries.forEach((entry) => {
+        for(let entry of entries) {
             if(quickSearchData.mode !== 1) {
-                return;
+                continue;
             } else if(!entry.isIntersecting) {
-                return;
+                continue;
             }
 
             let pageNum = entry.target.dataset.page;
@@ -1721,6 +2297,7 @@ const TradeofferWindow = {
                 quickSearchShortcuts.pages.prepend(pageElem);
                 pages.unshift(pageElem);
                 quickSearchData.currentPage = quickSearchData.currentPage.previousElementSibling;
+                break;
             } else if(pages[pageCount-1].dataset.page === pageNum) {
                 let pageElem = pages.shift();
                 pageElem.remove();
@@ -1728,13 +2305,14 @@ const TradeofferWindow = {
                 quickSearchShortcuts.pages.append(pageElem);
                 pages.push(pageElem);
                 quickSearchData.currentPage = quickSearchData.currentPage.nextElementSibling;
+                break;
             }
 
             // let pageMargin = Math.max(0, parseInt(pages[0].dataset.page)-1);
             // quickSearchShortcuts.pages.style.paddingTop = pageMargin > 0
             //   ? `${(pageMargin*pageHeightWithoutTop) + 0.5}rem`
             //   : '0rem';
-        });
+        }
     },
     quickSearchDisplayPaginateListener: function(event) {
         let { mode: currentMode, paging: pagingData, inventory: { pageCount: pageNumLast } } = TradeofferWindow.quickSearchData;
@@ -1746,7 +2324,12 @@ const TradeofferWindow = {
             return;
         }
 
-        let pageStep = parseInt(event.target.dataset.step);
+        let paginateElem = event.target.closest('.inventory-page-nav-btn');
+        if(!paginateElem) {
+            return;
+        }
+
+        let pageStep = parseInt(paginateElem.dataset.step);
         if(Number.isNaN(pageStep)) {
             console.error('TradeofferWindow.quickSearchPaginateListener(): Page step is not a number!?!?');
             return;
@@ -1875,9 +2458,24 @@ const TradeofferWindow = {
         let { inventory } = TradeofferWindow.quickSearchData;
         let descript = inventory.descriptions[`${itemData.classid}_${itemData.instanceid}`];
 
+        let styleAttrString = '';
+        styleAttrString += descript.name_color ? ` border-color: #${descript.name_color};` : '';
+        styleAttrString += descript.background_color ? ` background-color: #${descript.background_color};` : '';
+        if(styleAttrString.length) {
+            styleAttrString = ` style="${styleAttrString}"`;
+        }
+
+        let dataAttrString = '';
+        dataAttrString += ` data-id="${itemData.id}"`;
+        if(parseInt(itemData.amount) > 1) {
+            dataAttrString += ` data-amount="${parseInt(itemData.amount).toLocaleString()}"`;
+        }
+
         let imgUrl = descript.icon_url ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f` : '';
-        return `<div class="inventory-item-container${itemData.disabled ? ' disabled' : ''}${itemData.selected ? ' selected' : ''}" data-id="${itemData.id}">`
-          +     (imgUrl ? `<img src="${imgUrl}">` : descript.name)
+        let classStringDisabled = inventory.disabledItems.has(itemData.id) ? ' disabled' : '';
+        let classStringSelected = inventory.selectedItems.has(itemData.id) ? ' selected' : '';
+        return `<div class="inventory-item-container${classStringDisabled}${classStringSelected}" title="${descript.name}"${dataAttrString}${styleAttrString}>`
+          +     (imgUrl ? `<img loading="lazy" src="${imgUrl}">` : descript.name)
           + '</div>';
     },
     quickSearchDisplayPopulatePage: function(pageElem, pageNum) {
@@ -1955,8 +2553,14 @@ const TradeofferWindow = {
         let descript = inventory.descriptions[`${itemData.classid}_${itemData.instanceid}`];
 
         itemElem.dataset.id = itemData.id;
-        itemElem.classList[ itemData.disabled ? 'add' : 'remove' ]('disabled');
-        itemElem.classList[ itemData.selected ? 'add' : 'remove' ]('selected');
+        if(parseInt(itemData.amount) > 1) {
+            itemElem.dataset.amount = parseInt(itemData.amount).toLocaleString();
+        } else {
+            delete itemElem.dataset.amount;
+        }
+        itemElem.title = descript.name;
+        itemElem.classList[ inventory.disabledItems.has(itemData.id) ? 'add' : 'remove' ]('disabled');
+        itemElem.classList[ inventory.selectedItems.has(itemData.id) ? 'add' : 'remove' ]('selected');
         let imgElem = itemElem.querySelector('img');
         if(imgElem) {
             imgElem.src = descript.icon_url
@@ -1969,11 +2573,26 @@ const TradeofferWindow = {
               : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
             itemElem.prepend(newImgElem);
         }
+
+        let styleString = '';
+        styleString += descript.name_color ? ` border-color: #${descript.name_color};` : '';
+        styleString += descript.background_color ? ` background-color: #${descript.background_color};` : '';
+        itemElem.style.cssText = styleString;
     },
     quickSearchDisplayPageReset: function(pageElem) {
+        let selectData = TradeofferWindow.quickSearchData.select;
+
         let itemElemList = pageElem.querySelectorAll('.inventory-item-container');
         for(let itemElem of itemElemList) {
-            delete itemElem.dataset.id;
+            if(selectData.lastSelected?.dataset.id === itemElem.dataset.id) {
+                selectData.lastSelected = null;
+            }
+
+            for(let key in itemElem.dataset) {
+                delete itemElem.dataset[key];
+            }
+            itemElem.removeAttribute('style');
+            itemElem.removeAttribute('title');
             itemElem.innerHTML = '';
         }
 
@@ -1985,15 +2604,1290 @@ const TradeofferWindow = {
 
 
     itemsSelectorShortcuts: {},
+    itemsSelectorData: {
+        groupBarterEntries: [
+            {
+                name: 'Sacks of Gems',
+                items: [
+                    { appid: '753', contextid: '6', classid: '667933237', amount: 1 }
+                ]
+            },
+            {
+                name: 'Gem',
+                items: [
+                    { appid: '753', contextid: '6', classid: '667924416', amount: 1 }
+                ]
+            },
+            {
+                name: 'TF2 Key',
+                items: [
+                    { appid: '440', contextid: '2', classid: '101785959', amount: 1 }
+                ]
+            },
+            {
+                name: 'Refined Metal',
+                items: [
+                    { appid: '440', contextid: '2', classid: '2674', amount: 1 }
+                ]
+            },
+            {
+                name: 'Reclaimed Metal',
+                items: [
+                    { appid: '440', contextid: '2', classid: '5564', amount: 1 }
+                ]
+            },
+            {
+                name: 'Scrap Metal',
+                items: [
+                    { appid: '440', contextid: '2', classid: '2675', amount: 1 }
+                ]
+            },
+        ],
+        currentProfileid: null, // profileid
+        currentGroupId: null, // group.id
+        currentEntryId: null, // entry.id
+        groups: {
+        /*    groupId: {
+         *        name: string,
+         *        id: number,
+         *        entries: [
+         *            {
+         *                name: string,
+         *                id: number,
+         *                items: [
+         *                    { appid: string, contextid: string, classid: string, instanceid: string, amount: number },
+         *                    ...
+         *                ]
+         *            },
+         *            ...
+         *        ]
+         *    },
+         *    ...
+         */
+        },
+        balancer: {
+            RARITY_MAP: {
+                card: ['Normal', 'Foil'],
+                background: ['Common', 'Uncommon', 'Rare'],
+                emoticon: ['Common', 'Uncommon', 'Rare'],
+            },
+            APP_NAME_MAP: {
+                // appid: string
+            },
+            data: {
+                /* profileid(obj) -> itemType(obj) -> rarity(arr) -> appid(obj) -> classid(arr)
+                 * profileid: {
+                 *     card: [
+                 *         {
+                 *             appid: [
+                 *                 { classid: string, tradables: [], count: number }
+                 *             ]
+                 *         },
+                 *         ...,
+                 *     ],
+                 *     background: [ {}, {}, {} ],
+                 *     emoticon: [ {}, {}, {}]
+                 *     ...
+                 * }
+                 */
+            },
+            // results: // generated from item matching method
+        }
+    },
 
     itemsSelectorSetup: function() {
         console.log('Items Selector WIP');
 
-        if (TradeofferWindow.itemsSelectorShortcuts.body !== undefined) {
+        let { itemsSelectorShortcuts } = TradeofferWindow;
+
+        if(itemsSelectorShortcuts.body !== undefined) {
+            itemsSelectorShortcuts.dialogContainer.classList.remove('active');
+            TradeofferWindow.itemsSelectorRecalculateAvailability();
+            TradeofferWindow.itemsSelectorRecalculateBalancerAvailability();
             return;
         }
 
         // generate prefilter body and attach to overlay body
+        const itemsSelectorDialogHTMLString = '<div class="items-selector-dialog-container">'
+          +     '<div class="items-selector-dialog">'
+          +         '<div class="items-selector-entry-remove">'
+          +         '</div>'
+          +         '<div class="dialog-profile">'
+          +             '<img class="dialog-profile-avatar" src="">'
+          +             '<span class="dialog-profile-name">?????</span>'
+          +         '</div>'
+          +         '<div class="dialog-title">'
+          +             '[<span class="dialog-group-name">?????</span>] '
+          +             '<span class="dialog-entry-name">?????</span>'
+          +         '</div>'
+          +         '<div class="dialog-items">'
+          +             '' // item container elems
+          +         '</div>'
+          +         '<input type="range" name="" class="userscript-input" value="0" min="0" max="0">'
+          +         '<div>'
+          +             'Select'
+          +             '<input type="number" name="" class="userscript-input" value="0" min="0" max="0">'
+          +             'Sets of Items'
+          +         '</div>'
+          +         '<div class="dialog-actions">'
+          +             '<button class="dialog-cancel userscript-btn red">Cancel</button>'
+          +             '<button class="dialog-reset userscript-btn trans-white">Reset</button>'
+          +             '<button class="dialog-confirm userscript-btn green">Apply</button>'
+          +             '<button class="dialog-check userscript-btn purple">Check Availability</button>'
+          +         '</div>'
+          +     '</div>'
+          + '</div>';
+
+        const itemsSelectorBodyHTMLString = '<div class="items-selector-body">'
+          +     '<div class="items-selector-main-control">'
+          +         TradeofferWindow.generateProfileSelectorHTMLString({ id: 'selector-items-selector-profile' })
+          +     '</div>'
+          +     '<div class="items-selector-groups">'
+          +         '' // dynamically populate groups later
+          +     '</div>'
+          +     itemsSelectorDialogHTMLString
+          + '</div>';
+
+        TradeofferWindow.shortcuts.overlayBody.insertAdjacentHTML('beforeend', itemsSelectorBodyHTMLString);
+
+        // add shortcuts
+        itemsSelectorShortcuts.body = TradeofferWindow.shortcuts.overlayBody.querySelector('.items-selector-body');
+        itemsSelectorShortcuts.groups = itemsSelectorShortcuts.body.querySelector('.items-selector-groups');
+        itemsSelectorShortcuts.group = {}; // populated during group loading later
+        itemsSelectorShortcuts.selector = document.getElementById('selector-items-selector-profile');
+        itemsSelectorShortcuts.selectorOptions = itemsSelectorShortcuts.selector.querySelector('.main-control-selector-options');
+        itemsSelectorShortcuts.dialogContainer = itemsSelectorShortcuts.body.querySelector('.items-selector-dialog-container');
+        itemsSelectorShortcuts.dialog = itemsSelectorShortcuts.dialogContainer.querySelector('.items-selector-dialog');
+        itemsSelectorShortcuts.dialogTitle = itemsSelectorShortcuts.dialog.querySelector('.dialog-title');
+        itemsSelectorShortcuts.dialogProfile = itemsSelectorShortcuts.dialog.querySelector('.dialog-profile');
+        itemsSelectorShortcuts.dialogItems = itemsSelectorShortcuts.dialog.querySelector('.dialog-items');
+        itemsSelectorShortcuts.dialogSliderInput = itemsSelectorShortcuts.dialog.querySelector('input[type="range"]');
+        itemsSelectorShortcuts.dialogTextInput = itemsSelectorShortcuts.dialog.querySelector('input[type="number"]');
+        itemsSelectorShortcuts.dialogButtonCancel = itemsSelectorShortcuts.dialog.querySelector('.dialog-cancel');
+        itemsSelectorShortcuts.dialogButtonReset = itemsSelectorShortcuts.dialog.querySelector('.dialog-reset');
+        itemsSelectorShortcuts.dialogButtonConfirm = itemsSelectorShortcuts.dialog.querySelector('.dialog-confirm');
+        itemsSelectorShortcuts.dialogButtonCheck = itemsSelectorShortcuts.dialog.querySelector('.dialog-check');
+
+        // add event listeners
+        itemsSelectorShortcuts.selector.addEventListener('click', TradeofferWindow.selectorMenuToggleListener);
+        itemsSelectorShortcuts.selectorOptions.addEventListener('click', TradeofferWindow.itemsSelectorSelectorProfileSelectListener);
+
+        itemsSelectorShortcuts.dialog.querySelector('.items-selector-entry-remove').addEventListener('click', TradeofferWindow.itemsSelectorGroupEntryDialogDeleteEntryListener);
+        itemsSelectorShortcuts.dialogButtonCancel.addEventListener('click', TradeofferWindow.itemsSelectorGroupEntryDialogCancelListener);
+        itemsSelectorShortcuts.dialogButtonReset.addEventListener('click', TradeofferWindow.itemsSelectorGroupEntryDialogResetListener);
+        itemsSelectorShortcuts.dialogButtonConfirm.addEventListener('click', TradeofferWindow.itemsSelectorGroupEntryDialogConfirmListener);
+        itemsSelectorShortcuts.dialogButtonCheck.addEventListener('click', TradeofferWindow.itemsSelectorGroupEntryDialogCheckAvailabilityListener);
+        itemsSelectorShortcuts.dialogSliderInput.addEventListener('input', TradeofferWindow.itemsSelectorGroupEntryDialogUpdateTextListener);
+        itemsSelectorShortcuts.dialogTextInput.addEventListener('input', TradeofferWindow.itemsSelectorGroupEntryDialogUpdateSliderListener);
+
+        TradeofferWindow.itemsSelectorLoadGroups();
+    },
+    itemsSelectorLoadGroups: function() {
+        const addGroup = (groupid, name, entries = [], options = { sort: true }) => {
+            entries = steamToolsUtils.deepClone(entries);
+
+            // position in original dataset
+            for(let i=0; i<entries.length; i++) {
+                entries[i].pos = i;
+            }
+
+            if(options.sort) {
+                entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+            }
+
+            // position in sorted dataset
+            for(let i=0; i<entries.length; i++) {
+                entries[i].id = i;
+            }
+
+            let newGroup = {
+                name: name,
+                id: groupid,
+                entries: entries
+            }
+
+            itemsSelectorData.groups[groupid] = newGroup;
+
+            let groupHTMLString = TradeofferWindow.itemsSelectorGenerateGroup(newGroup);
+            itemsSelectorShortcuts.groups.insertAdjacentHTML('beforeend', groupHTMLString);
+            itemsSelectorShortcuts.group[groupid] = itemsSelectorShortcuts.groups.lastElementChild;
+        };
+
+        let { data, itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+
+        addGroup('custom', 'Custom', globalSettings.tradeoffer.itemsSelectorCustomGroupEntries);
+
+        addGroup('barter', 'Barter Items', itemsSelectorData.groupBarterEntries, { sort: false });
+
+        addGroup('cardSets', 'Steam Card Sets');
+        let cardSetButtonsHTMLString = `<button class="userscript-trade-action half" data-id="${data.me.id}">Check My Inventory</button>`
+            + `<button class="userscript-trade-action half" data-id="${data.them.id}">Check Their Inventory</button>`;
+        itemsSelectorShortcuts.group.cardSets.querySelector('.group-entries').insertAdjacentHTML('beforebegin', cardSetButtonsHTMLString);
+        itemsSelectorShortcuts.group.cardSets.querySelector(`button[data-id="${data.me.id}"]`).addEventListener('click', TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd, { once: true });
+        itemsSelectorShortcuts.group.cardSets.querySelector(`button[data-id="${data.them.id}"]`).addEventListener('click', TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd, { once: true });
+
+        addGroup('balancer', 'Steam Items Balancer');
+        let balancerButtonHTMLString = '<button id="items-selector-add-balancing" class="userscript-trade-action">Balance Steam Items</button>';
+        itemsSelectorShortcuts.group.balancer.querySelector('.group-entries').insertAdjacentHTML('beforebegin', balancerButtonHTMLString);
+        document.getElementById('items-selector-add-balancing').addEventListener('click', TradeofferWindow.itemsSelectorGroupBalancerEntriesAdd, { once: true });
+
+        for(let groupName in itemsSelectorShortcuts.group) {
+            itemsSelectorShortcuts.group[groupName].addEventListener('click', TradeofferWindow.itemsSelectorGroupEntryDialogShowListener);
+            itemsSelectorShortcuts.group[groupName].querySelector('.items-selector-group-header').addEventListener('click', TradeofferWindow.itemsSelectorGroupToggle);
+        }
+
+        TradeofferWindow.itemsSelectorRecalculateAvailability();
+    },
+    itemsSelectorSelectorProfileSelectListener: function(event) {
+        // set selector select contents
+        let optionElem = event.target.closest('.main-control-selector-option');
+        if(!optionElem) {
+            throw 'TradeofferWindow.itemsSelectorSelectorProfileSelectListener(): No option found! Was the document structured correctly?';
+        }
+
+        let selectorElem = event.currentTarget.parentElement;
+        if(selectorElem.dataset.id !== optionElem.dataset.id) {
+            TradeofferWindow.selectorMenuSelect(selectorElem, optionElem);
+            TradeofferWindow.itemsSelectorData.currentProfileid = optionElem.dataset.id;
+        }
+
+        TradeofferWindow.itemsSelectorRecalculateAvailability();
+    },
+    itemsSelectorGroupToggle: function(event) {
+        let groupElem = event.target.closest('.items-selector-group');
+
+        groupElem.classList.toggle('hidden');
+    },
+    itemsSelectorRecalculateAvailability: function(excludeGroupId) {
+        let { group: groupElemList } = TradeofferWindow.itemsSelectorShortcuts;
+
+        for(let groupId in groupElemList) {
+            if(groupId === 'balancer' || groupId === excludeGroupId) {
+                continue;
+            }
+
+            for(let entryElem of groupElemList[groupId].querySelectorAll('.items-selector-entry')) {
+                // NOTE: micro-optimization: check if any profile is selected
+                let availability = TradeofferWindow.itemsSelectorGroupEntryCheckAvailability(entryElem);
+                if(availability === '') {
+                    entryElem.classList.remove('uncertain', 'available', 'unavailable');
+                    continue;
+                } else if(entryElem.classList.contains(availability)) {
+                    continue;
+                }
+
+                entryElem.classList.remove('uncertain', 'available', 'unavailable');
+                entryElem.classList.add(availability);
+            }
+        }
+    },
+    itemsSelectorGroupEntryCheckAvailability: function(entry) {
+        let { data, offerData: { offer }, itemsSelectorData } = TradeofferWindow;
+
+        if(!itemsSelectorData.currentProfileid) {
+            return '';
+        }
+
+        if(entry instanceof HTMLElement) {
+            let entryId = entry.dataset.id;
+            let groupId = entry.closest('.items-selector-group').dataset.id;
+            entry = itemsSelectorData.groups[groupId]?.entries[entryId];
+            if(!entry) {
+                throw 'TradeofferWindow.itemsSelectorGroupEntryCheckAvailability(): No entry data found?!?!';
+            }
+        }
+
+        if(steamToolsUtils.isSimplyObject(entry)) {
+            entry.maxAvailable ??= {};
+
+            let maxAvailable = Number.MAX_SAFE_INTEGER;
+            for(let item of entry.items) {
+                let descriptContext = data.descriptionClassAssets[itemsSelectorData.currentProfileid]?.[item.appid]?.[item.contextid];
+                if(!descriptContext) {
+                    entry.maxAvailable[itemsSelectorData.currentProfileid] = null;
+                    return 'uncertain';
+                }
+
+                let descriptEntryCount = item.instanceid
+                  ? descriptContext[item.classid]?.instanceCounts[item.instanceid]
+                  : descriptContext[item.classid]?.count;
+
+                if(descriptEntryCount === undefined || descriptEntryCount === 0) {
+                    entry.maxAvailable[itemsSelectorData.currentProfileid] = 0;
+                    return 'unavailable';
+                }
+
+                let offerContext = offer[itemsSelectorData.currentProfileid]?.[item.appid]?.[item.contextid];
+                let offerEntryCount = item.instanceid
+                  ? offerContext?.[item.classid]?.instanceCounts[item.instanceid]
+                  : offerContext?.[item.classid]?.count;
+                let availableAssets = descriptEntryCount - (offerEntryCount ?? 0);
+                if(availableAssets < parseInt(item.amount)) {
+                    entry.maxAvailable[itemsSelectorData.currentProfileid] = 0;
+                    return 'unavailable';
+                }
+
+                maxAvailable = Math.min(maxAvailable, Math.floor(availableAssets / item.amount));
+            }
+
+            entry.maxAvailable[itemsSelectorData.currentProfileid] = maxAvailable;
+            return 'available';
+        }
+
+        return '';
+    },
+    itemsSelectorRecalculateBalancerAvailability: function() {
+        let { itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+
+        let balancerGroupElem = itemsSelectorShortcuts?.group.balancer;
+        if(!balancerGroupElem) {
+            return;
+        }
+
+        let balancerGroupData = itemsSelectorData.groups.balancer;
+        if(!balancerGroupData) {
+            return;
+        }
+
+        for(let entryElem of balancerGroupElem.querySelectorAll('.items-selector-entry')) {
+            let isAvailable = TradeofferWindow.itemsSelectorGroupBalancerCheckAvailability(entryElem);
+            entryElem.classList.remove(isAvailable ? 'unavailable' : 'available');
+            entryElem.classList.add(isAvailable ? 'available' : 'unavailable');
+        }
+    },
+    itemsSelectorGroupBalancerCheckAvailability: function(entry) {
+        const checkIsAvailabile = (items, descriptContext, offerContext) => {
+            for(let item of items) {
+                let descriptCount = descriptContext[item.classid]?.count ?? 0;
+                let offerCount = offerContext?.[item.classid]?.count ?? 0;
+                let totalAvailable = descriptCount - offerCount;
+                if(totalAvailable < parseInt(item.amount)) {
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+        let { data, offerData: { offer }, itemsSelectorData } = TradeofferWindow;
+
+        let descriptSteamContext1 = data.descriptionClassAssets[data.me.id]?.['753']?.['6'];
+        let descriptSteamContext2 = data.descriptionClassAssets[data.them.id]?.['753']?.['6'];
+        if(!descriptSteamContext1 || !descriptSteamContext2) {
+            console.error('TradeofferWindow.itemsSelectorGroupBalancerCheckAvailability(): At least 1 of the steam inventories is not present!?!?');
+            entry.isAvailable = false;
+            return entry.isAvailable;
+        }
+
+        if(entry instanceof HTMLElement) {
+            let entryId = entry.dataset.id;
+            entry = itemsSelectorData.groups.balancer?.entries[entryId];
+            if(!entry) {
+                throw 'TradeofferWindow.itemsSelectorGroupBalancerCheckAvailability(): No entry data found?!?!';
+            }
+        }
+
+        let offerSteamContext1 = offer[data.me.id]?.['753']?.['6'];
+        let offerSteamContext2 = offer[data.them.id]?.['753']?.['6'];
+
+        if(steamToolsUtils.isSimplyObject(entry)) {
+            entry.isAvailable = checkIsAvailabile(entry.items1, descriptSteamContext1, offerSteamContext1)
+                && checkIsAvailabile(entry.items2, descriptSteamContext2, offerSteamContext2);
+            return entry.isAvailable;
+        }
+
+        return false;
+    },
+
+    itemsSelectorGroupCustomEntryAdd: function(name, itemList) {
+        // itemList: [ { appid, contextid, classid, instanceid, amount }, ... ]
+
+        let { custom: groupCustomData } = TradeofferWindow.itemsSelectorData.groups;
+
+        if(typeof name !== 'string' || !Array.isArray(itemList)) {
+            throw 'TradeofferWindow.itemsSelectorAddCustomGroupEntry(): invalid arg types!';
+        }
+
+        let newEntry = {
+            name: name,
+            id: groupCustomData.entries.length,
+            items: itemList.map(item => {
+                if(!steamToolsUtils.isSimplyObject(item)) {
+                    throw 'TradeofferWindow.itemsSelectorAddCustomGroupEntry(): invalid item object! Group entry will not be added...';
+                }
+
+                return {
+                    appid: item.appid,
+                    contextid: item.contextid,
+                    classid: item.classid,
+                    instanceid: item.instanceid,
+                    amount: item.amount
+                };
+            }),
+        };
+
+        groupCustomData.entries.push(newEntry);
+
+        let { itemsSelectorShortcuts } = TradeofferWindow;
+        if(itemsSelectorShortcuts.body === undefined) {
+            return;
+        }
+
+        let entryHTMLString = TradeofferWindow.itemsSelectorGenerateGroupEntry(newEntry);
+        itemsSelectorShortcuts.group.custom.insertAdjacentHTML('beforeend', entryHTMLString);
+    },
+    itemsSelectorGroupCustomEntryRemove: function() {
+        // get custom entry's group id and entry id, grab pos(ition) and delete from original custom entries list
+    },
+    itemsSelectorGroupCardSetsEntriesAdd: async function(event) {
+        let { data, itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+
+        if(itemsSelectorShortcuts.body === undefined) {
+            throw 'TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd(): This method executed before Items Selector has been set up!';
+        }
+
+        itemsSelectorShortcuts.group.cardSets.classList.add('loading');
+
+        let profileid = event.target.dataset.id;
+        let steamInventory = data.inventories[profileid]?.['753']?.['6'];
+        if(!steamInventory) {
+            steamInventory = await TradeofferWindow.getTradeInventory(profileid, 753, 6, TradeofferWindow.filterInventoryBlockSetup());
+            TradeofferWindow.itemsSelectorRecalculateAvailability();
+        }
+
+        let cardAppsTracker = {};
+        for(let classInstance in steamInventory.rgDescriptions) {
+            let descript = steamInventory.rgDescriptions[classInstance];
+            let isCard = descript.tags?.some(x => x.category === 'item_class' && x.internal_name === 'item_class_2') ?? false;
+            if(!isCard) {
+                continue;
+            }
+
+            let cardborder = descript.tags?.find(x => x.category === 'cardborder');
+            if(!cardborder) {
+                console.warn('TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd(): Cardborder not found for card tag?!?!');
+                continue;
+            }
+            cardborder = cardborder.internal_name.replace('cardborder_', '');
+
+            let appFoilLabel = `${descript.market_fee_app}_${cardborder}`;
+            cardAppsTracker[appFoilLabel] ??= [];
+            // NOTE: Assumption: all distinct cards have the same classids
+            if(!cardAppsTracker[appFoilLabel].some(x => x.classid === descript.classid)) {
+                cardAppsTracker[appFoilLabel].push(descript);
+            }
+        }
+
+        let entries = [];
+        for(let appidCardborder in cardAppsTracker) {
+            let [ appid, cardborder ] = appidCardborder.split('_');
+
+            if(cardAppsTracker[appidCardborder].length < 5) {
+                continue;
+            }
+
+            let appData = await Profile.findAppMetaData(appid, { cards: true, foil: cardborder === '1' });
+            if(!appData?.cards) {
+                console.error('TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd(): Cards info not found in meta data?!?!', appid);
+                continue;
+            }
+
+            if(appData.cards.length === cardAppsTracker[appidCardborder].length) {
+                let tmpDescript = cardAppsTracker[appidCardborder][0];
+                let appName = tmpDescript.tags.find(x => x.category === 'Game')?.name;
+                appName ??= `⁇ (App ${tmpDescript.tags.market_fee_app})`;
+                appName = cardborder === '1' ? '★ '+appName : appName;
+
+                let imgMissCount = 0;
+                let entryItems = cardAppsTracker[appidCardborder].reduce((newItems, descript) => {
+                    let cardIndex = appData.cards.findIndex(x => x[`img_card${cardborder}`] === descript.icon_url);
+                    if(cardIndex === -1) {
+                        console.warn('TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd(): No matching card image found with description image!', appid);
+                        cardIndex = cardAppsTracker[appidCardborder].length + imgMissCount;
+                        imgMissCount++;
+                    }
+                    newItems[cardIndex] = {
+                        appid: '753',
+                        contextid: '6',
+                        classid: descript.classid,
+                        amount: 1
+                    }
+
+                    return newItems;
+                }, []);
+
+                // NOTE: We can naively filter this way because we are dealing with objects only!
+                entries.push({
+                    name: appName,
+                    items: entryItems.filter(x => x)
+                });
+            }
+        }
+
+        // NOTE: Inefficient?
+        entries.sort((a, b) => {
+            if(a.name.startsWith('★ ⁇ ')) {
+                if(b.name.startsWith('★ ⁇ ')) {
+                    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+                } else {
+                    return 1;
+                }
+            } else if(a.name.startsWith('★ ')) {
+                if(b.name.startsWith('★ ⁇ ')) {
+                    return -1;
+                } else if(b.name.startsWith('★ ')) {
+                    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+                } else {
+                    return 1;
+                }
+            } else {
+                if(b.name.startsWith('★ ')) {
+                    return -1;
+                } else {
+                    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+                }
+            }
+        });
+
+        let mergedEntries = [];
+        let newEntryIndex = 0;
+        let entryList = itemsSelectorData.groups.cardSets.entries;
+        let entryElemList = itemsSelectorShortcuts.group.cardSets.querySelectorAll('.items-selector-entry');
+        if(entryList.length !== entryElemList.length) {
+            throw 'TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd(): Entry list length and element list length mismatch!';
+        }
+
+        for(let i=0; i<entryList.length; i++) {
+            let currEntry = entryList[i];
+            let currEntryElem = entryElemList[i];
+            if(currEntry.id !== parseInt(currEntryElem.dataset.id)) {
+                throw 'TradeofferWindow.itemsSelectorGroupCardSetsEntriesAdd(): Entry data id does not match element\'s id!';
+            }
+
+            while(newEntryIndex<entries.length && entries[newEntryIndex].name.localeCompare(currEntry.name, undefined, { sensitivity: 'base' })<0) {
+                let newEntry = entries[newEntryIndex];
+
+                newEntry.id = mergedEntries.length;
+                mergedEntries.push(newEntry);
+
+                let entryHTMLString = TradeofferWindow.itemsSelectorGenerateGroupEntry(newEntry);
+                currEntryElem.insertAdjacentHTML('beforebegin', entryHTMLString);
+
+                newEntryIndex++;
+            }
+
+            if(newEntryIndex<entries.length && entries[newEntryIndex].name.localeCompare(currEntry.name, undefined, { sensitivity: 'base' }) === 0) {
+                newEntryIndex++;
+            }
+
+            currEntryElem.dataset.id = currEntry.id = mergedEntries.length;
+            mergedEntries.push(currEntry);
+        }
+
+        let entriesHTMLString = '';
+        while(newEntryIndex<entries.length) {
+            let newEntry = entries[newEntryIndex];
+
+            newEntry.id = mergedEntries.length;
+            mergedEntries.push(newEntry);
+
+            entriesHTMLString += TradeofferWindow.itemsSelectorGenerateGroupEntry(newEntry);
+
+            newEntryIndex++;
+        }
+        itemsSelectorShortcuts.group.cardSets.querySelector('.group-entries').insertAdjacentHTML('beforeend', entriesHTMLString);;
+        itemsSelectorData.groups.cardSets.entries = mergedEntries;
+
+        event.target.remove();
+        itemsSelectorShortcuts.group.cardSets.querySelector('button')?.classList.remove('half');
+
+        TradeofferWindow.itemsSelectorRecalculateAvailability('cardSets');
+
+        itemsSelectorShortcuts.group.cardSets.classList.remove('loading');
+    },
+    itemsSelectorGroupBalancerEntriesAdd: async function(event) {
+        let { data, itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+
+        if(itemsSelectorShortcuts.body === undefined) {
+            throw 'TradeofferWindow.itemsSelectorGroupBalancerEntriesAdd(): This method executed before Items Selector has been set up!';
+        }
+
+        let { RARITY_MAP, APP_NAME_MAP } = itemsSelectorData.balancer;
+
+        itemsSelectorShortcuts.group.balancer.classList.add('loading');
+
+        let matchResults = await TradeofferWindow.itemsSelectorGroupBalancerMatchSteamItems();
+
+        // generate entries
+        let entries = [];
+        let inventoryData1 = itemsSelectorData.balancer.data[data.me.id];
+        let inventoryData2 = itemsSelectorData.balancer.data[data.them.id];
+        for(let [result, appid, rarity, itemType] of TradeofferWindow.itemsSelectorItemSetsIter(matchResults)) {
+            let { swap } = result;
+
+            let items1 = [];
+            let items2 = [];
+            for(let i=0; i<swap.length; i++) {
+                let classData, inventory, itemList;
+                if(swap[i] < 0) {
+                    classData = inventoryData1[itemType][rarity][appid];
+                    inventory = data.inventories[data.me.id]['753']['6'];
+                    itemList = items1;
+                } else if(swap[i] > 0) {
+                    classData = inventoryData2[itemType][rarity][appid];
+                    inventory = data.inventories[data.them.id]['753']['6'];
+                    itemList = items2;
+                } else {
+                    continue;
+                }
+
+                itemList.push({
+                    appid: '753',
+                    contextid: '6',
+                    classid: classData[i].classid,
+                    amount: Math.abs(swap[i])
+                });
+            }
+
+            let name = `[${RARITY_MAP[itemType][rarity].charAt(0).toUpperCase()}]`;
+            name += `[${itemType.charAt(0).toUpperCase()}]`;
+            name +=  APP_NAME_MAP[appid] ? ` ${APP_NAME_MAP[appid]}` : ` (App ${appid})`;
+
+            entries.push({
+                name: name,
+                id: entries.length,
+                itemType: itemType,
+                rarity: rarity,
+                items1: items1,
+                items2: items2,
+            });
+        }
+
+        itemsSelectorData.groups.balancer.entries = entries;
+
+        // generate and insert HTML string
+        let balancerGroupElem = itemsSelectorShortcuts.group.balancer;
+
+        let resultsHTMLString = '';
+        for(let entryData of entries) {
+            resultsHTMLString += TradeofferWindow.itemsSelectorGenerateBalancerEntry(entryData);
+        }
+        balancerGroupElem.querySelector('.group-entries').insertAdjacentHTML('beforeend', resultsHTMLString);
+
+        // replace current button with 3 buttons
+        balancerGroupElem.querySelector('#items-selector-add-balancing').remove();
+        let addButtonsHTMLString = '<button id="items-selector-add-normal-cards" class="userscript-trade-action third">Add All Normal Cards</button>'
+          + '<button id="items-selector-add-backgrounds" class="userscript-trade-action third">Add All Backgrounds</button>'
+          + '<button id="items-selector-add-emoticons" class="userscript-trade-action third">Add All Emoticons</button>';
+        balancerGroupElem.querySelector('.group-entries').insertAdjacentHTML('beforebegin', addButtonsHTMLString);
+
+        document.getElementById('items-selector-add-normal-cards').addEventListener('click', TradeofferWindow.itemsSelectorGroupBalancerAddAllNormalCardsListener);
+        document.getElementById('items-selector-add-backgrounds').addEventListener('click', TradeofferWindow.itemsSelectorGroupBalancerAddAllBackgroundsListener);
+        document.getElementById('items-selector-add-emoticons').addEventListener('click', TradeofferWindow.itemsSelectorGroupBalancerAddAllEmoticonsListener);
+
+        TradeofferWindow.itemsSelectorRecalculateBalancerAvailability();
+        TradeofferWindow.itemsSelectorRecalculateAvailability('cardSets');
+
+        itemsSelectorShortcuts.group.balancer.classList.remove('loading');
+    },
+    itemsSelectorGroupBalancerGenerateItemDataCategories: async function(profileid) {
+        let { APP_NAME_MAP } = TradeofferWindow.itemsSelectorData.balancer;
+        let steamInventory = await TradeofferWindow.getTradeInventory(profileid, '753', '6', TradeofferWindow.filterInventoryBlockSetup());
+
+        let data = TradeofferWindow.itemsSelectorData.balancer.data[profileid] = { card: [], background: [], emoticon: [] };
+        for(let assetid in steamInventory.rgInventory) {
+            let asset = steamInventory.rgInventory[assetid];
+            let descript = steamInventory.rgDescriptions[`${asset.classid}_${asset.instanceid}`];
+
+            let itemType = descript.tags.find(x => x.category === 'item_class');
+            if(!itemType) {
+                console.warn('TradeofferWindow.itemsSelectorGroupBalancerGenerateItemDataCategories(): Description has no item type??');
+                console.log(descript);
+                continue;
+            }
+
+            let rarity = itemType.internal_name === 'item_class_2'
+              ? descript.tags.find(x => x.category === 'cardborder')
+              : descript.tags.find(x => x.category === 'droprate');
+            if(!rarity) {
+                console.warn('TradeofferWindow.itemsSelectorGroupBalancerGenerateItemDataCategories(): Description has no rarity??');
+                console.log(descript);
+                continue;
+            }
+
+            itemType = Profile.ITEM_TYPE_MAP[itemType.internal_name];
+            rarity = Profile.ITEM_TYPE_MAP[rarity.internal_name] ?? parseInt(rarity.internal_name.replace(/\D+/g, ''));
+
+            data[itemType] ??= [{}];
+            while(data[itemType].length <= rarity) {
+                data[itemType].push({});
+            }
+
+            let itemList = data[itemType][rarity];
+
+            let appNameTag = descript.tags.find(x => x.category === 'Game');
+            if(!appNameTag) {
+                console.warn('TradeofferWindow.itemsSelectorGroupBalancerGenerateItemDataCategories(): Description has no app name??');
+                console.log(descript);
+                appNameTag = { internal_name: '' };
+            }
+
+            APP_NAME_MAP[descript.market_fee_app] ??= appNameTag.name;
+
+            // NOTE: Too much of a performance hit, figure out a different way to save data
+            // await Profile.updateAppMetaData(descript.market_fee_app, { appid: parseInt(descript.market_fee_app), name: appNameTag.name }, false);
+
+            asset.amount = parseInt(asset.amount);
+
+            itemList[descript.market_fee_app] ??= [];
+            let classItemGroup = itemList[descript.market_fee_app].find(x => x.classid === asset.classid);
+            if(!classItemGroup) {
+                classItemGroup = {
+                    classid: asset.classid,
+                    tradables: [],
+                    count: 0
+                };
+                itemList[descript.market_fee_app].push(classItemGroup);
+            }
+
+            if(descript.tradable) {
+                classItemGroup.tradables.push({ assetid: asset.id, instanceid: asset.instanceid, count: asset.amount });
+            }
+            classItemGroup.count += asset.amount;
+        }
+
+        return data;
+    },
+    itemsSelectorGroupBalancerMatchSteamItems: async function() {
+        const fillMissingItems = (target, source) => {
+            for(let i=0; i<source.length; i++) {
+                if(!target.some(x => x.classid === source[i].classid)) {
+                    target.push({ classid: source[i].classid, tradables: [], count: 0 });
+                }
+            }
+        }
+
+        let { data, itemsSelectorData: { balancer: balancerData } } = TradeofferWindow;
+
+        let itemSetsData1 = await TradeofferWindow.itemsSelectorGroupBalancerGenerateItemDataCategories(data.me.id);
+        if(!itemSetsData1) {
+            throw 'TradeofferWindow.itemsSelectorGroupBalancerMatchSteamItems(): User\'s steam item data not available??';
+        }
+
+        let itemSetsData2 = await TradeofferWindow.itemsSelectorGroupBalancerGenerateItemDataCategories(data.them.id);
+        if(!itemSetsData2) {
+            throw 'TradeofferWindow.itemsSelectorGroupBalancerMatchSteamItems(): Partner\'s steam item data not available??';
+        }
+
+        let matchResults = balancerData.results = {};
+        for(let [set1, appid, rarity, itemType] of TradeofferWindow.itemsSelectorItemSetsIter(itemSetsData1)) {
+            if(!Matcher.MATCH_TYPE_LIST.includes(itemType)) {
+                continue;
+            }
+
+            let set2 = itemSetsData2[itemType]?.[rarity]?.[appid];
+            if(!set2) {
+                continue;
+            }
+
+            fillMissingItems(set1, set2);
+            fillMissingItems(set2, set1);
+
+            if(set1.length !== set2.length) {
+                console.error(`TradeofferWindow.itemsSelectorGroupBalancerMatchSteamItems(): Sets have unequal number of item entries! ItemType: ${itemType}, Appid: ${appid}`);
+                continue;
+            } else if(set1.length === 1) {
+                continue;
+            }
+
+            let swap = Array(set1.length).fill(0);
+            let history = [];
+
+            set1.sort((a, b) => a.classid.localeCompare(b.classid));
+            set2.sort((a, b) => a.classid.localeCompare(b.classid));
+
+            for(let i=0; i<Matcher.MAX_MATCH_ITER; i++) {
+                let flip = i % 2;
+                let swapset1 = set1.map((x, i) => x.count + swap[i]);
+                let swapset2 = set2.map((x, i) => x.count - swap[i]);
+                let mode = -1; // mutual only mode
+
+                let balanceResult = Matcher.balanceVariance((flip ? swapset2 : swapset1), (flip ? swapset1 : swapset2), false, mode);
+                if(balanceResult.history.length === 0) {
+                    break;
+                }
+
+                for(let x=0; x<swap.length; x++) {
+                    swap[x] += (flip ? -balanceResult.swap[x] : balanceResult.swap[x]);
+                }
+                for(let y=0; y<balanceResult.history.length; y++) {
+                    history.push([balanceResult.history[y][flip], balanceResult.history[y][1-flip]]);
+                }
+            }
+
+            if(swap.some(x => x)) {
+                matchResults[itemType] ??= [{}];
+                while(matchResults[itemType].length <= rarity) {
+                    matchResults[itemType].push({});
+                }
+                matchResults[itemType][rarity][appid] = { swap, history };
+            }
+        }
+
+        return matchResults;
+    },
+    itemsSelectorGenerateBalancerEntry: function(entryData) {
+        if(entryData.id === undefined) {
+            console.warn('TradeofferWindow.itemsSelectorGenerateBalancerEntry(): id not found! Entry will not have an id...');
+        }
+
+        if(entryData.items1.length<1 || entryData.items1.length>14) {
+            console.warn('TradeofferWindow.itemsSelectorGenerateBalancerEntry(): Number of items not between 1-14??');
+        } else if(entryData.items2.length<1 || entryData.items2.length>14) {
+            console.warn('TradeofferWindow.itemsSelectorGenerateBalancerEntry(): Number of items not between 1-14??');
+        }
+
+        let dataIdAttrString = entryData.id !== undefined ? ` data-id="${entryData.id}"` : '';
+        dataIdAttrString += entryData.itemType !== undefined ? ` data-item-type="${entryData.itemType}"` : '';
+        dataIdAttrString += entryData.rarity !== undefined ? ` data-rarity="${entryData.rarity}"` : '';
+        let items1HTMLString = '';
+        for(let item of entryData.items1) {
+            items1HTMLString += TradeofferWindow.itemsSelectorGenerateItem(item);
+        }
+
+        let items2HTMLString = '';
+        for(let item of entryData.items2) {
+            items2HTMLString += TradeofferWindow.itemsSelectorGenerateItem(item);
+        }
+
+        // calculate container sizes
+        let items1SpanLength = entryData.items1.length>2 ? Math.ceil(entryData.items1.length / 2) : entryData.items1.length;
+        let items2SpanLength = entryData.items2.length>2 ? Math.ceil(entryData.items2.length / 2) : entryData.items2.length;
+        while(items1SpanLength + items2SpanLength > 10) {
+            items1SpanLength--;
+            if(items1SpanLength + items2SpanLength > 10) {
+                items2SpanLength--;
+            }
+        }
+        let totalSpanLength = items1SpanLength + items2SpanLength + 1;
+
+        let items1ContainerSizeString = ` split${items1SpanLength}`;
+        let items2ContainerSizeString = ` split${items2SpanLength}`;
+        let entrySizeString = ` span${totalSpanLength}`;
+
+        return `<div class="items-selector-entry available${entrySizeString}"${dataIdAttrString}>`
+          +     '<div class="items-selector-entry-header">'
+          +         `<div class="entry-title" title="${entryData.name}">`
+          +             entryData.name
+          +         '</div>'
+          +     '</div>'
+          +     '<div class="items-selector-balancer-container">'
+          +         `<div class="items-selector-inventory-items${items1ContainerSizeString}">`
+          +             items1HTMLString
+          +         '</div>'
+          +         '<div class="balancer-arrows userscript-bg-filtered alt-arrows"></div>'
+          +         `<div class="items-selector-inventory-items${items2ContainerSizeString}">`
+          +             items2HTMLString
+          +         '</div>'
+          +     '</div>'
+          + '</div>';
+
+    },
+    itemsSelectorItemSetsIter: function(itemSetsData) {
+        function* itemSetsIter(dataset) {
+            for(let type in dataset) {
+                for(let rarity=0; rarity<dataset[type].length; rarity++) {
+                    for(let appid in dataset[type][rarity]) {
+                        yield [ dataset[type][rarity][appid], appid, rarity, type ];
+                    }
+                }
+            }
+        }
+
+        return itemSetsIter(itemSetsData);
+    },
+
+    itemsSelectorGroupBalancerAddAllNormalCardsListener: function(event) {
+        TradeofferWindow.itemsSelectorGroupBalancerAddAllItemsOfType('card', 0);
+    },
+    itemsSelectorGroupBalancerAddAllBackgroundssListener: function(event) {
+        TradeofferWindow.itemsSelectorGroupBalancerAddAllItemsOfType('background');
+    },
+    itemsSelectorGroupBalancerAddAllEmoticonsListener: function(event) {
+        TradeofferWindow.itemsSelectorGroupBalancerAddAllItemsOfType('emoticon');
+    },
+    itemsSelectorGroupBalancerAddAllItemsOfType: async function(itemType, rarityLevel) {
+        const addItemList = async (items, profileid, addReverse) => {
+            for(let itemData of items) {
+                await TradeofferWindow.offerItemlistAddClassItems(profileid, itemData.appid, itemData.contextid, itemData.classid, itemData.instanceid, itemData.amount, addReverse);
+            }
+        }
+
+        let { data, itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+        let groupBalancerData = itemsSelectorData.groups.balancer;
+        let groupBalancerElem = itemsSelectorShortcuts.group.balancer;
+
+        if(!itemType) {
+            throw 'TradeofferWindow.itemsSelectorGroupBalancerAddAllItemsOfType(): item type not specified! Aborting...';
+        }
+
+        if(rarityLevel !== undefined) {
+            rarityLevel = String(rarityLevel);
+        }
+        for(let entryElem of groupBalancerElem.querySelectorAll('.items-selector-entry')) {
+            if(entryElem.dataset.itemType !== itemType) {
+                continue;
+            } else if(rarityLevel !== undefined && entryElem.dataset.rarity !== rarityLevel) {
+                continue;
+            }
+
+            let entryData = groupBalancerData.entries[entryElem.dataset.id];
+            await addItemList(entryData.items1, data.me.id, true);
+            await addItemList(entryData.items2, data.them.id, true);
+        }
+        TradeofferWindow.offerUpdateTradeState();
+
+        TradeofferWindow.overlayBodyToggle('offerWindow');
+    },
+
+    itemsSelectorGroupEntryDialogShowListener: function(event) {
+        console.log('TradeofferWindow.itemsSelectorGroupEntryDialogShow() WIP');
+
+        let { itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+
+        let groupElem = event.currentTarget;
+        if(!groupElem.matches('.items-selector-group')) {
+            throw 'TradeofferWindow.itemsSelectorGroupEntryDialogShow(): Not attached to a items selector group element???';
+        }
+
+        if(groupElem.dataset.id !== 'balancer' && !itemsSelectorData.currentProfileid) {
+            return;
+        }
+
+        let entryElem = event.target.closest('.items-selector-entry');
+        if(!entryElem) {
+            return;
+        }
+
+        TradeofferWindow.itemsSelectorGroupEntryDialogUpdate(groupElem.dataset.id, entryElem.dataset.id);
+        itemsSelectorShortcuts.dialogContainer.classList.add('active');
+    },
+    itemsSelectorGroupEntryDialogDeleteEntryListener: async function(event) {
+        let { itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+        let { currentGroupId, currentEntryId } = itemsSelectorData;
+
+        if(currentGroupId === null || currentEntryId === null) {
+            console.warn('TradeofferWindow.itemsSelectorGroupEntryDialogDeleteEntryListener(): No current group or entry id set! Nothing will be deleted...');
+            return;
+        } else if(currentGroupId !== 'custom') {
+            console.warn('TradeofferWindow.itemsSelectorGroupEntryDialogDeleteEntryListener(): Only entries from the custom group should be deleted! Nothing will be deleted...');
+            return;
+        }
+
+        let groupData = itemsSelectorData.groups[currentGroupId];
+        let entryData = groupData.entries[currentEntryId];
+
+        let configGroupEntries = globalSettings.tradeoffer.itemsSelectorCustomGroupEntries;
+        let configEntry = configGroupEntries[entryData.pos];
+        if(!configEntry) {
+            console.warn('TradeofferWindow.itemsSelectorGroupEntryDialogDeleteEntryListener(): Entry not found in configs! Nothing will be deleted...');
+            return;
+        }
+
+        let entryElem = itemsSelectorShortcuts.group[currentGroupId].querySelector(`[data-id="${currentEntryId}"]`);
+        if(!entryElem) {
+            console.warn('TradeofferWindow.itemsSelectorGroupEntryDialogDeleteEntryListener(): Entry element not found???? Nothing will be deleted...');
+            return;
+        }
+
+        delete configGroupEntries[currentEntryId];
+        delete groupData.entries[currentEntryId];
+        entryElem.remove();
+
+        await TradeofferWindow.configSave();
+    },
+    itemsSelectorGroupEntryDialogCancelListener: function(event) {
+        let { currentGroupId, currentEntryId } = TradeofferWindow.itemsSelectorShortcuts;
+        currentGroupId = null;
+        currentEntryId = null;
+        TradeofferWindow.itemsSelectorShortcuts.dialogContainer.classList.remove('active');
+    },
+    itemsSelectorGroupEntryDialogResetListener: function(event) {
+        let { itemsSelectorShortcuts } = TradeofferWindow;
+
+        if(itemsSelectorShortcuts.body === undefined) {
+            return;
+        }
+
+        itemsSelectorShortcuts.dialogTextInput.value = itemsSelectorShortcuts.dialogTextInput.getAttribute('value') ?? 0;
+        itemsSelectorShortcuts.dialogSliderInput.value = itemsSelectorShortcuts.dialogSliderInput.getAttribute('value') ?? 0;
+    },
+    itemsSelectorGroupEntryDialogConfirmListener: async function(event) {
+        const addItemList = async (items, profileid, addReverse) => {
+            for(let itemData of items) {
+                let amountToAdd = value*itemData.amount;
+                await TradeofferWindow.offerItemlistAddClassItems(profileid, itemData.appid, itemData.contextid, itemData.classid, itemData.instanceid, amountToAdd, addReverse);
+            }
+        }
+
+        let { data, itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+        let { currentProfileid, currentGroupId, currentEntryId } = itemsSelectorData;
+
+        if(currentGroupId === null || currentEntryId === null) {
+            console.error('TradeofferWindow.itemsSelectorGroupEntryDialogConfirmListener(): No current group or entry id set! No items will be added...');
+            return;
+        } else if(!itemsSelectorShortcuts.dialogTextInput) {
+            console.error('TradeofferWindow.itemsSelectorGroupEntryDialogConfirmListener(): Text input element not found!?!? No items will be added...');
+            return;
+        }
+
+        let value = parseInt(itemsSelectorShortcuts.dialogTextInput.value);
+        let entryData = itemsSelectorData.groups[currentGroupId].entries[currentEntryId];
+        if(currentGroupId === 'balancer') {
+            await addItemList(entryData.items1, data.me.id, true);
+            await addItemList(entryData.items2, data.them.id, true);
+        } else {
+            await addItemList(entryData.items, currentProfileid, false);
+        }
+        TradeofferWindow.offerUpdateTradeState();
+
+        TradeofferWindow.itemsSelectorShortcuts.dialogContainer.classList.remove('active');
+        TradeofferWindow.overlayBodyToggle('offerWindow');
+    },
+    itemsSelectorGroupEntryDialogCheckAvailabilityListener: async function() {
+        let { itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+
+        console.log('Dialog Check Availability WIP!');
+
+        let entryData = itemsSelectorData.groups[itemsSelectorData.currentGroupId]?.entries[itemsSelectorData.currentEntryId];
+        if(!entryData) {
+            throw 'TradeofferWindow.itemsSelectorGroupEntryDialogCheckAvailabilityListener(): No entry data found?!?!';
+        }
+
+        itemsSelectorShortcuts.dialogButtonCheck.setAttribute('disabled', '');
+
+        let loadedInvTracker = new Set();
+        for(let itemData of entryData.items) {
+            let appContext = `${itemData.appid}_${itemData.contextid}`;
+            if(!loadedInvTracker.has(appContext)) {
+                await TradeofferWindow.getTradeInventory(itemsSelectorData.currentProfileid, itemData.appid, itemData.contextid, TradeofferWindow.filterInventoryBlockSetup());
+                loadedInvTracker.add(appContext);
+            }
+        }
+
+        TradeofferWindow.itemsSelectorRecalculateAvailability('cardSets');
+        TradeofferWindow.itemsSelectorGroupEntryDialogUpdate(itemsSelectorData.currentGroupId, itemsSelectorData.currentEntryId);
+    },
+    itemsSelectorGroupEntryDialogUpdate: function(groupId, entryId) {
+        let { itemsSelectorShortcuts, itemsSelectorData } = TradeofferWindow;
+
+        let groupData = itemsSelectorData.groups[groupId];
+        if(!groupData) {
+            throw 'TradeofferWindow.itemsSelectorGroupEntryDialogShow(): group data not found???';
+        }
+
+        let entryData = groupData.entries[entryId];
+        if(!entryData) {
+            throw 'TradeofferWindow.itemsSelectorGroupEntryDialogShow(): entry data not found???';
+        }
+
+        // hide entry deletion button if its not a custom entry
+        if(groupData.id === 'custom') {
+            itemsSelectorShortcuts.dialog.querySelector('.items-selector-entry-remove').classList.remove('hidden');
+        } else {
+            itemsSelectorShortcuts.dialog.querySelector('.items-selector-entry-remove').classList.add('hidden');
+        }
+
+        // populate dialog: profile
+        let dialogProfileElem = itemsSelectorShortcuts.dialogProfile;
+        if(dialogProfileElem.dataset.id !== itemsSelectorData.currentProfileid) {
+            dialogProfileElem.querySelector('.dialog-profile-avatar').src = '';
+            dialogProfileElem.querySelector('.dialog-profile-name').textContent = '';
+            dialogProfileElem.dataset.id = itemsSelectorData.currentProfileid;
+        }
+
+        itemsSelectorShortcuts.dialogTitle.querySelector('.dialog-group-name').textContent = groupData.name;
+        itemsSelectorShortcuts.dialogTitle.querySelector('.dialog-entry-name').textContent = entryData.name;
+
+        let inputVal = 0;
+        if(groupData.id === 'balancer') {
+            itemsSelectorShortcuts.dialogItems.innerHTML = '<div class="items-selector-balancer-container">'
+              +     `<div class="items-selector-inventory-items">`
+              +         entryData.items1.map(item => TradeofferWindow.itemsSelectorGenerateItem(item)).join('')
+              +     '</div>'
+              +     '<div class="balancer-arrows userscript-bg-filtered alt-arrows"></div>'
+              +     `<div class="items-selector-inventory-items">`
+              +         entryData.items2.map(item => TradeofferWindow.itemsSelectorGenerateItem(item)).join('')
+              +     '</div>'
+              + '</div>';
+
+
+            itemsSelectorShortcuts.dialogSliderInput.setAttribute('disabled', '');
+            itemsSelectorShortcuts.dialogTextInput.setAttribute('disabled', '');
+            itemsSelectorShortcuts.dialogButtonReset.setAttribute('disabled', '');
+            itemsSelectorShortcuts.dialogButtonCheck.setAttribute('disabled', '');
+
+            if(entryData.isAvailable) {
+                inputVal = 1;
+                itemsSelectorShortcuts.dialogButtonConfirm.removeAttribute('disabled');
+            } else {
+                inputVal = 0;
+                itemsSelectorShortcuts.dialogButtonConfirm.setAttribute('disabled', '');
+            }
+
+            itemsSelectorShortcuts.dialogSliderInput.setAttribute('max', String(inputVal));
+            itemsSelectorShortcuts.dialogTextInput.setAttribute('max', String(inputVal));
+        } else {
+            itemsSelectorShortcuts.dialogItems.innerHTML = `<div class="items-selector-inventory-items">`
+              +     entryData.items.map(item => TradeofferWindow.itemsSelectorGenerateItem(item)).join('')
+              + '</div>';
+
+            let maxAvailable = entryData.maxAvailable?.[itemsSelectorData.currentProfileid];
+            if(Number.isInteger(maxAvailable)) {
+                itemsSelectorShortcuts.dialogButtonCheck.setAttribute('disabled', '');
+            } else {
+                itemsSelectorShortcuts.dialogButtonCheck.removeAttribute('disabled');
+            }
+            if(maxAvailable === undefined || maxAvailable === null || maxAvailable === 0) {
+                inputVal = 0;
+                itemsSelectorShortcuts.dialogSliderInput.setAttribute('disabled', '');
+                itemsSelectorShortcuts.dialogTextInput.setAttribute('disabled', '');
+                itemsSelectorShortcuts.dialogButtonReset.setAttribute('disabled', '');
+                itemsSelectorShortcuts.dialogButtonConfirm.setAttribute('disabled', '');
+            } else if(maxAvailable > 0) {
+                inputVal = 1;
+                itemsSelectorShortcuts.dialogSliderInput.removeAttribute('disabled');
+                itemsSelectorShortcuts.dialogTextInput.removeAttribute('disabled');
+                itemsSelectorShortcuts.dialogButtonReset.removeAttribute('disabled');
+                itemsSelectorShortcuts.dialogButtonConfirm.removeAttribute('disabled');
+            } else {
+                throw 'TradeofferWindow.itemsSelectorGroupEntryDialogShow(): maxAvailable is not a valid value!';
+            }
+
+            itemsSelectorShortcuts.dialogSliderInput.setAttribute('max', String(maxAvailable));
+            itemsSelectorShortcuts.dialogTextInput.setAttribute('max', String(maxAvailable));
+        }
+
+        itemsSelectorShortcuts.dialogSliderInput.setAttribute('value', String(inputVal));
+        itemsSelectorShortcuts.dialogTextInput.setAttribute('value', String(inputVal));
+        itemsSelectorShortcuts.dialogSliderInput.value = inputVal;
+        itemsSelectorShortcuts.dialogTextInput.value = inputVal;
+
+        itemsSelectorData.currentGroupId = groupData.id;
+        itemsSelectorData.currentEntryId = entryData.id;
+    },
+    itemsSelectorGroupEntryDialogUpdateSliderListener: function(event) {
+        TradeofferWindow.itemsSelectorShortcuts.dialogSliderInput.value = event.target.value;
+    },
+    itemsSelectorGroupEntryDialogUpdateTextListener: function(event) {
+        TradeofferWindow.itemsSelectorShortcuts.dialogTextInput.value = event.target.value;
+    },
+
+    itemsSelectorGenerateGroup: function(groupData) {
+        if(groupData.id === undefined) {
+            console.warn('TradeofferWindow.itemsSelectorGenerateGroup(): id not found! Group will not have an id...');
+        }
+
+        let dataIdAttrString = groupData.id !== undefined ? ` data-id="${groupData.id}"` : '';
+        let groupEntriesHTMLString = '';
+        for(let groupEntry of groupData.entries) {
+            groupEntriesHTMLString += TradeofferWindow.itemsSelectorGenerateGroupEntry(groupEntry);
+        }
+
+        return `<div class="items-selector-group"${dataIdAttrString}>`
+          +     '<div class="items-selector-group-header">'
+          +         '<div class="group-title">'
+          +             groupData.name
+          +         '</div>'
+          +     '</div>'
+          +     '<div class="group-entries">'
+          +         groupEntriesHTMLString
+          +     '</div>'
+          +     cssAddThrobber()
+          + '</div>';
+    },
+    itemsSelectorGenerateGroupEntry: function(entryData) {
+        if(entryData.id === undefined) {
+            console.warn('TradeofferWindow.itemsSelectorGenerateGroupEntry(): id not found! Entry will not have an id...');
+        }
+
+        let availability = TradeofferWindow.itemsSelectorGroupEntryCheckAvailability(entryData);
+        if(availability !== '') {
+            availability = ' ' + availability;
+        }
+        let dataIdAttrString = entryData.id !== undefined ? ` data-id="${entryData.id}"` : '';
+        let itemsHTMLString = '';
+        for(let item of entryData.items) {
+            itemsHTMLString += TradeofferWindow.itemsSelectorGenerateItem(item);
+        }
+        let containerSizeString = (entryData.items.length > 22) ? ''
+            : (entryData.items.length < 3) ? ' span2'
+            : ` span${Math.ceil(entryData.items.length/2)}`;
+
+        return `<div class="items-selector-entry${availability}${containerSizeString}"${dataIdAttrString}>`
+          +     '<div class="items-selector-entry-header">'
+          +         `<div class="entry-title" title="${entryData.name}">`
+          +             entryData.name
+          +         '</div>'
+          +     '</div>'
+          +     `<div class="items-selector-inventory-items">`
+          +         itemsHTMLString
+          +     '</div>'
+          + '</div>';
+    },
+    itemsSelectorGenerateItem: function(itemData) {
+        // get description data from somewhere to access image and name
+        // jank, but works for now ... need to pool together descriptions to make things easier
+        let { inventories, descriptionClassAssets } = TradeofferWindow.data;
+
+        let descript;
+        for(let profileid in inventories) {
+            if(descript) {
+                break;
+            }
+
+            let inventoryContext = inventories[profileid]?.[itemData.appid]?.[itemData.contextid];
+            if(!inventoryContext) {
+                continue;
+            }
+
+            let descriptClass = descriptionClassAssets[profileid]?.[itemData.appid]?.[itemData.contextid]?.[itemData.classid];
+            if(!descriptClass || descriptClass.count === 0) {
+                continue;
+            }
+
+            if(itemData.instanceid) {
+                descript = inventoryContext.rgDescriptions[`${itemData.classid}_${itemData.instanceid}`];
+            } else if(itemData.classid && descriptClass.assets.length > 0) {
+                let arbitraryAsset = descriptClass.assets[0];
+                descript = inventoryContext.rgDescriptions[`${itemData.classid}_${arbitraryAsset.instanceid}`];
+            }
+        }
+
+        if(!descript) {
+            console.error('TradeofferWindow.itemsSelectorGenerateItem(): No description found!!!');
+        }
+
+        let imgUrl = descript?.icon_url ? `https://community.akamai.steamstatic.com/economy/image/${descript.icon_url}/96fx96f` : '';
+        let name = descript?.name ?? '???';
+
+        let styleAttrString = '';
+        styleAttrString += descript?.name_color ? `border-color: #${descript.name_color};` : '';
+        styleAttrString += descript?.background_color ? `background-color: #${descript.background_color};` : '';
+        if(styleAttrString.length) {
+            styleAttrString = ` style="${styleAttrString}"`;
+        }
+
+        let dataAttrString = '';
+        dataAttrString += itemData.appid ? ` data-appid="${itemData.appid}"` : '';
+        dataAttrString += itemData.contextid ? ` data-contextid="${itemData.contextid}"` : '';
+        dataAttrString += itemData.classid ? ` data-classid="${itemData.classid}"` : '';
+        dataAttrString += itemData.instanceid ? ` data-instanceid="${itemData.instanceid}"` : '';
+        dataAttrString += itemData.amount ? ` data-amount="${parseInt(itemData.amount).toLocaleString()}"` : '';
+
+        return `<div class="inventory-item-container" title="${name}"${dataAttrString}${styleAttrString}>`
+          +     `<img loading="lazy" src="${imgUrl}" alt="${name}">`
+          + '</div>';
     },
 
 
@@ -2017,15 +3911,712 @@ const TradeofferWindow = {
 
 
     summaryShortcuts: {},
+    summaryData: {
+        offerSetData: {
+            // sets
+        },
+    },
 
     summarySetup: function() {
         console.log('Summary WIP');
 
+        let { shortcuts, data, summaryShortcuts } = TradeofferWindow;
+
         if (TradeofferWindow.summaryShortcuts.body !== undefined) {
+            TradeofferWindow.summaryReset();
             return;
         }
 
-        // generate prefilter body and attach to overlay body
+        const itemlistMeHTMLString = `<div id="offer-summary-itemlist-me" class="offer-itemlist offer-summary-itemlist" data-id="${data.me.id}">`
+          +     '<div class="itemlist-header">'
+          +         '<div class="userscript-icon-name-container">'
+          +             `<img src="${data.me.img}">`
+          +             data.me.name
+          +         '</div>'
+          +     '</div>'
+          +     '<div class="itemlist-list">'
+          +     '</div>'
+          + '</div>';
+        const itemlistThemHTMLString = `<div id="offer-summary-itemlist-them" class="offer-itemlist offer-summary-itemlist"data-id=" ${data.me.id}">`
+          +     '<div class="itemlist-header">'
+          +         '<div class="userscript-icon-name-container">'
+          +             `<img src="${data.them.img}">`
+          +             data.them.name
+          +         '</div>'
+          +     '</div>'
+          +     '<div class="itemlist-list">'
+          +     '</div>'
+          + '</div>';
+        const detailsHTMLString = '<div class="offer-summary-details-container">'
+          +     '<div class="offer-summary-details">'
+          +         '<div class="summary-details-header">'
+          +             '<span class="summary-details-title">Offer Items Analysis</span>'
+          +         '</div>'
+          +     '</div>'
+          + '</div>';
+        const summaryBodyHTMLString = '<div class="offer-summary-body">'
+          +     '<div class="offer-summary-main-control">'
+          +         '<div class="main-control-section">'
+          +             '<button id="offer-summary-decline" class="userscript-btn red">Decline</button>'
+          +         '</div>'
+          +         '<div class="main-control-section">'
+          +             '<div id="offer-summary-escrow-status" class="main-control-status">??</div>' // show trade status here, (escrow: yellow number, empty offer: red, valid offer/counter: green)
+          +             '<div id="offer-summary-empty-status" class="main-control-status">Offer is empty...</div>' // show trade status here, (valid offer/counter: green)
+          +         '</div>'
+          +         '<div class="main-control-section">'
+          +             '<button id="offer-summary-confirm" class="userscript-trade-action">???</button>' // accept or send
+          +         '</div>'
+          +     '</div>'
+          +     '<div class="offer-summary-message">'
+          +         '' // offer message
+          +     '</div>'
+          +     itemlistThemHTMLString
+          +     itemlistMeHTMLString
+          +     detailsHTMLString
+          + '</div>';
+
+        shortcuts.overlayBody.insertAdjacentHTML('beforeend', summaryBodyHTMLString);
+
+        summaryShortcuts.body = shortcuts.overlayBody.querySelector('& > .offer-summary-body');
+        summaryShortcuts.mainControl = summaryShortcuts.body.querySelector('.offer-summary-main-control');
+        summaryShortcuts.statusEscrow = document.getElementById('offer-summary-escrow-status');
+        summaryShortcuts.statusEmpty = document.getElementById('offer-summary-empty-status');
+        summaryShortcuts.message = summaryShortcuts.body.querySelector('.offer-summary-message');
+        summaryShortcuts.itemListMe = document.getElementById('offer-summary-itemlist-me');
+        summaryShortcuts.itemListThem = document.getElementById('offer-summary-itemlist-them');
+        summaryShortcuts.itemList = {
+            [data.me.id]: summaryShortcuts.itemListMe,
+            [data.them.id]: summaryShortcuts.itemListThem,
+        };
+        summaryShortcuts.details = summaryShortcuts.body.querySelector('.offer-summary-details');
+        summaryShortcuts.declineButton = document.getElementById('offer-summary-decline');
+        summaryShortcuts.confirmButton = document.getElementById('offer-summary-confirm');
+
+        if(data.offerId !== '0') {
+            summaryShortcuts.declineButton.addEventListener('click', TradeofferWindow.summaryDeclineOfferListener);
+        } else {
+            summaryShortcuts.declineButton.classList.add('hidden');
+            summaryShortcuts.confirmButton.textContent = 'Send';
+        }
+        summaryShortcuts.confirmButton.addEventListener('click', TradeofferWindow.summaryConfirmOfferListener);
+
+        TradeofferWindow.summaryReset();
+    },
+    summaryReset: function() {
+        let { data, offerShortcuts, offerData: { offer }, summaryShortcuts, summaryData } = TradeofferWindow;
+
+        summaryShortcuts.message.textContent = offerShortcuts.message.value;
+
+        let newOfferSetData = new Set();
+        const addOfferItemsToSetData = (isMe) => {
+            let profileid = data[isMe ? 'me' : 'them'].id;
+            newOfferSetData[profileid] = new Set();
+            for(let [classData, classid, contextid, appid] of TradeofferWindow.offerProfileDataIter(offer[profileid])) {
+                for(let assetData of classData.assets) {
+                    newOfferSetData[profileid].add(`${appid}_${contextid}_${assetData.assetid}_${assetData.amount}`);
+                }
+            }
+        };
+        addOfferItemsToSetData(true);
+        addOfferItemsToSetData(false);
+
+        if(summaryData.offerSetData[data.me.id]?.symmetricDifference(newOfferSetData[data.me.id]).size === 0
+          && summaryData.offerSetData[data.them.id]?.symmetricDifference(newOfferSetData[data.them.id]).size === 0) {
+            return;
+        }
+
+        summaryData.offerSetData = newOfferSetData;
+        let offerSetDataMe = summaryData.offerSetData[data.me.id];
+        let offerSetDataThem = summaryData.offerSetData[data.them.id];
+
+        if(data.offerId !== '0') {
+            if(data.tradeState === 1) {
+                summaryShortcuts.declineButton.classList.remove('hidden');
+                summaryShortcuts.confirmButton.textContent = 'Accept';
+            } else if(data.tradeState === 2) {
+                summaryShortcuts.declineButton.classList.add('hidden');
+                summaryShortcuts.confirmButton.textContent = 'Send';
+            }
+        }
+
+        let isEmptyOfferSets = !offerSetDataMe.size && !offerSetDataThem.size;
+        summaryShortcuts.confirmButton.classList[isEmptyOfferSets ? 'add' : 'remove']('hidden');
+
+        let escrowDays = Math.max(offerSetDataMe.size && data.me.escrowDays, offerSetDataThem.size && data.them.escrowDays);
+        summaryShortcuts.mainControl.classList[escrowDays || isEmptyOfferSets ? 'add' : 'remove']('warn');
+
+        summaryShortcuts.statusEmpty.classList[isEmptyOfferSets ? 'remove' : 'add']('hidden');
+        summaryShortcuts.statusEscrow.classList[!isEmptyOfferSets && escrowDays ? 'remove' : 'add']('hidden');
+        summaryShortcuts.statusEscrow.textContent = escrowDays;
+
+        TradeofferWindow.summaryItemlistRepopulate();
+
+        for(let detailsSectionElem of summaryShortcuts.details.querySelectorAll('& > .summary-details-section')) {
+            detailsSectionElem.remove();
+        }
+
+        // place buttons or triggers back on the page (but dont place them if no items of that inventory needed for analysis is present)
+
+        TradeofferWindow.summaryDetailsDisplayTotals();
+        TradeofferWindow.summaryDetailsDisplayUncommons();
+        TradeofferWindow.summaryDetailsDisplayCardStats();
+    },
+    summaryConfirmOfferListener: function() {
+        // send new offer (send counter offer is the same)
+        // execute accept request
+        let { data } = TradeofferWindow;
+
+        // toggle waiting animation of some sort on
+
+        if(data.tradeState === 0 || data.tradeState === 2) {
+            let payload = TradeofferWindow.summaryGenerateOfferPayload();
+
+            fetch('https://steamcommunity.com/tradeoffer/new/send', {
+                method: 'post',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams(payload)
+                // header details
+            }).then((response) => {
+                // toggle waiting animation off if success, remind user to confirm offer in authenticator
+            }).catch((error) => {
+                // change waiting animation into something else if failed
+            });
+        } else if(data.tradeState === 1) {
+            TradeofferWindow.summaryAcceptOffer();
+        }
+    },
+    summaryAcceptOffer: function() {
+        let { data } = TradeofferWindow;
+        if(data.tradeState !== 1) {
+            throw 'TradeofferWindow.summaryAceeptOffer(): Incorrect trade state detected, this function shouldn\'t have been executed!';
+        }
+
+        let payload = {
+            sessionid: steamToolsUtils.getSessionId(),
+            serverid: '1',
+            tradeofferid: data.offerId,
+            partner: data.them.id,
+            captcha: '', // not sure about this yet
+        };
+
+        fetch(`https://steamcommunity.com/tradeoffer/${data.offerId}/accept`, {
+            method: 'post',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams(payload)
+        }).then((response) => {
+            // should close the offer window
+        }).catch((error) => {
+
+        });
+    },
+    summaryDeclineOfferListener: function() {
+        let { data } = TradeofferWindow;
+        if(data.tradeState !== 1) {
+            throw 'TradeofferWindow.summaryDeclineOfferListener(): Incorrect trade state detected, this function shouldn\'t have been executed!';
+        }
+
+        // toggle waiting animation of some sort on
+
+        let payload = {
+            sessionid: steamToolsUtils.getSessionId()
+        }
+
+        fetch(`https://steamcommunity.com/tradeoffer/${data.offerId}/decline`, {
+            method: 'post',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams(payload)
+        }).then((response) => {
+            // should close the offer window
+        }).catch((error) => {
+
+        });
+    },
+    summaryGenerateOfferPayload: function() {
+        let { data, offerShortcuts, offerData: { offer } } = TradeofferWindow;
+
+        const generateOfferAssets = (offerDataProfile) => {
+            let assetList = [];
+            for(let [classData, classid, contextid, appid] of TradeofferWindow.offerProfileDataIter(offerDataProfile)) {
+                for(let assetData of classData.assets) {
+                    assetList.push({
+                        appid: appid,
+                        contextid: contextid,
+                        amount: assetData.amount,
+                        assetid: assetData.assetid
+                    });
+                }
+            }
+
+            // maybe currency here?
+
+            return {
+                assets: assetList,
+                currency: [],
+                ready: false
+            };
+        };
+
+        let message = offerShortcuts.message.value;
+        let offerCreateParams = unsafeWindow?.CTradeOfferStateManager.m_rgTradeOfferCreateParams;
+        if(!offerCreateParams) {
+            throw 'TradeofferWindow.offerGenerateOfferPayload(): CTradeOfferStateManager.m_rgTradeOfferCreateParams not found!';
+        }
+
+        let offerStatus = {
+            newversion: true,
+            version: 1,
+            me: generateOfferAssets(offer[data.me.id]),
+            them: generateOfferAssets(offer[data.them.id])
+        }
+
+        let offerPayload = {
+            sessionid: steamToolsUtils.getSessionId(),
+            serverid: '1',
+            partner: data.them.id,
+            tradeoffermessage: message,
+            json_tradeoffer: JSON.stringify(offerStatus),
+            captcha: '',
+            trade_offer_create_params: JSON.stringify(offerCreateParams)
+        };
+
+        if(data.tradeState === 2) {
+            offerPayload.tradeofferid_countered = data.offerId;
+        }
+
+        return offerPayload;
+    },
+
+    summaryItemlistRepopulate() {
+        const generateItemlistHTMLString = (profileid) => {
+            let offerProfileData = offer[profileid];
+            let inventoryData = data.inventories[profileid];
+
+            let itemlistHTMLString = '';
+            for(let [classData, classid, contextid, appid] of TradeofferWindow.offerProfileDataIter(offer[profileid])) {
+                let inventoryContextData = inventoryData[appid][contextid];
+                for(let assetData of classData.assets) {
+                    let descript = inventoryContextData.rgDescriptions[`${classid}_${assetData.instanceid}`];
+                    if(!descript) {
+                        throw 'TradeofferWindow.summaryItemlistRepopulate(): description not found for an asset!';
+                    }
+
+                    itemlistHTMLString += generateItemElemHTMLString({ appid: appid, contextid: contextid, assetid: assetData.assetid, amount: assetData.amount, img: descript.icon_url, name: descript.name });
+                }
+            }
+
+            return itemlistHTMLString;
+        };
+
+        const generateItemElemHTMLString = (assetData) => {
+
+            let imgUrl = assetData.img ? `https://community.akamai.steamstatic.com/economy/image/${assetData.img}/96fx96f` : '';
+            let amountAttr = assetData.amount > 1 ? ` data-amount="${assetData.amount}"` : '';
+            return `<div class="inventory-item-container" data-appid="${assetData.appid}" data-contextid="${assetData.contextid}" data-assetid="${assetData.assetid}"${amountAttr}>`
+              +     `<img src="${imgUrl}" alt="${assetData.name}" />`
+              + '</div>';
+        };
+
+        let { data, offerData: { offer }, summaryShortcuts } = TradeofferWindow;
+
+        summaryShortcuts.itemListMe.querySelector('.itemlist-list').innerHTML = generateItemlistHTMLString(data.me.id);
+        summaryShortcuts.itemListThem.querySelector('.itemlist-list').innerHTML = generateItemlistHTMLString(data.them.id);
+    },
+    summaryDetailsDisplayTotals() {
+    // Totals is calculated with number of different assets, not individual amounts
+        const calculateAppContextTotals = (offerProfileData, isMe) => {
+            let meOrPartnerKey = isMe ? 'me' : 'them';
+            for(let appid in offerProfileData) {
+                for(let contextid in offerProfileData[appid]) {
+                    appContextTotals[appid] ??= {};
+                    appContextTotals[appid][contextid] ??= { me: 0, them: 0 };
+
+                    let appContextTotal = 0;
+                    for(let classid in offerProfileData[appid][contextid]) {
+                        appContextTotal += offerProfileData[appid][contextid][classid].assets.length;
+                    }
+
+                    appContextTotals[appid][contextid][meOrPartnerKey] = appContextTotal;
+                }
+            }
+        }
+
+        let { data, offerData: { offer }, summaryShortcuts } = TradeofferWindow;
+
+        let appContextTotals = {};
+        calculateAppContextTotals(offer[data.me.id], true);
+        calculateAppContextTotals(offer[data.them.id], false);
+
+        let tableBodyHTMLString = '';
+        let sortedAppids = Object.keys(appContextTotals)
+          .map(x => parseInt(x))
+          .sort((a, b) => a-b);
+        for(let appid of sortedAppids) {
+            let appInfo = data.appInfo[appid];
+            let rowDataHTMLStrings = Object.keys(appContextTotals[appid])
+              .map(x => parseInt(x))
+              .sort((a, b) => a-b)
+              .map(contextid => {
+                let contextTotals = appContextTotals[appid][contextid];
+                let contextInfo = appInfo.contexts[contextid];
+                if(contextTotals.me === 0 && contextTotals.them === 0) {
+                    return '';
+                }
+
+                return `<td>${contextInfo.name}</td><td>${contextTotals.me}</td><td>${contextTotals.them}</td>`;
+              }).filter(x => x.length);
+
+            if(rowDataHTMLStrings.length === 0) {
+                continue;
+            }
+
+            rowDataHTMLStrings[0] = `<th scope="row" rowspan="${rowDataHTMLStrings.length}"><img src="${appInfo.icon}"></th>` + rowDataHTMLStrings[0];
+            tableBodyHTMLString += rowDataHTMLStrings.reduce((bodyStr, rowStr) => bodyStr + '<tr>' + rowStr + '</tr>', '');
+        }
+
+        let tableHTMLString = '<table class="details-section-totals">'
+          +     '<thead>'
+          +         '<tr>'
+          +             '<th class="title" colspan="4">App Item Totals</th>'
+          +         '</tr>'
+          +         '<tr>'
+          +             '<th scope="col">App</th>'
+          +             '<th scope="col">Context</th>'
+          +             '<th scope="col">Me</th>'
+          +             '<th scope="col">Them</th>'
+          +         '</tr>'
+          +     '</thead>'
+          +     '</tbody>'
+          +         tableBodyHTMLString
+          +     '</tbody>'
+          + '</table>';
+
+        let detailsSectionHTMLString = '<div class="summary-details-section">'
+          +     '<div class="details-section-body">'
+          +         tableHTMLString
+          +     '</div>'
+          + '</div>';
+
+        summaryShortcuts.details.querySelector('.summary-details-header').insertAdjacentHTML('afterend', detailsSectionHTMLString);
+    },
+    summaryDetailsDisplayUncommons: function() {
+        const findUncommonItems = (isMe) => {
+            let meOrPartnerKey = isMe ? 'me' : 'them';
+            let offerContextData = offer[data[meOrPartnerKey].id]['753']['6'];
+            let descriptions = data.inventories[data[isMe ? 'me' : 'them'].id]['753']['6'].rgDescriptions;
+            for(let classid in offerContextData) {
+                for(let assetEntry of offerContextData[classid].assets) {
+                    let descript = descriptions[`${classid}_${assetEntry.instanceid}`];
+                    let isCard = descript.tags?.some(x => x.category === 'item_class' && x.internal_name === 'item_class_2') ?? false;
+                    let isUncommon = isCard
+                        ? (descript.tags?.some(x => x.category === 'cardborder' && x.internal_name !== 'cardborder_0') ?? false)
+                        : (descript.tags?.some(x => x.category === 'droprate' && x.internal_name !== 'droprate_0') ?? false);
+
+                    if(!isUncommon) {
+                        continue;
+                    }
+
+                    let appName = descript.tags?.find(x => x.category === 'Game')?.name ?? '';
+                    let itemTypeName = descript.tags?.find(x => x.category === 'item_class')?.name ?? '';
+                    let rarityName = isCard
+                        ? (descript.tags?.find(x => x.category === 'cardborder')?.name ?? '')
+                        : (descript.tags?.find(x => x.category === 'droprate')?.name ?? '');
+
+                    // NOTE: track amount of rows needed to construct the table
+                    uncommonItems[appName] ??= {};
+                    uncommonItems[appName][itemTypeName] ??= { rowCount: { me: 0, them: 0 }, rarities: {} };
+                    uncommonItems[appName][itemTypeName].rarities[rarityName] ??= { rowCount: { me: 0, them: 0 }, assets: { me: {}, them: {} } };
+
+                    uncommonItems[appName][itemTypeName].rowCount[meOrPartnerKey] += 1;
+                    uncommonItems[appName][itemTypeName].rarities[rarityName].rowCount[meOrPartnerKey] += 1;
+                    uncommonItems[appName][itemTypeName].rarities[rarityName].assets[meOrPartnerKey][assetEntry.assetid] = { amount: assetEntry.amount, img: descript.icon_url, name: descript.name };
+                }
+            }
+        };
+
+        const customSortKeys = (list, ref) => {
+            return list.sort((a, b) => {
+                let valA = ref.indexOf(a);
+                if(valA === -1) {
+                    valA = ref.length;
+                }
+                let valB = ref.indexOf(b);
+                if(valB === -1) {
+                    valB = ref.length;
+                }
+                return valA - valB;
+            });
+        };
+
+        const generateItemElemHTMLString = (data) => {
+            let imgUrl = data.img ? `https://community.akamai.steamstatic.com/economy/image/${data.img}/96fx96f` : '';
+            let amountAttr = data.amount > 1 ? ` data-amount="${data.amount}"` : '';
+            return `<div class="inventory-item-container"${amountAttr}>`
+              +     `<img src="${imgUrl}" alt="${data.name}" />`
+              + '</div>';
+        };
+
+        let { data, offerData: { offer }, summaryShortcuts } = TradeofferWindow;
+
+        let uncommonItems = {};
+        if(offer[data.me.id]?.['753']?.['6']) {
+            findUncommonItems(true);
+        }
+        if(offer[data.them.id]?.['753']?.['6']) {
+            findUncommonItems(false);
+        }
+
+        let tableHTMLStrings = [];
+        let uncommonItemsAppNames = Object.keys(uncommonItems).sort();
+        let uncommonItemsItemList = ['Trading card', 'Background', 'Emoticon'];
+        let uncommonItemsRarityList = ['Foil', 'Rare', 'Uncommon'];
+        for(let appName of uncommonItemsAppNames) {
+            let uncommonItemsAppData = uncommonItems[appName];
+
+            let tableBodyHTMLString = '';
+            let uncommonItemsAppItemNames = customSortKeys(Object.keys(uncommonItems[appName]), uncommonItemsItemList);
+            for(let itemTypeName of uncommonItemsAppItemNames) {
+                let uncommonItemsItemTypeData = uncommonItemsAppData[itemTypeName];
+                let maxItemTypeRows = Math.max(uncommonItemsItemTypeData.rowCount.me, uncommonItemsItemTypeData.rowCount.them);
+
+                let tableRowHTMLStrings = [];
+                let uncommonItemsAppItemRarityNames = customSortKeys(Object.keys(uncommonItemsAppData[itemTypeName].rarities), uncommonItemsRarityList);
+                for(let rarityName of uncommonItemsAppItemRarityNames) {
+                    let uncommonItemsRarityData = uncommonItemsItemTypeData.rarities[rarityName];
+                    let maxRarityRows = Math.max(uncommonItemsRarityData.rowCount.me, uncommonItemsRarityData.rowCount.them);
+
+                    let tableRowHTMLStringsInner = [];
+                    let myAssets = Object.keys(uncommonItemsRarityData.assets.me);
+                    let theirAssets = Object.keys(uncommonItemsRarityData.assets.them);
+                    for(let i=0; i<maxRarityRows; i++) {
+                        let myItemHTMLString = '';
+                        if(myAssets[i]) {
+                            myItemHTMLString = generateItemElemHTMLString(uncommonItemsRarityData.assets.me[myAssets[i]]);
+                        }
+
+                        let theirItemHTMLString = '';
+                        if(theirAssets[i]) {
+                            theirItemHTMLString = generateItemElemHTMLString(uncommonItemsRarityData.assets.them[theirAssets[i]]);
+                        }
+
+                        tableRowHTMLStringsInner.push(`<td>${myItemHTMLString}</td><td>${theirItemHTMLString}</td>`);
+                    }
+                    tableRowHTMLStringsInner[0] = `<td scope="row" rowspan="${maxRarityRows}">${rarityName}</td>` + tableRowHTMLStringsInner[0];
+                    tableRowHTMLStrings.push(...tableRowHTMLStringsInner);
+                }
+                tableRowHTMLStrings[0] = `<td scope="row" rowspan="${maxItemTypeRows}">${itemTypeName}</td>` + tableRowHTMLStrings[0];
+                tableBodyHTMLString += tableRowHTMLStrings.reduce((bodyStr, rowStr) => bodyStr + '<tr>' + rowStr + '</tr>', '');
+            }
+
+            let tableHTMLString = '<table class="details-section-uncommons-stats">'
+              +     '<thead>'
+              +         '<tr>'
+              +             `<th class="title" colspan="4">${appName}</th>`
+              +         '</tr>'
+              +         '<tr>'
+              +             '<th scope="col">Item Type</th>'
+              +             '<th scope="col">Rarity</th>'
+              +             '<th scope="col">Me</th>'
+              +             '<th scope="col">Them</th>'
+              +         '</tr>'
+              +     '</thead>'
+              +     '</tbody>'
+              +         tableBodyHTMLString
+              +     '</tbody>'
+              + '</table>';
+
+            tableHTMLStrings.push(`<div class="details-section-uncommons">${tableHTMLString}</div>`);
+        }
+
+        let detailsSectionHTMLString = '<div class="summary-details-section">'
+          +     '<div class="details-section-header">'
+          +         '<span class="details-section-title">[Steam] Uncommon Items</span>'
+          +     '</div>'
+          +     '<div class="details-section-body">'
+          +         tableHTMLStrings.join('')
+          +     '</div>'
+          + '</div>';
+
+        summaryShortcuts.details.querySelector('.summary-details-header').insertAdjacentHTML('afterend', detailsSectionHTMLString);
+    },
+    summaryDetailsDisplayCardStats: async function() {
+    // NOTE: Total/Sets/Cards displays net gain/loss, NOT the amount on one side or another
+    // NOTE: Individual card count displays loose cards
+        const tallyCardItems = (isMe) => {
+            let meOrPartnerKey = isMe ? 'me' : 'them';
+            let offerContextData = offer[data[meOrPartnerKey].id]['753']['6'];
+            let descriptions = data.inventories[data[isMe ? 'me' : 'them'].id]['753']['6'].rgDescriptions;
+
+
+            for(let classid in offerContextData) {
+                for(let assetEntry of offerContextData[classid].assets) {
+                    let descript = descriptions[`${classid}_${assetEntry.instanceid}`];
+                    let isCard = descript.tags?.some(x => x.category === 'item_class' && x.internal_name === 'item_class_2') ?? false;
+                    if(!isCard) {
+                        continue;
+                    }
+
+                    let cardborder = descript.tags?.find(x => x.category === 'cardborder');
+                    if(!cardborder) {
+                        console.warn('TradeofferWindow.summaryDetailsDisplayCardStats(): Cardborder not found for card tag?!?!');
+                        continue;
+                    }
+                    cardborder = cardborder.internal_name.replace('cardborder_', '');
+
+                    cardData[cardborder][descript.market_fee_app] ??= [];
+                    let appFoilDataset = cardData[cardborder][descript.market_fee_app];
+
+                    let appFoilData = appFoilDataset.find(x => x.classid === descript.classid);
+                    if(!appFoilData) {
+                        appFoilData = {
+                            classid: classid,
+                            descript: descript,
+                            count: 0
+                        };
+                        appFoilDataset.push(appFoilData);
+                    }
+
+                    if(isMe) {
+                        appFoilData.count -= assetEntry.amount;
+                    } else {
+                        appFoilData.count += assetEntry.amount;
+                    }
+                }
+            }
+        };
+
+        const calcStdDevDiff = (stock, swap, inverseSwap) => {
+            if(stock.length !== swap.length) {
+                console.warn('TradeofferWindow.summaryDetailsDisplayCardStats(): Different lengths for stock and swap, unable to calculate Std Dev!');
+                return;
+            }
+            let avg = stock.reduce((a, b) => a + b.count, 0.0) / stock.length;
+            let stdDevStock = Math.sqrt((stock.reduce((a, b) => a + (b.count ** 2), 0.0) / stock.length) - (avg ** 2));
+
+            let avgSwapCallback, stdDevSwapCallback;
+            if(inverseSwap) {
+                avgSwapCallback = (a, b, i) => a + (b.count-swap[i]);
+                stdDevSwapCallback = (a, b, i) => a + ((b.count-swap[i]) ** 2);
+            } else {
+                avgSwapCallback = (a, b, i) => a + (b.count+swap[i]);
+                stdDevSwapCallback = (a, b, i) => a + ((b.count+swap[i]) ** 2);
+            }
+            let avgSwap = stock.reduce(avgSwapCallback, 0.0) / stock.length;
+            let stdDevSwap = Math.sqrt((stock.reduce(stdDevSwapCallback, 0.0) / stock.length) - (avgSwap ** 2));
+            return steamToolsUtils.roundZero(stdDevSwap - stdDevStock);
+        };
+
+        const getElemSignClassName = (num, inverse = false) => {
+            if(inverse) {
+                num = -num;
+            }
+            return num > 0
+              ? 'pos'
+              : num < 0
+                ? 'neg'
+                : 'neut';
+        };
+
+        let { data, offerData: { offer }, summaryShortcuts } = TradeofferWindow;
+
+        let cardData = [{}, {}];
+        if(offer[data.me.id]?.['753']?.['6']) {
+            tallyCardItems(true);
+        }
+        if(offer[data.them.id]?.['753']?.['6']) {
+            tallyCardItems(false);
+        }
+
+        let tableHTMLStrings = [];
+        let myProfile = await Profile.findProfile(data.me.id);
+        let theirProfile = await Profile.findProfile(data.them.id);
+        for(let [rarity, foilDataset] of Object.entries(cardData)) {
+            for(let appid in foilDataset) {
+                let appFoilDataset = foilDataset[appid];
+                let appData = await Profile.findAppMetaData(appid, { cards: true, foil: rarity === '1' });
+                if(!appData?.cards) {
+                    console.error('TradeofferWindow.summaryDetailsDisplayCardStats(): Cards info not found in meta data?!?!', appid);
+                    continue;
+                }
+
+                // calc total cards in offer
+                let totalCards = appFoilDataset.reduce((sum, entry) => sum+entry.count, 0);
+
+                // calc total sets in offer
+                let totalSets = 0;
+                if(appFoilDataset.length === appData.cards.length) {
+                    if(appFoilDataset.every(x => x.count < 0)) {
+                        totalSets = Math.max(...appFoilDataset.map(x => x.count))
+                    } else if(appFoilDataset.every(x => x.count > 0)) {
+                        totalSets = Math.min(...appFoilDataset.map(x => x.count))
+                    }
+                }
+
+                // sort card list
+                let cardCounts = appData.cards.map(cardData => {
+                    let appFoilData = appFoilDataset.find(x => x.descript?.icon_url === cardData[`img_card${rarity}`]);
+                    return appFoilData ? appFoilData.count : 0;
+                });
+
+                // calc std dev of both sides (scrape both badgepages)
+                let myStock = await myProfile.getBadgepageStock(appid, rarity === '1');
+                let theirStock = await theirProfile.getBadgepageStock(appid, rarity === '1');
+                let myStdDiff = calcStdDevDiff(myStock.data, cardCounts, false);
+                let theirStdDiff = calcStdDevDiff(theirStock.data, cardCounts, true);
+
+                // only loose cards
+                let tableCardCountsRowsHTMLStrings = cardCounts.reduce((html, count, i) => {
+                    html.cardNum += `<td>${i+1}</td>`;
+                    html.cardAmount += `<td class="${getElemSignClassName(count-totalSets)}">${Math.abs(count-totalSets).toLocaleString()}</td>`;
+                    return html;
+                }, { cardNum: '', cardAmount: '' });
+                tableCardCountsRowsHTMLStrings.cardNum += '<td></td>'.repeat(15-cardCounts.length);
+                tableCardCountsRowsHTMLStrings.cardAmount += '<td></td>'.repeat(15-cardCounts.length);
+
+                let tableHTMLString = '<table class="details-section-cards-stats">'
+                  +     '<thead>'
+                  +         '<tr>'
+                  +             `<th class="title" colspan="15">${rarity === '1' ? '★ ' : ''}${appData.name}</th>`
+                  +         '</tr>'
+                  +     '</thead>'
+                  +     '</tbody>'
+                  +         '<tr>'
+                  +             '<th class="row-name" colspan="2">Total</th>'
+                  +             `<td class="row-data ${getElemSignClassName(totalCards)}" colspan="2">${Math.abs(totalCards).toLocaleString()}</td>`
+                  +             '<th class="row-name" colspan="2">Sets</th>'
+                  +             `<td class="row-data ${getElemSignClassName(totalSets)}" colspan="2">${Math.abs(totalSets).toLocaleString()}</td>`
+                  +             '<th class="row-name" colspan="3">Progress</th>'
+                  +             `<td class="row-data ${getElemSignClassName(myStdDiff, true)}" colspan="2">${Math.abs(myStdDiff).toFixed(3).toLocaleString()}</td>`
+                  +             `<td class="row-data ${getElemSignClassName(theirStdDiff, true)}" colspan="2">${Math.abs(theirStdDiff).toFixed(3).toLocaleString()}</td>`
+                  +         '</tr>'
+                  +         '<tr class="card-numbers">'
+                  +             tableCardCountsRowsHTMLStrings.cardNum
+                  +         '</tr>'
+                  +         '<tr class="card-counts">'
+                  +             tableCardCountsRowsHTMLStrings.cardAmount
+                  +         '</tr>'
+                  +     '</tbody>'
+                  + '</table>';
+
+                tableHTMLStrings.push(`<div class="details-section-cards">${tableHTMLString}</div>`);
+            }
+        }
+
+        let detailsSectionHTMLString = '<div class="summary-details-section">'
+          +     '<div class="details-section-header">'
+          +         '<span class="details-section-title">[Steam] Cards</span>'
+          +     '</div>'
+          +     '<div class="details-section-body">'
+          +         tableHTMLStrings.join('')
+          +     '</div>'
+          + '</div>';
+
+        summaryShortcuts.details.querySelector('.summary-details-header').insertAdjacentHTML('afterend', detailsSectionHTMLString);
     },
 
 
@@ -2052,15 +4643,15 @@ const TradeofferWindow = {
             }
         }
 
-        let { selectorData } = TradeofferWindow;
+        let { data, selectorData } = TradeofferWindow;
 
-        if(!selectorData.you) {
-            selectorData.you = {};
-            saveContexts(unsafeWindow.UserYou.rgContexts, selectorData.you);
+        if(!selectorData[data.me.id]) {
+            selectorData[data.me.id] = {};
+            saveContexts(unsafeWindow.UserYou.rgContexts, selectorData[data.me.id]);
         }
-        if(!selectorData.them) {
-            selectorData.them = {};
-            saveContexts(unsafeWindow.UserThem.rgContexts, selectorData.them);
+        if(!selectorData[data.them.id]) {
+            selectorData[data.them.id] = {};
+            saveContexts(unsafeWindow.UserThem.rgContexts, selectorData[data.them.id]);
         }
     },
     generateSelectorOptionHTMLString: function(optionText, dataAttr = {}, imgUrl) {
@@ -2069,7 +4660,7 @@ const TradeofferWindow = {
             dataAttrString += ` data-${attr}="${dataAttr[attr]}"`;
         }
 
-        let HTMLString = `<div class="main-control-selector-option"${dataAttrString}>`;
+        let HTMLString = `<div class="main-control-selector-option userscript-icon-name-container"${dataAttrString}>`;
         if(imgUrl) {
             HTMLString += `<img src="${imgUrl}">`;
         }
@@ -2081,13 +4672,13 @@ const TradeofferWindow = {
     generateAppSelectorHTMLString: function({ useUserApps = true, usePartnerApps = true, id, placeholderText, disabled = false }) {
         TradeofferWindow.getSelectorData();
 
-        let { selectorData } = TradeofferWindow;
+        let { data, selectorData } = TradeofferWindow;
         let applist = [];
         let optionsHTMLString = '';
 
         if(useUserApps) {
             let appInfoYou = unsafeWindow.UserYou.rgAppInfo;
-            for(let appid in selectorData.you) {
+            for(let appid in selectorData[data.me.id]) {
                 if(applist.includes(appid)) {
                     continue;
                 }
@@ -2100,7 +4691,7 @@ const TradeofferWindow = {
 
         if(usePartnerApps) {
             let appInfoThem = unsafeWindow.UserThem.rgAppInfo;
-            for(let appid in selectorData.them) {
+            for(let appid in selectorData[data.them.id]) {
                 if(applist.includes(appid)) {
                     continue;
                 }
@@ -2141,12 +4732,12 @@ const TradeofferWindow = {
     generateContextSelectorHTMLString: function(userIsMe, appid, { id, placeholderText, disabled = false }) {
         TradeofferWindow.getSelectorData();
 
-        let { selectorData } = TradeofferWindow;
+        let { data, selectorData } = TradeofferWindow;
         let optionsHTMLString = '';
         if( !(userIsMe === undefined || appid === undefined) ) {
             let contextInfoList = unsafeWindow[userIsMe ? 'UserYou' : 'UserThem'].rgAppInfo[appid].rgContexts;
 
-            for(let contextid of selectorData[userIsMe ? 'you' : 'them'][appid]) {
+            for(let contextid of selectorData[data[userIsMe ? 'me' : 'them'].id][appid]) {
                 let contextInfo = contextInfoList[contextid];
                 if(parseInt(contextid) === 0) {
                     continue;
@@ -2182,7 +4773,7 @@ const TradeofferWindow = {
         let disabledClassString = disabled ? ' disabled' : '';
 
         return `<div ${idAttrString} class="main-control-selector-container${disabledClassString}" ${widthAttrString} ${selectorDataAttrString}>`
-          +     `<div class="main-control-selector-select">`
+          +     `<div class="main-control-selector-select userscript-icon-name-container">`
           +         selectorContentHTMLString
           +     '</div>'
           +     '<div class="main-control-selector-options">'
@@ -2318,7 +4909,51 @@ const TradeofferWindow = {
 
         return configFilterData;
     },
-    getTradeInventoryFast: function(profileid, appid, contextids, filterFn) {
+    getTradeInventory: function(profileid, appid, contextids, filterBlockfn, forceRequest) {
+        let { inventories, descriptionClassAssets } = TradeofferWindow.data;
+        inventories[profileid] ??= { [appid]: {} };
+        inventories[profileid][appid] ??= {};
+        descriptionClassAssets[profileid] ??= {};
+        descriptionClassAssets[profileid][appid] ??= {};
+
+        if(typeof contextids === 'number' || typeof contextids === 'string') {
+            contextids = [String(contextids)];
+        } else if(!Array.isArray(contextids)) {
+            throw 'TradeofferWindow.getTradeInventoryFast(): invalid data type for contexts!';
+        }
+
+        let inventoryCollection = {};
+        return contextids.reduce((promise, contextid) => {
+            inventoryCollection[contextid] = inventories[profileid][appid][contextid];
+            if(!forceRequest && inventoryCollection[contextid] !== undefined) {
+                return promise;
+            }
+
+            return promise.then(() =>
+                TradeofferWindow.requestTradeInventoryFast2(profileid, appid, contextid, filterBlockfn)
+                    .then(inventory => {
+                        inventories[profileid][appid][contextid] = inventory;
+
+                        let descriptClasses = {};
+                        for(let assetid in inventory.rgInventory) {
+                            let assetData = inventory.rgInventory[assetid];
+                            let classInstance = `${assetData.classid}_${assetData.instanceid}`;
+                            descriptClasses[assetData.classid] ??= { count: 0, assets: [], instanceCounts: {} };
+                            descriptClasses[assetData.classid].assets.push({ assetid: assetid, instanceid: assetData.instanceid, amount: parseInt(assetData.amount) });
+                            descriptClasses[assetData.classid].count += parseInt(assetData.amount);
+                            descriptClasses[assetData.classid].instanceCounts[assetData.instanceid] ??= 0;
+                            descriptClasses[assetData.classid].instanceCounts[assetData.instanceid] += parseInt(assetData.amount);
+                        }
+                        descriptionClassAssets[profileid][appid][contextid] = descriptClasses;
+
+                        inventoryCollection[contextid] = inventory;
+                    })
+            );
+        }, Promise.resolve()).then(() => {
+            return contextids.length === 1 ? inventoryCollection[contextids[0]] : inventoryCollection;
+        });
+    },
+    requestTradeInventoryFast: function(profileid, appid, contextid, filterBlockFn) {
         // Send requests in regular intervals in an attempt to shorten overall load time for multiple requests
         // Connection speed dependent: someone with a slower connect could accumulate many requests in progress
 
@@ -2340,7 +4975,7 @@ const TradeofferWindow = {
                     }
                 ).then(
                     data => {
-                        return filterFn ? filterFn(data, optionalInfo) : data;
+                        return typeof filterBlockFn === 'function' ? filterBlockFn(data, optionalInfo) : data;
                     },
                     err => {
                         cancelled = true;
@@ -2352,10 +4987,8 @@ const TradeofferWindow = {
             });
         };
 
-        if(typeof contextids === 'number' || typeof contextids === 'string') {
-            contextids = [String(contextids)];
-        } else if(!Array.isArray(contextids)) {
-            throw 'TradeofferWindow.getTradeInventoryFast(): invalid data type for contexts!';
+        if(typeof contextid !== 'number' && typeof contextid !== 'string') {
+            throw 'TradeofferWindow.getTradeInventoryFast(): invalid data type for context!';
         }
 
         let promises = [];
@@ -2364,89 +4997,157 @@ const TradeofferWindow = {
         let url;
         let requestCount = 0;
 
-        for(let contextid of contextids) {
-            if(contextid === '0') {
-                continue;
+        if(steamToolsUtils.getMySteamId() === profileid) {
+            url = new URL(unsafeWindow.g_strInventoryLoadURL + `${appid}/${contextid}`
+              + '/?trading=1'
+            );
+            inventorySize = unsafeWindow.g_rgAppContextData[appid]?.rgContexts[contextid]?.asset_count;
+        } else {
+            url = new URL(unsafeWindow.g_strTradePartnerInventoryLoadURL
+              + '?sessionid=' + steamToolsUtils.getSessionId()
+              + '&partner=' + profileid
+              + '&appid=' + appid
+              + '&contextid=' + contextid
+            );
+            inventorySize = unsafeWindow.g_rgPartnerAppContextData[appid]?.rgContexts[contextid]?.asset_count;
+        }
+        inventorySize = parseInt(inventorySize);
+        if(!Number.isInteger(inventorySize)) {
+            throw `TradeofferWindow.getTradeInventoryFast(): invalid inventory size to be requested: ${inventorySize}`;
+        }
+
+        for(let i=0, pages=Math.ceil(inventorySize/2000); i<pages; i++, requestCount++) {
+            if(i !== 0) {
+                url.searchParams.set('start', i*2000);
             }
 
-            if(steamToolsUtils.getMySteamId() === profileid) {
-                url = new URL(unsafeWindow.g_strInventoryLoadURL + `${appid}/${contextid}`
-                  + '/?trading=1'
-                );
-                inventorySize = unsafeWindow.g_rgAppContextData[appid]?.rgContexts[contextid]?.asset_count;
-            } else {
-                url = new URL(unsafeWindow.g_strTradePartnerInventoryLoadURL
-                  + '?sessionid=' + steamToolsUtils.getSessionId()
-                  + '&partner=' + profileid
-                  + '&appid=' + appid
-                  + '&contextid=' + contextid
-                );
-                inventorySize = unsafeWindow.g_rgPartnerAppContextData[appid]?.rgContexts[contextid]?.asset_count;
-            }
-            inventorySize = parseInt(inventorySize);
-            if(!Number.isInteger(inventorySize)) {
-                throw `TradeofferWindow.getTradeInventoryFast(): invalid inventory size to be requested: ${inventorySize}`;
-            }
-
-            for(let i=0, pages=Math.ceil(inventorySize/2000); i<pages; i++, requestCount++) {
-                if(i !== 0) {
-                    url.searchParams.set('start', i*2000);
-                }
-
-                promises.push(delayedFetch(url.href, 250*requestCount, { profileid, appid, contextid }));
-            }
+            promises.push(delayedFetch(url.href, 250*requestCount, { profileid, appid, contextid }));
         }
 
         return Promise.all(promises).then(TradeofferWindow.mergeInventory);
     },
-    getTradeInventoryFast2: function(profileid, appid, contextids, filterFn) {
+    requestTradeInventoryFast2: function(profileid, appid, contextid, filterBlockFn) {
         // Send requests with a maximum number of simultaneous requests at any time
         // Connection speed independent: throttled by number of requests in the task queue
 
-        if(typeof contextids === 'number' || typeof contextids === 'string') {
-            contextids = [String(contextids)];
-        } else if(!Array.isArray(contextids)) {
-            throw 'TradeofferWindow.getTradeInventoryFast(): invalid data type for contexts!';
+        if(typeof contextid !== 'number' && typeof contextid !== 'string') {
+            throw 'TradeofferWindow.getTradeInventoryFast(): invalid data type for context!';
         }
 
         let urlList = [];
         let inventorySize;
         let url;
 
-        for(let contextid of contextids) {
-            if(contextid === '0') {
-                continue;
-            }
-
-            if(steamToolsUtils.getMySteamId() === profileid) {
-                url = new URL(unsafeWindow.g_strInventoryLoadURL + `${appid}/${contextid}`
-                  + '/?trading=1'
-                );
-                inventorySize = unsafeWindow.g_rgAppContextData[appid]?.rgContexts[contextid]?.asset_count;
-            } else {
-                url = new URL(unsafeWindow.g_strTradePartnerInventoryLoadURL
-                  + '?sessionid=' + steamToolsUtils.getSessionId()
-                  + '&partner=' + profileid
-                  + '&appid=' + appid
-                  + '&contextid=' + contextid
-                );
-                inventorySize = unsafeWindow.g_rgPartnerAppContextData[appid]?.rgContexts[contextid]?.asset_count;
-            }
-            inventorySize = parseInt(inventorySize);
-            if(!Number.isInteger(inventorySize)) {
-                throw `TradeofferWindow.getTradeInventoryFast2(): invalid inventory size to be requested: ${inventorySize}`;
-            }
-
-            for(let i=0, pages=Math.ceil(inventorySize/2000); i<pages; i++) {
-                if(i !== 0) {
-                    url.searchParams.set('start', i*2000);
-                }
-
-                urlList.push({ url: url.href, optionalInfo: { profileid, appid, contextid } });
-            }
+        if(steamToolsUtils.getMySteamId() === profileid) {
+            url = new URL(unsafeWindow.g_strInventoryLoadURL + `${appid}/${contextid}`
+                + '/?trading=1'
+            );
+            inventorySize = unsafeWindow.g_rgAppContextData[appid]?.rgContexts[contextid]?.asset_count;
+        } else {
+            url = new URL(unsafeWindow.g_strTradePartnerInventoryLoadURL
+                + '?sessionid=' + steamToolsUtils.getSessionId()
+                + '&partner=' + profileid
+                + '&appid=' + appid
+                + '&contextid=' + contextid
+            );
+            inventorySize = unsafeWindow.g_rgPartnerAppContextData[appid]?.rgContexts[contextid]?.asset_count;
+        }
+        inventorySize = parseInt(inventorySize);
+        if(!Number.isInteger(inventorySize)) {
+            throw `TradeofferWindow.getTradeInventoryFast2(): invalid inventory size to be requested: ${inventorySize}`;
         }
 
-        return steamToolsUtils.createFetchQueue(urlList, 3, filterFn).then(TradeofferWindow.mergeInventory);
+        for(let i=0, pages=Math.ceil(inventorySize/2000); i<pages; i++) {
+            if(i !== 0) {
+                url.searchParams.set('start', i*2000);
+            }
+
+            urlList.push({ url: url.href, optionalInfo: { profileid, appid, contextid } });
+        }
+
+        return steamToolsUtils.createFetchQueue(urlList, 3, filterBlockFn).then(TradeofferWindow.mergeInventory);
+    },
+    filterInventoryBlockSetup: function(processAssetfn) {
+        function filterInventoryBlock(data, { profileid, appid, contextid }) {
+            if(Array.isArray(data?.rgInventory)) {
+                if(data.rgInventory.length !== 0) {
+                    console.error('TradeofferWindow.filterInventoryBlock(): Inventory data is a populated array?!?!');
+                    console.log(data)
+                }
+                return data;
+            }
+
+            let filterData = TradeofferWindow.filterLookupGet(appid);
+            if(!filterData) {
+                filterData = {
+                    id: appid,
+                    fetched: false,
+                    categories: []
+                };
+                globalSettings.tradeoffer.filter.apps.push(filterData);
+                TradeofferWindow.filterLookupUpdateApp(filterData);
+            }
+
+            let excludedDescriptions = [];
+            for(let assetid in data.rgInventory) {
+                let asset = data.rgInventory[assetid];
+                let excludeAsset = false;
+                let descript = data.rgDescriptions[`${asset.classid}_${asset.instanceid}`];
+
+                if(!descript) {
+                    console.error('TradeofferWindow.filterInventoryBlock(): Description not found for an asset?!?!');
+                    continue;
+                }
+
+                // check to be excluded or not
+                for(let tag of descript.tags) {
+                    let filterCategory = TradeofferWindow.filterLookupGet(appid, tag.category);
+                    if(!filterCategory) {
+                        filterCategory = {
+                            id: tag.category,
+                            name: tag.category_name,
+                            pOpened: false,
+                            qOpened: false,
+                            tags: []
+                        };
+                        filterData.categories.push(filterCategory);
+                        TradeofferWindow.filterLookupUpdateCategory(appid, filterCategory);
+                    }
+
+                    let filterTag = TradeofferWindow.filterLookupGet(appid, tag.category, tag.internal_name);
+                    if(!filterTag) {
+                        filterTag = {
+                            id: tag.internal_name,
+                            name: tag.name,
+                            excluded: false,
+                            filtered: false
+                        };
+                        filterCategory.tags.push(filterTag);
+                        TradeofferWindow.filterLookupUpdateTag(appid, tag.category, filterTag);
+                    }
+
+                    if(filterTag.excluded) {
+                        excludeAsset = true;
+                        break;
+                    }
+                }
+
+                if(excludeAsset) {
+                    delete data.rgInventory[assetid];
+                    excludedDescriptions.push(`${asset.classid}_${asset.instanceid}`);
+                } else if(typeof processAssetfn === 'function') {
+                    processAssetfn(asset, descript);
+                }
+            }
+
+            for(let descriptid of excludedDescriptions) {
+                delete data.rgDescriptions[descriptid];
+            }
+
+            return data;
+        }
+
+        return filterInventoryBlock;
     },
     mergeInventory: function(invBlocks) {
         if(!Array.isArray(invBlocks)) {
